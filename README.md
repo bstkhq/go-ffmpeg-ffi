@@ -367,3 +367,5 @@ FFmpeg is licensed under LGPL/GPL. Ensure your usage complies with FFmpeg's lice
 - **Issues**: [GitHub Issues](https://github.com/obinnaokechukwu/ffgo/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/obinnaokechukwu/ffgo/discussions)
 - **Documentation**: [docs/user-guide.md](docs/user-guide.md)
+
+<!-- sync-check: git-copy replace_history_with_current regression test -->
