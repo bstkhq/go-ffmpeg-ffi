@@ -350,15 +350,14 @@ func (d *HWDecoder) nextVideoFrameLocked(outputSoftware bool) (Frame, error) {
 // Use this if you called ReadHWFrame and need to process the frame on the CPU.
 // The returned frame must be freed by the caller when no longer needed.
 func (d *HWDecoder) TransferToSystem(hwFrame Frame) (Frame, error) {
+	if err := hwFrame.useError(); err != nil {
+		return Frame{}, err
+	}
 	swFrame := avutil.FrameAlloc()
 	if swFrame == nil {
 		return Frame{}, errors.New("ffgo: failed to allocate frame")
 	}
 
-	if hwFrame.ptr == nil {
-		avutil.FrameFree(&swFrame)
-		return Frame{}, errors.New("ffgo: hwFrame is nil")
-	}
 	if err := avutil.HWFrameTransferData(swFrame, hwFrame.ptr, 0); err != nil {
 		avutil.FrameFree(&swFrame)
 		return Frame{}, err

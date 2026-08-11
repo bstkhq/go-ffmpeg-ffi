@@ -434,6 +434,9 @@ func (m *Muxer) WriteFrame(ms *MuxerStream, frame Frame) error {
 	if ms.encoder == nil {
 		return errors.New("ffgo: stream has no encoder")
 	}
+	if err := frame.poolLeaseError(); err != nil {
+		return err
+	}
 
 	return ms.encoder.state.encode(ms.codecCtx, frame.ptr, ms.encoder.packet, m.packetWriter(ms))
 }

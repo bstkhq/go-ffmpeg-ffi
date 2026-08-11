@@ -60,7 +60,7 @@ type FormatContextLayout struct {
 	InputFormat, OutputFormat, IOContext, NumStreams, Streams uintptr
 	Duration, BitRate, Flags                                  uintptr
 	NumPrograms, Programs, NumChapters, Chapters, Metadata    uintptr
-	ProbeScore                                                uintptr
+	ProbeScore, InterruptCallback                             uintptr
 }
 
 // CodecParametersLayout contains offsets into AVCodecParameters.
@@ -214,7 +214,7 @@ func makeFFmpeg6Layout() Layout {
 		NumStreams: 44, Streams: 48, Duration: 72, BitRate: 80,
 		Flags: 96, NumPrograms: 132, Programs: 136,
 		NumChapters: 164, Chapters: 168, Metadata: 176,
-		ProbeScore: 300,
+		ProbeScore: 300, InterruptCallback: 200,
 	}
 	layout.CodecParameters = CodecParametersLayout{
 		CodecType: 0, CodecID: 4, CodecTag: 8, Extradata: 16,
@@ -262,7 +262,7 @@ func makeFFmpeg7Layout() Layout {
 		NumStreams: 44, Streams: 48, Duration: 104, BitRate: 112,
 		Flags: 128, NumPrograms: 164, Programs: 168,
 		NumChapters: 72, Chapters: 80, Metadata: 192,
-		ProbeScore: 324,
+		ProbeScore: 324, InterruptCallback: 216,
 	}
 	layout.CodecParameters = CodecParametersLayout{
 		CodecType: 0, CodecID: 4, CodecTag: 8, Extradata: 16,
@@ -310,7 +310,7 @@ func makeFFmpeg8Layout() Layout {
 		NumStreams: 44, Streams: 48, Duration: 104, BitRate: 112,
 		Flags: 128, NumPrograms: 164, Programs: 168,
 		NumChapters: 72, Chapters: 80, Metadata: 192,
-		ProbeScore: 324,
+		ProbeScore: 324, InterruptCallback: 216,
 	}
 	layout.CodecParameters = CodecParametersLayout{
 		CodecType: 0, CodecID: 4, CodecTag: 8, Extradata: 16,

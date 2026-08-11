@@ -252,7 +252,7 @@ func (d *Decoder) GetKeyframes() ([]Keyframe, error) {
 	}
 
 	// Save current position - seek back to beginning (errors are non-fatal)
-	_ = avformat.SeekFrame(d.formatCtx, -1, 0, avformat.SeekFlagBackward)
+	_ = d.seekInputLocked(-1, 0, avformat.SeekFlagBackward)
 
 	stream := avformat.GetStream(d.formatCtx, d.videoStreamIdx)
 	if stream == nil {
@@ -266,7 +266,7 @@ func (d *Decoder) GetKeyframes() ([]Keyframe, error) {
 
 	// Scan packets for keyframes
 	for {
-		if err := avformat.ReadFrame(d.formatCtx, d.packet); err != nil {
+		if err := d.readInputPacketLocked(d.packet); err != nil {
 			if avutil.IsEOF(err) {
 				break
 			}
@@ -310,7 +310,7 @@ func (d *Decoder) GetKeyframes() ([]Keyframe, error) {
 	}
 
 	// Seek back to beginning (errors are non-fatal)
-	_ = avformat.SeekFrame(d.formatCtx, -1, 0, avformat.SeekFlagBackward)
+	_ = d.seekInputLocked(-1, 0, avformat.SeekFlagBackward)
 	if d.videoCodecCtx != nil {
 		avcodec.FlushBuffers(d.videoCodecCtx)
 	}

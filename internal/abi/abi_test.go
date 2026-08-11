@@ -13,27 +13,27 @@ func version(major, minor, patch uint32) uint32 {
 
 func TestDetectSupportedLayouts(t *testing.T) {
 	tests := []struct {
-		name                                                      string
-		versions                                                  [3]uint32
-		ffmpeg, duration, frameSampleRate, frameFlags             uintptr
-		codecParFormat, codecParSampleRate, channelLayout         uintptr
-		codecWidth, codecPixelFormat, subtitleType, subtitleFlags uintptr
+		name                                                             string
+		versions                                                         [3]uint32
+		ffmpeg, duration, interruptCallback, frameSampleRate, frameFlags uintptr
+		codecParFormat, codecParSampleRate, channelLayout                uintptr
+		codecWidth, codecPixelFormat, subtitleType, subtitleFlags        uintptr
 	}{
 		{
 			name: "FFmpeg 6", versions: [3]uint32{version(58, 29, 100), version(60, 31, 102), version(60, 16, 100)},
-			ffmpeg: 6, duration: 72, frameSampleRate: 208, frameFlags: 316,
+			ffmpeg: 6, duration: 72, interruptCallback: 200, frameSampleRate: 208, frameFlags: 316,
 			codecParFormat: 28, codecParSampleRate: 116, channelLayout: 912,
 			codecWidth: 116, codecPixelFormat: 136, subtitleType: 72, subtitleFlags: 96,
 		},
 		{
 			name: "FFmpeg 7", versions: [3]uint32{version(59, 39, 100), version(61, 19, 100), version(61, 7, 100)},
-			ffmpeg: 7, duration: 104, frameSampleRate: 192, frameFlags: 292,
+			ffmpeg: 7, duration: 104, interruptCallback: 216, frameSampleRate: 192, frameFlags: 292,
 			codecParFormat: 44, codecParSampleRate: 152, channelLayout: 352,
 			codecWidth: 116, codecPixelFormat: 140, subtitleType: 76, subtitleFlags: 72,
 		},
 		{
 			name: "FFmpeg 8", versions: [3]uint32{version(60, 8, 100), version(62, 11, 100), version(62, 3, 100)},
-			ffmpeg: 8, duration: 104, frameSampleRate: 180, frameFlags: 276,
+			ffmpeg: 8, duration: 104, interruptCallback: 216, frameSampleRate: 180, frameFlags: 276,
 			codecParFormat: 44, codecParSampleRate: 152, channelLayout: 352,
 			codecWidth: 112, codecPixelFormat: 136, subtitleType: 76, subtitleFlags: 72,
 		},
@@ -50,6 +50,9 @@ func TestDetectSupportedLayouts(t *testing.T) {
 			}
 			if layout.FormatContext.Duration != tt.duration {
 				t.Fatalf("duration offset = %d, want %d", layout.FormatContext.Duration, tt.duration)
+			}
+			if layout.FormatContext.InterruptCallback != tt.interruptCallback {
+				t.Fatalf("interrupt_callback offset = %d, want %d", layout.FormatContext.InterruptCallback, tt.interruptCallback)
 			}
 			if layout.Frame.SampleRate != tt.frameSampleRate {
 				t.Fatalf("frame sample_rate offset = %d, want %d", layout.Frame.SampleRate, tt.frameSampleRate)

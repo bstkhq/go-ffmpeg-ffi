@@ -305,6 +305,8 @@ func NewCapture(cfg CaptureConfig) (*Decoder, error) {
 		}
 		return nil, fmt.Errorf("ffgo: failed to open capture device: %w", err)
 	}
+	d.interrupt = newDecoderInterrupt()
+	d.interrupt.attach(d.formatCtx)
 
 	// Free any remaining dictionary entries
 	if avDict != nil {
@@ -313,6 +315,7 @@ func NewCapture(cfg CaptureConfig) (*Decoder, error) {
 
 	// Find stream info
 	if err := avformat.FindStreamInfo(d.formatCtx, nil); err != nil {
+		d.interrupt.release(d.formatCtx)
 		avformat.CloseInput(&d.formatCtx)
 		return nil, fmt.Errorf("ffgo: failed to find stream info: %w", err)
 	}
@@ -561,6 +564,8 @@ func CaptureScreenWithOptions(opts ScreenCaptureOptions) (*Decoder, error) {
 		}
 		return nil, fmt.Errorf("ffgo: failed to open screen capture: %w", err)
 	}
+	d.interrupt = newDecoderInterrupt()
+	d.interrupt.attach(d.formatCtx)
 
 	// Free any remaining dictionary entries
 	if avDict != nil {
@@ -569,6 +574,7 @@ func CaptureScreenWithOptions(opts ScreenCaptureOptions) (*Decoder, error) {
 
 	// Find stream info
 	if err := avformat.FindStreamInfo(d.formatCtx, nil); err != nil {
+		d.interrupt.release(d.formatCtx)
 		avformat.CloseInput(&d.formatCtx)
 		return nil, fmt.Errorf("ffgo: failed to find stream info: %w", err)
 	}

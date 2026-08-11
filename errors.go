@@ -38,6 +38,9 @@ var (
 	// ErrDeviceEnumerationUnavailable indicates device enumeration is not available
 	// (e.g. missing shim wrappers, unsupported FFmpeg build, or platform constraints).
 	ErrDeviceEnumerationUnavailable = errors.New("ffgo: device enumeration not available")
+
+	// ErrFrameLeaseReturned indicates a copied pooled frame was used after its lease was returned.
+	ErrFrameLeaseReturned = errors.New("ffgo: frame pool lease has already been returned")
 )
 
 // Error code constants re-exported from avutil

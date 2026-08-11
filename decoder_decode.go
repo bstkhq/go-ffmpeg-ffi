@@ -4,7 +4,6 @@ package ffgo
 
 import (
 	"github.com/bstkhq/go-ffmpeg-ffi/avcodec"
-	"github.com/bstkhq/go-ffmpeg-ffi/avformat"
 	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 )
 
@@ -124,7 +123,7 @@ func (d *Decoder) readPacketLocked() (*Packet, error) {
 		return nil, nil
 	}
 
-	if err := avformat.ReadFrame(d.formatCtx, d.packet); err != nil {
+	if err := d.readInputPacketLocked(d.packet); err != nil {
 		if avutil.IsEOF(err) {
 			d.demuxEOF = true
 			return nil, nil

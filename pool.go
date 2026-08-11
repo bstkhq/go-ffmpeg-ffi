@@ -4,13 +4,14 @@ package ffgo
 
 import (
 	"errors"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"unsafe"
 
-	"github.com/ebitengine/purego"
 	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/handles"
+	"github.com/ebitengine/purego"
 )
 
 // FramePool reuses AVFrame allocations to reduce GC/FFmpeg allocation churn.
@@ -22,6 +23,11 @@ type FramePool struct {
 	closed   bool
 	inUse    int
 	maxInUse int
+}
+
+type framePoolLease struct {
+	pool     *FramePool
+	returned atomic.Bool
 }
 
 // NewFramePool creates a new pool. If maxInUse <= 0, the pool is unbounded.
@@ -55,7 +61,11 @@ func (p *FramePool) Get() (Frame, error) {
 
 	avutil.FrameUnref(fr)
 	p.inUse++
-	return Frame{ptr: fr, owned: true}, nil
+	return Frame{
+		ptr:       fr,
+		owned:     true,
+		poolLease: &framePoolLease{pool: p},
+	}, nil
 }
 
 // Put returns an owned frame to the pool and clears the caller's reference.
@@ -69,24 +79,35 @@ func (p *FramePool) Put(f *Frame) error {
 	if !f.owned {
 		return errors.New("ffgo: cannot put borrowed frame into pool")
 	}
+	if f.poolLease == nil || f.poolLease.pool != p {
+		return errors.New("ffgo: frame was not leased by this pool")
+	}
+	if !f.poolLease.returned.CompareAndSwap(false, true) {
+		return ErrFrameLeaseReturned
+	}
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.inUse <= 0 {
+		return errors.New("ffgo: frame pool lease accounting underflow")
+	}
+	p.inUse--
 
 	if p.closed {
 		// Pool is closed: free the frame.
 		avutil.FrameFree(&f.ptr)
 		f.ptr = nil
 		f.owned = false
+		f.poolLease = nil
 		return nil
 	}
 
 	avutil.FrameUnref(f.ptr)
 	p.idle = append(p.idle, f.ptr)
-	p.inUse--
 
 	f.ptr = nil
 	f.owned = false
+	f.poolLease = nil
 	return nil
 }
 
@@ -140,30 +161,37 @@ func WrappedBufferMemoryUsage() WrappedBufferUsage {
 
 func initWrapCallback() {
 	wrapOnce.Do(func() {
-		wrapFreeCBPtr = purego.NewCallback(func(_ purego.CDecl, opaque uintptr, _ *byte) {
-			h := opaque
-			v := handles.Lookup(h)
-			if v == nil {
-				return
-			}
-			ent := v.(wrappedBufferHold)
-			handles.Unregister(h)
-			wrapPinnedBytes.Add(-ent.size)
-			wrapPinnedCount.Add(-1)
-		})
+		wrapFreeCBPtr = purego.NewCallback(wrappedBufferFreeCallback)
 	})
 }
 
+func wrappedBufferFreeCallback(_ purego.CDecl, opaque uintptr, _ *byte) {
+	// A panic must never unwind through FFmpeg's native stack.
+	defer func() { _ = recover() }()
+
+	v := handles.Take(opaque)
+	ent, ok := v.(wrappedBufferHold)
+	if !ok {
+		return
+	}
+	wrapPinnedBytes.Add(-ent.size)
+	wrapPinnedCount.Add(-1)
+	ent.pinner.Unpin()
+	runtime.KeepAlive(ent.data)
+}
+
 type wrappedBufferHold struct {
-	data []byte
-	size int64
+	data   []byte
+	size   int64
+	pinner *runtime.Pinner
 }
 
 // WrapBuffer wraps an existing buffer as a video frame without copying.
 //
-// The buffer is reference-counted by FFmpeg via AVBufferRef. The caller must keep using the frame
-// only until it is freed (Frame.Free / FrameFree). The underlying []byte is kept alive internally
-// until FFmpeg releases the AVBufferRef.
+// The buffer is reference-counted by FFmpeg via AVBufferRef. Its backing array
+// is pinned until FFmpeg releases the final reference. The caller must not
+// resize, reuse, or mutate data concurrently with native access and must release
+// the frame with Frame.Free or FrameFree.
 //
 // Supported formats:
 // - PixelFormatRGB24
@@ -173,6 +201,9 @@ type wrappedBufferHold struct {
 func (f *Frame) WrapBuffer(data []byte, width, height int, format PixelFormat) error {
 	if f == nil {
 		return errors.New("ffgo: frame is nil")
+	}
+	if err := f.poolLeaseError(); err != nil {
+		return err
 	}
 	if f.ptr != nil && !f.owned {
 		return errors.New("ffgo: cannot WrapBuffer into a borrowed frame")
@@ -215,13 +246,17 @@ func (f *Frame) WrapBuffer(data []byte, width, height int, format PixelFormat) e
 	avutil.FrameUnref(f.ptr)
 
 	// Keep the backing []byte alive until FFmpeg releases the AVBufferRef.
-	h := handles.Register(wrappedBufferHold{data: data[:need], size: int64(need)})
+	pinner := new(runtime.Pinner)
+	pinner.Pin(&data[0])
+	h := handles.Register(wrappedBufferHold{data: data[:need], size: int64(need), pinner: pinner})
 	wrapPinnedBytes.Add(int64(need))
 	wrapPinnedCount.Add(1)
 
-	bufRef := avutil.BufferCreate(unsafe.Pointer(&data[0]), need, wrapFreeCBPtr, unsafe.Pointer(h), 0)
+	bufRef := avutil.BufferCreate(unsafe.Pointer(&data[0]), need, wrapFreeCBPtr, h, 0)
 	if bufRef == nil {
-		handles.Unregister(h)
+		if hold, ok := handles.Take(h).(wrappedBufferHold); ok {
+			hold.pinner.Unpin()
+		}
 		wrapPinnedBytes.Add(-int64(need))
 		wrapPinnedCount.Add(-1)
 		return errors.New("ffgo: av_buffer_create failed")

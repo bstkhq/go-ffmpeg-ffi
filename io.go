@@ -3,21 +3,28 @@
 package ffgo
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"io"
 	"sync"
 	"unsafe"
 
-	"github.com/ebitengine/purego"
 	"github.com/bstkhq/go-ffmpeg-ffi/avcodec"
 	"github.com/bstkhq/go-ffmpeg-ffi/avformat"
 	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/bindings"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/handles"
+	"github.com/ebitengine/purego"
 )
 
 // IOCallbacks provides custom I/O operations for reading and writing media.
+// Callback implementations must be safe to invoke from FFmpeg-owned threads.
 type IOCallbacks struct {
+	// ReadContext is the cancellation-aware form of Read. When set, it is
+	// preferred over Read and receives the context for the active FFmpeg operation.
+	ReadContext func(ctx context.Context, buf []byte) (int, error)
+
 	// Read reads up to len(buf) bytes into buf.
 	// Returns the number of bytes read and any error encountered.
 	// At end of file, returns 0, io.EOF.
@@ -27,31 +34,62 @@ type IOCallbacks struct {
 	// demuxable bytes are available or return io.EOF when the source is closed.
 	// Do not return 0, nil to mean "no data yet"; that gives FFmpeg no forward
 	// progress during probing.
+	//
+	// Read cannot be force-canceled while it is blocked. Use ReadContext for
+	// sources that must unblock promptly when an operation or decoder is closed.
 	Read func(buf []byte) (int, error)
+
+	// WriteContext is the cancellation-aware form of Write. When set, it is
+	// preferred over Write and receives the context for the active FFmpeg operation.
+	WriteContext func(ctx context.Context, buf []byte) (int, error)
 
 	// Write writes len(buf) bytes from buf.
 	// Returns the number of bytes written and any error encountered.
+	// Use WriteContext when a blocked write must support cancellation.
 	Write func(buf []byte) (int, error)
+
+	// SeekContext is the cancellation-aware form of Seek. When set, it is
+	// preferred over Seek and receives the context for the active FFmpeg operation.
+	SeekContext func(ctx context.Context, offset int64, whence int) (int64, error)
 
 	// Seek seeks to the given offset.
 	// whence: 0 = SEEK_SET, 1 = SEEK_CUR, 2 = SEEK_END
 	// Returns the new offset and any error encountered.
+	// Use SeekContext when a blocked seek must support cancellation.
 	Seek func(offset int64, whence int) (int64, error)
 }
 
 // CustomIOContext wraps an AVIOContext with custom callbacks.
 type CustomIOContext struct {
-	mu        sync.Mutex
-	avioCtx   avformat.IOContext
-	buffer    unsafe.Pointer // Allocated with av_malloc, owned by FFmpeg
-	bufferGo  []byte         // Go slice view of buffer (for callbacks)
-	callbacks *IOCallbacks
-	handle    uintptr
-	closed    bool
+	mu             sync.Mutex
+	errorMu        sync.Mutex
+	contextMu      sync.RWMutex
+	callbackMu     sync.Mutex
+	callbackCond   *sync.Cond
+	activeCallback int
+	callbacksDone  bool
+	avioCtx        avformat.IOContext
+	buffer         unsafe.Pointer // Allocated with av_malloc, owned by FFmpeg
+	bufferGo       []byte         // Go slice view of buffer (for callbacks)
+	callbacks      *IOCallbacks
+	handle         uintptr
+	callbackErr    error
+	pendingReadErr error
+	lifetimeCtx    context.Context
+	lifetimeCancel context.CancelFunc
+	operationCtx   context.Context
+	operationEnd   context.CancelFunc
+	stopLifetime   func() bool
+	closed         bool
 }
 
 // Default buffer size for custom I/O (32KB)
 const defaultIOBufferSize = 32 * 1024
+
+const (
+	avSeekSize  int32 = 0x10000
+	avSeekForce int32 = 0x20000
+)
 
 // Pre-registered callbacks to avoid hitting purego's callback limit.
 // These are registered once and reused across all CustomIOContext instances.
@@ -66,95 +104,369 @@ var (
 func initIOCallbacks() error {
 	ioCallbacksOnce.Do(func() {
 		// Read callback: int read_packet(void *opaque, uint8_t *buf, int buf_size)
-		readCallbackPtr = purego.NewCallback(func(_ purego.CDecl, opaque uintptr, buf *byte, bufSize int32) int32 {
-			ctx := handles.Lookup(opaque)
-			if ctx == nil {
-				return -1
-			}
-			ioCtx := ctx.(*CustomIOContext)
-			if ioCtx.callbacks == nil || ioCtx.callbacks.Read == nil {
-				return -1
-			}
-
-			// Create Go slice from C buffer
-			goBuf := unsafe.Slice(buf, bufSize)
-
-			n, err := ioCtx.callbacks.Read(goBuf)
-			if err != nil {
-				if err == io.EOF {
-					if n > 0 {
-						return int32(n)
-					}
-					return avutil.AVERROR_EOF
-				}
-				return -1
-			}
-			return int32(n)
-		})
+		readCallbackPtr = purego.NewCallback(customIOReadCallback)
 
 		// Write callback: int write_packet(void *opaque, uint8_t *buf, int buf_size)
-		writeCallbackPtr = purego.NewCallback(func(_ purego.CDecl, opaque uintptr, buf *byte, bufSize int32) int32 {
-			ctx := handles.Lookup(opaque)
-			if ctx == nil {
-				return -1
-			}
-			ioCtx := ctx.(*CustomIOContext)
-			if ioCtx.callbacks == nil || ioCtx.callbacks.Write == nil {
-				return -1
-			}
-
-			// Create Go slice from C buffer
-			goBuf := unsafe.Slice(buf, bufSize)
-
-			n, err := ioCtx.callbacks.Write(goBuf)
-			if err != nil {
-				return -1
-			}
-			return int32(n)
-		})
+		writeCallbackPtr = purego.NewCallback(customIOWriteCallback)
 
 		// Seek callback: int64_t seek(void *opaque, int64_t offset, int whence)
-		seekCallbackPtr = purego.NewCallback(func(_ purego.CDecl, opaque uintptr, offset int64, whence int32) int64 {
-			ctx := handles.Lookup(opaque)
-			if ctx == nil {
-				return -1
-			}
-			ioCtx := ctx.(*CustomIOContext)
-			if ioCtx.callbacks == nil || ioCtx.callbacks.Seek == nil {
-				// If no seek callback but whence is AVSEEK_SIZE, return -1 (unknown size)
-				if whence == 0x10000 { // AVSEEK_SIZE
-					return -1
-				}
-				return -1
-			}
-
-			// Handle AVSEEK_SIZE request
-			if whence == 0x10000 { // AVSEEK_SIZE
-				// Try to get size by seeking to end and back
-				current, err := ioCtx.callbacks.Seek(0, io.SeekCurrent)
-				if err != nil {
-					return -1
-				}
-				end, err := ioCtx.callbacks.Seek(0, io.SeekEnd)
-				if err != nil {
-					return -1
-				}
-				_, err = ioCtx.callbacks.Seek(current, io.SeekStart)
-				if err != nil {
-					return -1
-				}
-				return end
-			}
-
-			newPos, err := ioCtx.callbacks.Seek(offset, int(whence))
-			if err != nil {
-				return -1
-			}
-			return newPos
-		})
+		seekCallbackPtr = purego.NewCallback(customIOSeekCallback)
 	})
 
 	return ioCallbacksInitErr
+}
+
+func lookupCustomIOContext(opaque uintptr) *CustomIOContext {
+	ctx, _ := handles.Lookup(opaque).(*CustomIOContext)
+	return ctx
+}
+
+func customIOReadCallback(_ purego.CDecl, opaque uintptr, buf *byte, bufSize int32) (result int32) {
+	result = avutil.AVERROR_EXTERNAL
+	ctx := lookupCustomIOContext(opaque)
+	if ctx == nil {
+		return result
+	}
+	defer func() {
+		if value := recover(); value != nil {
+			ctx.recordCallbackError("read", callbackPanicError(value))
+			result = avutil.AVERROR_EXTERNAL
+		}
+	}()
+	if !ctx.beginCallback() {
+		return result
+	}
+	defer ctx.endCallback()
+
+	if err := ctx.takePendingReadError(); err != nil {
+		if errors.Is(err, io.EOF) {
+			return avutil.AVERROR_EOF
+		}
+		ctx.recordCallbackError("read", err)
+		return result
+	}
+	if buf == nil || bufSize <= 0 {
+		ctx.recordCallbackError("read", errors.New("invalid destination buffer"))
+		return result
+	}
+	if ctx.callbacks == nil || (ctx.callbacks.ReadContext == nil && ctx.callbacks.Read == nil) {
+		ctx.recordCallbackError("read", errors.New("callback is not configured"))
+		return result
+	}
+
+	goBuffer := unsafe.Slice(buf, int(bufSize))
+	var n int
+	var err error
+	if ctx.callbacks.ReadContext != nil {
+		n, err = ctx.callbacks.ReadContext(ctx.callbackContext(), goBuffer)
+	} else {
+		n, err = ctx.callbacks.Read(goBuffer)
+	}
+	if n < 0 || n > int(bufSize) {
+		ctx.recordCallbackError("read", errors.Join(errors.New("invalid byte count"), err))
+		return result
+	}
+	if n > 0 {
+		if err != nil {
+			ctx.setPendingReadError(err)
+		}
+		return int32(n)
+	}
+	if errors.Is(err, io.EOF) {
+		return avutil.AVERROR_EOF
+	}
+	if err == nil {
+		err = io.ErrNoProgress
+	}
+	ctx.recordCallbackError("read", err)
+	return result
+}
+
+func customIOWriteCallback(_ purego.CDecl, opaque uintptr, buf *byte, bufSize int32) (result int32) {
+	result = avutil.AVERROR_EXTERNAL
+	ctx := lookupCustomIOContext(opaque)
+	if ctx == nil {
+		return result
+	}
+	defer func() {
+		if value := recover(); value != nil {
+			ctx.recordCallbackError("write", callbackPanicError(value))
+			result = avutil.AVERROR_EXTERNAL
+		}
+	}()
+	if !ctx.beginCallback() {
+		return result
+	}
+	defer ctx.endCallback()
+
+	if buf == nil || bufSize <= 0 {
+		ctx.recordCallbackError("write", errors.New("invalid source buffer"))
+		return result
+	}
+	if ctx.callbacks == nil || (ctx.callbacks.WriteContext == nil && ctx.callbacks.Write == nil) {
+		ctx.recordCallbackError("write", errors.New("callback is not configured"))
+		return result
+	}
+
+	goBuffer := unsafe.Slice(buf, int(bufSize))
+	var n int
+	var err error
+	if ctx.callbacks.WriteContext != nil {
+		n, err = ctx.callbacks.WriteContext(ctx.callbackContext(), goBuffer)
+	} else {
+		n, err = ctx.callbacks.Write(goBuffer)
+	}
+	if n < 0 || n > int(bufSize) {
+		ctx.recordCallbackError("write", errors.Join(errors.New("invalid byte count"), err))
+		return result
+	}
+	if err != nil {
+		ctx.recordCallbackError("write", err)
+		if n < int(bufSize) {
+			return result
+		}
+	}
+	if n != int(bufSize) {
+		ctx.recordCallbackError("write", io.ErrShortWrite)
+		return result
+	}
+	return int32(n)
+}
+
+func customIOSeekCallback(_ purego.CDecl, opaque uintptr, offset int64, whence int32) (result int64) {
+	result = int64(avutil.AVERROR_EXTERNAL)
+	ctx := lookupCustomIOContext(opaque)
+	if ctx == nil {
+		return result
+	}
+	defer func() {
+		if value := recover(); value != nil {
+			ctx.recordCallbackError("seek", callbackPanicError(value))
+			result = int64(avutil.AVERROR_EXTERNAL)
+		}
+	}()
+	if !ctx.beginCallback() {
+		return result
+	}
+	defer ctx.endCallback()
+
+	if ctx.callbacks == nil || (ctx.callbacks.SeekContext == nil && ctx.callbacks.Seek == nil) {
+		return -1
+	}
+	seek := func(offset int64, whence int) (int64, error) {
+		if ctx.callbacks.SeekContext != nil {
+			return ctx.callbacks.SeekContext(ctx.callbackContext(), offset, whence)
+		}
+		return ctx.callbacks.Seek(offset, whence)
+	}
+	if whence&avSeekSize != 0 {
+		current, err := seek(0, io.SeekCurrent)
+		if err != nil {
+			ctx.recordCallbackError("seek", err)
+			return result
+		}
+		end, err := seek(0, io.SeekEnd)
+		if err != nil {
+			ctx.recordCallbackError("seek", err)
+			return result
+		}
+		if _, err := seek(current, io.SeekStart); err != nil {
+			ctx.recordCallbackError("seek", err)
+			return result
+		}
+		return end
+	}
+
+	newPosition, err := seek(offset, int(whence&^avSeekForce))
+	if err != nil {
+		ctx.recordCallbackError("seek", err)
+		return result
+	}
+	return newPosition
+}
+
+func callbackPanicError(value any) error {
+	if err, ok := value.(error); ok {
+		return fmt.Errorf("panic: %w", err)
+	}
+	return fmt.Errorf("panic: %v", value)
+}
+
+func (c *CustomIOContext) recordCallbackError(operation string, err error) {
+	if err == nil {
+		return
+	}
+	c.errorMu.Lock()
+	defer c.errorMu.Unlock()
+	if c.callbackErr == nil {
+		c.callbackErr = fmt.Errorf("ffgo: custom I/O %s callback: %w", operation, err)
+	}
+}
+
+func (c *CustomIOContext) setPendingReadError(err error) {
+	c.errorMu.Lock()
+	c.pendingReadErr = err
+	c.errorMu.Unlock()
+}
+
+func (c *CustomIOContext) takePendingReadError() error {
+	c.errorMu.Lock()
+	defer c.errorMu.Unlock()
+	err := c.pendingReadErr
+	c.pendingReadErr = nil
+	return err
+}
+
+func (c *CustomIOContext) beginOperation() {
+	c.beginOperationContext(context.Background())
+}
+
+func (c *CustomIOContext) beginOperationContext(ctx context.Context) {
+	c.endOperation()
+	c.ensureLifetimeContext()
+	c.errorMu.Lock()
+	c.callbackErr = nil
+	c.errorMu.Unlock()
+
+	operationCtx, operationEnd := context.WithCancel(ctx)
+	stopLifetime := context.AfterFunc(c.lifetimeCtx, operationEnd)
+	c.contextMu.Lock()
+	c.operationCtx = operationCtx
+	c.operationEnd = operationEnd
+	c.stopLifetime = stopLifetime
+	c.contextMu.Unlock()
+}
+
+func (c *CustomIOContext) finishOperation(nativeErr error) error {
+	c.errorMu.Lock()
+	callbackErr := c.callbackErr
+	c.callbackErr = nil
+	c.errorMu.Unlock()
+	c.endOperation()
+	return errors.Join(nativeErr, callbackErr)
+}
+
+func (c *CustomIOContext) callbackContext() context.Context {
+	c.contextMu.RLock()
+	ctx := c.operationCtx
+	c.contextMu.RUnlock()
+	if ctx != nil {
+		return ctx
+	}
+	if c.lifetimeCtx == nil {
+		return context.Background()
+	}
+	return c.lifetimeCtx
+}
+
+func (c *CustomIOContext) ensureLifetimeContext() {
+	c.contextMu.Lock()
+	defer c.contextMu.Unlock()
+	if c.lifetimeCtx == nil {
+		c.lifetimeCtx, c.lifetimeCancel = context.WithCancel(context.Background())
+	}
+}
+
+func (c *CustomIOContext) endOperation() {
+	c.contextMu.Lock()
+	operationEnd := c.operationEnd
+	stopLifetime := c.stopLifetime
+	c.operationCtx = nil
+	c.operationEnd = nil
+	c.stopLifetime = nil
+	c.contextMu.Unlock()
+	if stopLifetime != nil {
+		stopLifetime()
+	}
+	if operationEnd != nil {
+		operationEnd()
+	}
+}
+
+func (c *CustomIOContext) cancelPending() {
+	if c != nil && c.lifetimeCancel != nil {
+		c.lifetimeCancel()
+	}
+}
+
+func (c *CustomIOContext) resetCancellation() {
+	c.contextMu.Lock()
+	if c.lifetimeCancel != nil {
+		c.lifetimeCancel()
+	}
+	c.lifetimeCtx, c.lifetimeCancel = context.WithCancel(context.Background())
+	c.contextMu.Unlock()
+}
+
+func (c *CustomIOContext) beginCallback() bool {
+	c.callbackMu.Lock()
+	defer c.callbackMu.Unlock()
+	if c.callbacksDone {
+		return false
+	}
+	c.activeCallback++
+	return true
+}
+
+func (c *CustomIOContext) endCallback() {
+	c.callbackMu.Lock()
+	c.activeCallback--
+	if c.activeCallback == 0 && c.callbackCond != nil {
+		c.callbackCond.Broadcast()
+	}
+	c.callbackMu.Unlock()
+}
+
+func (c *CustomIOContext) waitForCallbacks() {
+	c.callbackMu.Lock()
+	c.callbacksDone = true
+	if c.callbackCond == nil {
+		c.callbackCond = sync.NewCond(&c.callbackMu)
+	}
+	for c.activeCallback > 0 {
+		c.callbackCond.Wait()
+	}
+	c.callbackMu.Unlock()
+}
+
+func (d *Decoder) readInputPacketLocked(packet avcodec.Packet) error {
+	if d.customIO == nil {
+		return avformat.ReadFrame(d.formatCtx, packet)
+	}
+	d.customIO.beginOperationContext(d.interruptContext())
+	return d.customIO.finishOperation(avformat.ReadFrame(d.formatCtx, packet))
+}
+
+func (d *Decoder) seekInputLocked(streamIndex int32, timestamp int64, flags int32) error {
+	if d.customIO == nil {
+		return avformat.SeekFrame(d.formatCtx, streamIndex, timestamp, flags)
+	}
+	d.customIO.beginOperationContext(d.interruptContext())
+	return d.customIO.finishOperation(avformat.SeekFrame(d.formatCtx, streamIndex, timestamp, flags))
+}
+
+func (e *Encoder) writeOutputHeaderLocked(options *avutil.Dictionary) error {
+	if e.customIO == nil {
+		return avformat.WriteHeader(e.formatCtx, options)
+	}
+	e.customIO.beginOperation()
+	return e.customIO.finishOperation(avformat.WriteHeader(e.formatCtx, options))
+}
+
+func (e *Encoder) writeOutputPacketLocked(packet avcodec.Packet) error {
+	if e.customIO == nil {
+		return avformat.InterleavedWriteFrame(e.formatCtx, packet)
+	}
+	e.customIO.beginOperation()
+	return e.customIO.finishOperation(avformat.InterleavedWriteFrame(e.formatCtx, packet))
+}
+
+func (e *Encoder) writeOutputTrailerLocked() error {
+	if e.customIO == nil {
+		return avformat.WriteTrailer(e.formatCtx)
+	}
+	e.customIO.beginOperation()
+	return e.customIO.finishOperation(avformat.WriteTrailer(e.formatCtx))
 }
 
 // NewCustomIOContext creates a new custom I/O context with the given callbacks.
@@ -167,11 +479,14 @@ func NewCustomIOContextWithSize(callbacks *IOCallbacks, writable bool, bufferSiz
 	if callbacks == nil {
 		return nil, errors.New("ffgo: callbacks cannot be nil")
 	}
-	if !writable && callbacks.Read == nil {
+	if !writable && callbacks.ReadContext == nil && callbacks.Read == nil {
 		return nil, errors.New("ffgo: read callback required for readable I/O context")
 	}
-	if writable && callbacks.Write == nil {
+	if writable && callbacks.WriteContext == nil && callbacks.Write == nil {
 		return nil, errors.New("ffgo: write callback required for writable I/O context")
+	}
+	if bufferSize <= 0 {
+		return nil, errors.New("ffgo: I/O buffer size must be positive")
 	}
 
 	// Ensure FFmpeg is loaded
@@ -190,10 +505,13 @@ func NewCustomIOContextWithSize(callbacks *IOCallbacks, writable bool, bufferSiz
 		return nil, errors.New("ffgo: failed to allocate I/O buffer")
 	}
 
+	lifetimeCtx, lifetimeCancel := context.WithCancel(context.Background())
 	ctx := &CustomIOContext{
-		buffer:    buffer,
-		bufferGo:  unsafe.Slice((*byte)(buffer), bufferSize),
-		callbacks: callbacks,
+		buffer:         buffer,
+		bufferGo:       unsafe.Slice((*byte)(buffer), bufferSize),
+		callbacks:      callbacks,
+		lifetimeCtx:    lifetimeCtx,
+		lifetimeCancel: lifetimeCancel,
 	}
 
 	// Register handle for callback lookup
@@ -201,13 +519,13 @@ func NewCustomIOContextWithSize(callbacks *IOCallbacks, writable bool, bufferSiz
 
 	// Determine which callbacks to use
 	var readCb, writeCb, seekCb uintptr
-	if callbacks.Read != nil {
+	if callbacks.ReadContext != nil || callbacks.Read != nil {
 		readCb = readCallbackPtr
 	}
-	if callbacks.Write != nil {
+	if callbacks.WriteContext != nil || callbacks.Write != nil {
 		writeCb = writeCallbackPtr
 	}
-	if callbacks.Seek != nil {
+	if callbacks.SeekContext != nil || callbacks.Seek != nil {
 		seekCb = seekCallbackPtr
 	}
 
@@ -216,7 +534,7 @@ func NewCustomIOContextWithSize(callbacks *IOCallbacks, writable bool, bufferSiz
 		buffer,
 		bufferSize,
 		writable,
-		unsafe.Pointer(ctx.handle),
+		ctx.handle,
 		readCb,
 		writeCb,
 		seekCb,
@@ -231,9 +549,12 @@ func NewCustomIOContextWithSize(callbacks *IOCallbacks, writable bool, bufferSiz
 	return ctx, nil
 }
 
-// Close releases the I/O context.
+// Close releases the I/O context. It cancels context-aware callbacks and waits
+// for active callback trampolines before releasing native memory.
 // Note: avio_context_free also frees the buffer, so we don't free it manually.
 func (c *CustomIOContext) Close() error {
+	c.cancelPending()
+	c.waitForCallbacks()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -250,6 +571,11 @@ func (c *CustomIOContext) Close() error {
 	// Clear buffer references (buffer is freed by IOContextFree)
 	c.buffer = nil
 	c.bufferGo = nil
+	c.callbacks = nil
+	c.errorMu.Lock()
+	c.callbackErr = nil
+	c.pendingReadErr = nil
+	c.errorMu.Unlock()
 
 	// Unregister handle
 	if c.handle != 0 {
@@ -275,7 +601,12 @@ func (c *CustomIOContext) AVIOContext() avformat.IOContext {
 // first (for example into Annex B H.264/H.265 access units) and pass the
 // corresponding format hint such as "h264" or "hevc".
 func NewDecoderFromIO(callbacks *IOCallbacks, format string) (*Decoder, error) {
-	return NewDecoderFromIOWithOptions(callbacks, &DecoderOptions{Format: format})
+	return NewDecoderFromIOContext(context.Background(), callbacks, format)
+}
+
+// NewDecoderFromIOContext creates a decoder with custom I/O and cancellation.
+func NewDecoderFromIOContext(ctx context.Context, callbacks *IOCallbacks, format string) (*Decoder, error) {
+	return NewDecoderFromIOWithOptionsContext(ctx, callbacks, &DecoderOptions{Format: format})
 }
 
 // NewDecoderFromIOWithOptions creates a decoder with custom I/O and DecoderOptions.
@@ -286,18 +617,35 @@ func NewDecoderFromIO(callbacks *IOCallbacks, format string) (*Decoder, error) {
 // therefore needs enough valid input bytes to identify the stream before it can
 // return a Decoder.
 func NewDecoderFromIOWithOptions(callbacks *IOCallbacks, opts *DecoderOptions) (*Decoder, error) {
+	return NewDecoderFromIOWithOptionsContext(context.Background(), callbacks, opts)
+}
+
+// NewDecoderFromIOWithOptionsContext creates a decoder with custom I/O, options, and cancellation.
+func NewDecoderFromIOWithOptionsContext(ctx context.Context, callbacks *IOCallbacks, opts *DecoderOptions) (*Decoder, error) {
+	if ctx == nil {
+		return nil, errors.New("ffgo: context cannot be nil")
+	}
 	// Create custom I/O context
 	ioCtx, err := NewCustomIOContext(callbacks, false)
 	if err != nil {
 		return nil, err
 	}
+	interrupt := newDecoderInterrupt()
+	if err := interrupt.begin(ctx); err != nil {
+		interrupt.release(nil)
+		_ = ioCtx.Close()
+		return nil, err
+	}
+	defer interrupt.clear()
 
 	// Allocate format context
 	formatCtx := avformat.AllocContext()
 	if formatCtx == nil {
-		ioCtx.Close()
+		interrupt.release(nil)
+		_ = ioCtx.Close()
 		return nil, errors.New("ffgo: failed to allocate format context")
 	}
+	interrupt.attach(formatCtx)
 
 	// Set custom I/O
 	avformat.SetIOContext(formatCtx, ioCtx.AVIOContext())
@@ -310,7 +658,8 @@ func NewDecoderFromIOWithOptions(callbacks *IOCallbacks, opts *DecoderOptions) (
 	if opts != nil && opts.Format != "" {
 		inputFmt = avformat.FindInputFormat(opts.Format)
 		if inputFmt == nil {
-			ioCtx.Close()
+			interrupt.release(formatCtx)
+			_ = ioCtx.Close()
 			avformat.FreeContext(formatCtx)
 			return nil, errors.New("ffgo: input format not found")
 		}
@@ -326,19 +675,24 @@ func NewDecoderFromIOWithOptions(callbacks *IOCallbacks, opts *DecoderOptions) (
 			if avDict != nil {
 				avutil.DictFree(&avDict)
 			}
-			ioCtx.Close()
+			interrupt.release(formatCtx)
+			_ = ioCtx.Close()
 			avformat.FreeContext(formatCtx)
 			return nil, err
 		}
 	}
 
 	// Open input with custom I/O (pass empty string since we have custom I/O)
-	if err := avformat.OpenInput(&formatCtx, "", inputFmt, &avDict); err != nil {
+	ioCtx.beginOperationContext(ctx)
+	if err := interrupt.finish(ioCtx.finishOperation(avformat.OpenInput(&formatCtx, "", inputFmt, &avDict))); err != nil {
 		if avDict != nil {
 			avutil.DictFree(&avDict)
 		}
-		ioCtx.Close()
-		avformat.FreeContext(formatCtx)
+		interrupt.release(formatCtx)
+		_ = ioCtx.Close()
+		if formatCtx != nil {
+			avformat.FreeContext(formatCtx)
+		}
 		return nil, err
 	}
 
@@ -348,9 +702,11 @@ func NewDecoderFromIOWithOptions(callbacks *IOCallbacks, opts *DecoderOptions) (
 	}
 
 	// Find stream info
-	if err := avformat.FindStreamInfo(formatCtx, nil); err != nil {
+	ioCtx.beginOperationContext(ctx)
+	if err := interrupt.finish(ioCtx.finishOperation(avformat.FindStreamInfo(formatCtx, nil))); err != nil {
+		interrupt.release(formatCtx)
 		avformat.CloseInput(&formatCtx)
-		ioCtx.Close()
+		_ = ioCtx.Close()
 		return nil, err
 	}
 
@@ -358,6 +714,7 @@ func NewDecoderFromIOWithOptions(callbacks *IOCallbacks, opts *DecoderOptions) (
 		formatCtx:      formatCtx,
 		videoStreamIdx: -1,
 		audioStreamIdx: -1,
+		interrupt:      interrupt,
 	}
 
 	// Ensure the custom I/O stays alive and is cleaned up.
@@ -379,7 +736,6 @@ func NewDecoderFromIOWithOptions(callbacks *IOCallbacks, opts *DecoderOptions) (
 	d.packet = avcodec.PacketAlloc()
 	if d.packet == nil {
 		d.Close()
-		ioCtx.Close()
 		return nil, errors.New("ffgo: failed to allocate packet")
 	}
 
@@ -396,6 +752,11 @@ func NewDecoderFromIOWithOptions(callbacks *IOCallbacks, opts *DecoderOptions) (
 // If r implements io.Seeker, seeking will be supported.
 // format is the format hint (e.g., "mp4", "mkv") - can be empty for auto-detection.
 func NewDecoderFromReader(r io.Reader, format string) (*Decoder, error) {
+	return NewDecoderFromReaderContext(context.Background(), r, format)
+}
+
+// NewDecoderFromReaderContext creates a decoder from an io.Reader with cancellation.
+func NewDecoderFromReaderContext(ctx context.Context, r io.Reader, format string) (*Decoder, error) {
 	if r == nil {
 		return nil, errors.New("ffgo: reader cannot be nil")
 	}
@@ -413,12 +774,17 @@ func NewDecoderFromReader(r io.Reader, format string) (*Decoder, error) {
 		}
 	}
 
-	return NewDecoderFromIO(callbacks, format)
+	return NewDecoderFromIOContext(ctx, callbacks, format)
 }
 
 // NewDecoderFromReaderWithOptions creates a decoder that reads from an io.Reader using DecoderOptions.
 // If r implements io.Seeker, seeking will be supported.
 func NewDecoderFromReaderWithOptions(r io.Reader, opts *DecoderOptions) (*Decoder, error) {
+	return NewDecoderFromReaderWithOptionsContext(context.Background(), r, opts)
+}
+
+// NewDecoderFromReaderWithOptionsContext creates a decoder from an io.Reader with options and cancellation.
+func NewDecoderFromReaderWithOptionsContext(ctx context.Context, r io.Reader, opts *DecoderOptions) (*Decoder, error) {
 	if r == nil {
 		return nil, errors.New("ffgo: reader cannot be nil")
 	}
@@ -435,7 +801,7 @@ func NewDecoderFromReaderWithOptions(r io.Reader, opts *DecoderOptions) (*Decode
 		}
 	}
 
-	return NewDecoderFromIOWithOptions(callbacks, opts)
+	return NewDecoderFromIOWithOptionsContext(ctx, callbacks, opts)
 }
 
 // NewEncoderToWriter creates an encoder that writes to an io.Writer.
@@ -534,6 +900,7 @@ func NewEncoderFromIO(callbacks *IOCallbacks, format string, config EncoderConfi
 
 	// Set custom I/O
 	avformat.SetIOContext(formatCtx, ioCtx.AVIOContext())
+	avformat.AddFlags(formatCtx, avformat.AVFMT_FLAG_CUSTOM_IO)
 
 	// Create a new stream in the output container
 	stream := avformat.NewStream(formatCtx, nil)
@@ -612,7 +979,8 @@ func NewEncoderFromIO(callbacks *IOCallbacks, format string, config EncoderConfi
 	}
 
 	// Write header
-	if err := avformat.WriteHeader(formatCtx, nil); err != nil {
+	ioCtx.beginOperation()
+	if err := ioCtx.finishOperation(avformat.WriteHeader(formatCtx, nil)); err != nil {
 		avcodec.FreeContext(&codecCtx)
 		avformat.FreeContext(formatCtx)
 		ioCtx.Close()
@@ -636,6 +1004,11 @@ func NewEncoderFromIO(callbacks *IOCallbacks, format string, config EncoderConfi
 
 	return &Encoder{
 		formatCtx:     formatCtx,
+		ioCtx:         ioCtx.AVIOContext(),
+		customIO:      ioCtx,
+		videoCodecCtx: codecCtx,
+		videoStream:   stream,
+		videoPacket:   packet,
 		codecCtx:      codecCtx,
 		stream:        stream,
 		packet:        packet,
@@ -646,5 +1019,6 @@ func NewEncoderFromIO(callbacks *IOCallbacks, format string, config EncoderConfi
 		timeBaseNum:   1,
 		timeBaseDen:   int32(frameRate),
 		headerWritten: true, // Header was already written above
+		hasVideo:      true,
 	}, nil
 }

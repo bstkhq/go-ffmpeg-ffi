@@ -95,7 +95,7 @@ func readProbeOutput() (map[string]uintptr, error) {
 }
 
 func expectedOffsets(layout abi.Layout) map[string]uintptr {
-	return map[string]uintptr{
+	offsets := map[string]uintptr{
 		"AVFrame.data":                     layout.Frame.Data,
 		"AVFrame.linesize":                 layout.Frame.Linesize,
 		"AVFrame.extended_data":            layout.Frame.ExtendedData,
@@ -207,4 +207,6 @@ func expectedOffsets(layout abi.Layout) map[string]uintptr {
 		"AVSubtitleRect.text":              layout.SubtitleRect.Text,
 		"AVSubtitleRect.ass":               layout.SubtitleRect.ASS,
 	}
+	offsets["AVFormatContext.interrupt_callback"] = layout.FormatContext.InterruptCallback
+	return offsets
 }

@@ -25,7 +25,7 @@ func (d *Decoder) SeekPrecise(ts time.Duration) error {
 
 	// Seek to keyframe before target
 	targetTS := ts.Microseconds()
-	if err := avformat.SeekFrame(d.formatCtx, -1, targetTS, avformat.SeekFlagBackward); err != nil {
+	if err := d.seekInputLocked(-1, targetTS, avformat.SeekFlagBackward); err != nil {
 		return err
 	}
 
@@ -209,7 +209,7 @@ func (d *Decoder) SeekAny(ts time.Duration) error {
 	}
 
 	timestamp := ts.Microseconds()
-	if err := avformat.SeekFrame(d.formatCtx, -1, timestamp, avformat.SeekFlagAny); err != nil {
+	if err := d.seekInputLocked(-1, timestamp, avformat.SeekFlagAny); err != nil {
 		return err
 	}
 
@@ -235,7 +235,7 @@ func (d *Decoder) SeekByBytes(bytePos int64) error {
 		return errors.New("ffgo: decoder is closed")
 	}
 
-	if err := avformat.SeekFrame(d.formatCtx, -1, bytePos, avformat.SeekFlagByte); err != nil {
+	if err := d.seekInputLocked(-1, bytePos, avformat.SeekFlagByte); err != nil {
 		return err
 	}
 

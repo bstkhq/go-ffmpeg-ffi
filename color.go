@@ -54,7 +54,7 @@ func ensureColorOffsets() {
 // ColorSpec returns the frame's color metadata. If the shim does not provide
 // AVFrame color offsets, it returns a zero-value ColorSpec.
 func (f Frame) ColorSpec() ColorSpec {
-	if f.ptr == nil {
+	if f.IsNil() {
 		return ColorSpec{}
 	}
 	ensureColorOffsets()
@@ -72,7 +72,7 @@ func (f Frame) ColorSpec() ColorSpec {
 // SetColorSpec sets the frame's color metadata. If the shim does not provide
 // AVFrame color offsets, this is a no-op.
 func (f Frame) SetColorSpec(spec ColorSpec) {
-	if f.ptr == nil {
+	if f.IsNil() {
 		return
 	}
 	ensureColorOffsets()
@@ -89,4 +89,3 @@ func colorOffsetsAvailable() bool {
 	ensureColorOffsets()
 	return colorOffOK
 }
-

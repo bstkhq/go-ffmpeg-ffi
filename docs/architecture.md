@@ -3,9 +3,9 @@
 ## Status
 
 This document defines the target architecture for the go-ffmpeg-ffi hard fork.
-FFmpeg 6-8 ABI selection and codec send/receive state machines are implemented.
-The current source tree remains transitional while ownership, callbacks,
-cancellation, and the public API are tightened in later roadmap work.
+FFmpeg 6-8 ABI selection, codec send/receive state machines, frame ownership,
+callback containment, and cancellable decoder I/O are implemented. The public
+API remains transitional until the first hard-fork release.
 
 ## Goals
 
@@ -161,13 +161,21 @@ That status must be visible in the API contract.
 - Borrowed values state exactly which operation invalidates them.
 - Retained results require `Clone`, or the caller supplies storage through an
   `Into` method such as `DecodeInto`, `ScaleInto`, or `ResampleInto`.
-- Native code must not retain an ordinary Go heap pointer after an FFI call.
+- Native code must not retain an unpinned Go heap pointer after an FFI call.
 - Plane access uses format descriptors and `extended_data`; it is not limited to
   YUV420P or eight audio planes.
 - Pools accept only values leased by that pool and bound retained native memory.
 
-Zero-copy APIs, if retained, are explicitly unsafe/advanced and use a mechanism
-whose lifetime can be verified under the race detector and stress tests.
+`Frame.WrapBuffer` is an advanced zero-copy operation. It pins the byte-array
+backing storage until FFmpeg releases its `AVBufferRef`; the release callback
+then unpins the storage and removes its integer handle. The wrapped bytes must
+not contain Go pointers.
+
+Frames returned by decoder methods and slices returned by `FrameWrapper.Data`
+are borrowed. The next operation on that decoder, or decoder close, may
+invalidate them. `Copy` and `Clone` variants return owned values that the caller
+must free. A `FramePool` accepts only a live lease issued by that same pool;
+copied or already returned leases are rejected.
 
 ## Callbacks, cancellation, and concurrency
 
@@ -175,12 +183,39 @@ Opaque callback identifiers stay as integer-sized tokens across FFI; they are
 never fabricated as Go pointers. Callback entry points recover panics, record
 the original Go error, and return the correct FFmpeg error code.
 
-Blocking open/read operations have context-aware variants backed by FFmpeg's
-interrupt callback. Closing a resource must be able to cancel blocked I/O.
+`NewDecoderContext`, `ReadPacketContext`, `ReadFrameContext`, the context-aware
+decode variants, and `SeekContext` use FFmpeg's ABI-verified interrupt callback.
+`Decoder.Close` signals interruption before waiting for the decoder operation
+lock.
 
-Objects are not concurrent-safe unless their documentation explicitly says so.
-Internal mutexes protect lifecycle invariants but do not imply that borrowed
-frames or packets can be used concurrently.
+Custom I/O prefers `ReadContext`, `WriteContext`, and `SeekContext` when they are
+provided. Close cancels their context and waits for active callback trampolines
+before freeing `AVIOContext`. Legacy `Read`, `Write`, and `Seek` remain
+compatible, but a legacy callback that blocks indefinitely cannot be safely
+forced to return; applications that require bounded shutdown must use the
+context-aware forms. Callback panics are recovered. Synchronous custom-I/O
+errors retain both the original Go cause and FFmpeg's numeric error, while an
+asynchronous log callback panic is available through `TakeLogCallbackError`.
+
+Independent decoders and encoders may run concurrently. Operations on one
+decoder or encoder are serialized, but callers must not concurrently consume
+borrowed frames or packets from that object. `Close` is the supported concurrent
+lifecycle operation: it can interrupt an active decoder read or a cooperative
+custom-I/O callback and then waits for cleanup. A `LogCallback` is process-wide
+and may be called from FFmpeg-owned threads.
+
+Focused lifecycle torture uses the audiovisual fixture so both audio and video
+state machines run during concurrent open/decode/seek/close cycles. The normal
+test suite runs a short pass; an extended local pass is:
+
+```sh
+FFGO_STRESS=1 go test -run TestDecoderLifecycleStress -count=1 .
+FFGO_STRESS=1 go test -race -run TestDecoderLifecycleStress -count=1 .
+```
+
+`FFGO_STRESS_ITERATIONS` overrides the default extended iteration count. On
+Linux the test checks handle, file-descriptor, Go-heap, and resident-memory
+growth after cleanup.
 
 ## Capabilities and errors
 

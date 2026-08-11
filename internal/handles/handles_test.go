@@ -51,6 +51,20 @@ func TestUnregister(t *testing.T) {
 	}
 }
 
+func TestTake(t *testing.T) {
+	handle := Register("value")
+
+	if got := Take(handle); got != "value" {
+		t.Fatalf("Take returned %v, want value", got)
+	}
+	if got := Lookup(handle); got != nil {
+		t.Fatalf("Lookup after Take returned %v, want nil", got)
+	}
+	if got := Take(handle); got != nil {
+		t.Fatalf("second Take returned %v, want nil", got)
+	}
+}
+
 func TestLookupNonExistent(t *testing.T) {
 	got := Lookup(999999)
 	if got != nil {

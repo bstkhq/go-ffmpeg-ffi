@@ -15,11 +15,16 @@ import (
 )
 
 // Encoder encodes video and/or audio frames to a file.
+//
+// Do not call encoder operations concurrently. Close may be called to cancel a
+// cooperative context-aware custom I/O callback before final cleanup.
 type Encoder struct {
-	mu sync.Mutex
+	mu          sync.Mutex
+	closeSignal sync.Once
 
 	formatCtx avformat.FormatContext
 	ioCtx     avformat.IOContext
+	customIO  *CustomIOContext
 	path      string
 
 	// Optional: used when I/O is opened lazily (e.g. network outputs) or needs avio_open2 options.
@@ -726,7 +731,7 @@ func (e *Encoder) writeHeaderLocked() error {
 		}
 	}()
 
-	if err := avformat.WriteHeader(e.formatCtx, &dict); err != nil {
+	if err := e.writeOutputHeaderLocked(&dict); err != nil {
 		return err
 	}
 	e.headerWritten = true
@@ -902,7 +907,7 @@ func (e *Encoder) WritePacket(packet *Packet) error {
 	avcodec.SetPacketStreamIndex(packet.ptr, int32(outputStreamIdx))
 
 	// Write packet
-	return avformat.InterleavedWriteFrame(e.formatCtx, packet.ptr)
+	return e.writeOutputPacketLocked(packet.ptr)
 }
 
 // applyVideoOptions applies advanced video encoding options via av_opt_set.
@@ -1098,6 +1103,9 @@ func (e *Encoder) WriteFrame(frame Frame) error {
 	if e.closed {
 		return errors.New("ffgo: encoder is closed")
 	}
+	if err := frame.poolLeaseError(); err != nil {
+		return err
+	}
 
 	// Auto-write header if not done
 	if !e.headerWritten {
@@ -1125,6 +1133,9 @@ func (e *Encoder) WriteAudioFrame(frame Frame) error {
 
 	if e.closed {
 		return errors.New("ffgo: encoder is closed")
+	}
+	if err := frame.poolLeaseError(); err != nil {
+		return err
 	}
 	if !e.hasAudio {
 		return errors.New("ffgo: encoder was not configured with audio")
@@ -1219,6 +1230,11 @@ func (e *Encoder) AudioSampleFormat() SampleFormat {
 
 // Close finalizes and closes the encoder.
 func (e *Encoder) Close() error {
+	e.closeSignal.Do(func() {
+		if e.customIO != nil {
+			e.customIO.cancelPending()
+		}
+	})
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -1226,6 +1242,11 @@ func (e *Encoder) Close() error {
 		return nil
 	}
 	e.closed = true
+	if e.customIO != nil {
+		// Close canceled an in-flight callback before waiting for the mutex.
+		// Use a fresh lifetime for this call's own flush and trailer writes.
+		e.customIO.resetCancellation()
+	}
 
 	var closeErrors []error
 	if e.headerWritten {
@@ -1236,7 +1257,7 @@ func (e *Encoder) Close() error {
 
 	// Write trailer
 	if e.formatCtx != nil && e.headerWritten {
-		if err := avformat.WriteTrailer(e.formatCtx); err != nil {
+		if err := e.writeOutputTrailerLocked(); err != nil {
 			closeErrors = append(closeErrors, err)
 		}
 	}
@@ -1271,8 +1292,15 @@ func (e *Encoder) cleanup() {
 		avcodec.FreeContext(&e.audioCodecCtx)
 	}
 
-	// Close I/O context (errors during cleanup are non-fatal)
-	if e.ioCtx != nil && e.formatCtx != nil {
+	// Close I/O context (errors during cleanup are non-fatal).
+	if e.customIO != nil {
+		if e.formatCtx != nil {
+			avformat.SetIOContext(e.formatCtx, nil)
+		}
+		_ = e.customIO.Close()
+		e.customIO = nil
+		e.ioCtx = nil
+	} else if e.ioCtx != nil && e.formatCtx != nil {
 		_ = avformat.IOCloseP(&e.ioCtx)
 	}
 

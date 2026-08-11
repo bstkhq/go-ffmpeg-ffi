@@ -152,6 +152,9 @@ func NewSubtitleRendererWithOptions(subtitlePath string, width, height int, opts
 // Returns a new frame with subtitles burned in. The returned frame is owned
 // by the caller and must be freed.
 func (r *SubtitleRenderer) Render(frame Frame) (Frame, error) {
+	if err := frame.poolLeaseError(); err != nil {
+		return Frame{}, err
+	}
 	if frame.IsNil() {
 		return Frame{}, errors.New("ffgo: input frame is nil")
 	}

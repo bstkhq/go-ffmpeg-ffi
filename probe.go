@@ -3,6 +3,7 @@
 package ffgo
 
 import (
+	"context"
 	"errors"
 	"sort"
 	"strings"
@@ -61,7 +62,7 @@ func (d *Decoder) ProbeScore() int {
 	return avformat.GetProbeScore(d.formatCtx)
 }
 
-func openInputWithRetries(path string, opts *DecoderOptions) (avformat.FormatContext, error) {
+func openInputWithRetries(path string, opts *DecoderOptions, interrupt *decoderInterrupt) (avformat.FormatContext, error) {
 	var (
 		avOpts = buildDecoderAVOptions(opts)
 	)
@@ -73,7 +74,7 @@ func openInputWithRetries(path string, opts *DecoderOptions) (avformat.FormatCon
 		if forcedFmt == nil {
 			return nil, errors.New("ffgo: input format not found")
 		}
-		ctx, err := openInputOnce(path, forcedFmt, avOpts)
+		ctx, err := openInputOnce(path, forcedFmt, avOpts, interrupt)
 		if err != nil {
 			return nil, err
 		}
@@ -87,7 +88,7 @@ func openInputWithRetries(path string, opts *DecoderOptions) (avformat.FormatCon
 	}
 
 	// First try auto-detection.
-	ctx, err := openInputOnce(path, nil, avOpts)
+	ctx, err := openInputOnce(path, nil, avOpts, interrupt)
 	if err == nil {
 		if opts == nil || opts.ProbeScore <= 0 {
 			return ctx, nil
@@ -105,6 +106,9 @@ func openInputWithRetries(path string, opts *DecoderOptions) (avformat.FormatCon
 	if opts == nil || !opts.TryMultipleFormats {
 		return nil, err
 	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil, err
+	}
 
 	candidates := candidateDemuxers(opts)
 	for _, name := range candidates {
@@ -112,9 +116,12 @@ func openInputWithRetries(path string, opts *DecoderOptions) (avformat.FormatCon
 		if fmt == nil {
 			continue
 		}
-		ctx2, err2 := openInputOnce(path, fmt, avOpts)
+		ctx2, err2 := openInputOnce(path, fmt, avOpts, interrupt)
 		if err2 != nil {
 			err = err2
+			if errors.Is(err2, context.Canceled) || errors.Is(err2, context.DeadlineExceeded) {
+				return nil, err2
+			}
 			continue
 		}
 		if opts.ProbeScore > 0 {
@@ -131,7 +138,7 @@ func openInputWithRetries(path string, opts *DecoderOptions) (avformat.FormatCon
 	return nil, err
 }
 
-func openInputOnce(path string, fmt avformat.InputFormat, avOpts map[string]string) (avformat.FormatContext, error) {
+func openInputOnce(path string, fmt avformat.InputFormat, avOpts map[string]string, interrupt *decoderInterrupt) (avformat.FormatContext, error) {
 	var dict avutil.Dictionary
 	for k, v := range avOpts {
 		if v == "" {
@@ -150,8 +157,15 @@ func openInputOnce(path string, fmt avformat.InputFormat, avOpts map[string]stri
 		}
 	}()
 
-	var ctx avformat.FormatContext
-	if err := avformat.OpenInput(&ctx, path, fmt, &dict); err != nil {
+	ctx := avformat.AllocContext()
+	if ctx == nil {
+		return nil, errors.New("ffgo: failed to allocate format context")
+	}
+	interrupt.attach(ctx)
+	if err := interrupt.finish(avformat.OpenInput(&ctx, path, fmt, &dict)); err != nil {
+		if ctx != nil {
+			avformat.CloseInput(&ctx)
+		}
 		return nil, err
 	}
 	return ctx, nil

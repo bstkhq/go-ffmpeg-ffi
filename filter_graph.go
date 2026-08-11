@@ -443,6 +443,9 @@ func (g *FilterGraph) Filter(frame *Frame) ([]*Frame, error) {
 	// Push frame to buffersrc
 	var framePtr unsafe.Pointer
 	if frame != nil {
+		if err := frame.poolLeaseError(); err != nil {
+			return nil, err
+		}
 		framePtr = frame.ptr
 	}
 

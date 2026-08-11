@@ -20,6 +20,7 @@ const (
 	AVERROR_MUXER_NOT_FOUND   int32 = -1381258232            // Muxer not found
 	AVERROR_STREAM_NOT_FOUND  int32 = -1381258232            // Stream not found
 	AVERROR_INVALIDDATA       int32 = -1094995529            // Invalid data
+	AVERROR_EXTERNAL          int32 = -542398533             // Error in external library
 	AVERROR_BUG               int32 = -558323010             // Bug detected
 	AVERROR_UNKNOWN           int32 = -1313558101            // Unknown error
 )
