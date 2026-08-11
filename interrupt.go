@@ -63,13 +63,16 @@ func (s *decoderInterrupt) begin(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("ffgo: context cannot be nil")
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if s.closed.Load() {
 		return errDecoderClosed
 	}
 	s.mu.Lock()
 	s.operation = ctx
 	s.mu.Unlock()
-	return ctx.Err()
+	return nil
 }
 
 func (s *decoderInterrupt) clear() {

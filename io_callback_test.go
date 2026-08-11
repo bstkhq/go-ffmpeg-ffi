@@ -133,7 +133,11 @@ func TestEncoderFromIOOwnsContextAndWritesFrames(t *testing.T) {
 	}
 	before := handles.Count()
 	var output bytes.Buffer
-	encoder, err := NewEncoderToWriter(&output, "mpegts", EncoderConfig{
+	encoder, err := NewEncoderFromIO(&IOCallbacks{
+		WriteContext: func(_ context.Context, data []byte) (int, error) {
+			return output.Write(data)
+		},
+	}, "mpegts", EncoderConfig{
 		Width:       16,
 		Height:      16,
 		PixelFormat: PixelFormatYUV420P,

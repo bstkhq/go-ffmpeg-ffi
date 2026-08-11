@@ -389,6 +389,15 @@ func (c *CustomIOContext) cancelPending() {
 	}
 }
 
+func (c *CustomIOContext) resetCancellation() {
+	c.contextMu.Lock()
+	if c.lifetimeCancel != nil {
+		c.lifetimeCancel()
+	}
+	c.lifetimeCtx, c.lifetimeCancel = context.WithCancel(context.Background())
+	c.contextMu.Unlock()
+}
+
 func (c *CustomIOContext) beginCallback() bool {
 	c.callbackMu.Lock()
 	defer c.callbackMu.Unlock()
@@ -562,6 +571,11 @@ func (c *CustomIOContext) Close() error {
 	// Clear buffer references (buffer is freed by IOContextFree)
 	c.buffer = nil
 	c.bufferGo = nil
+	c.callbacks = nil
+	c.errorMu.Lock()
+	c.callbackErr = nil
+	c.pendingReadErr = nil
+	c.errorMu.Unlock()
 
 	// Unregister handle
 	if c.handle != 0 {

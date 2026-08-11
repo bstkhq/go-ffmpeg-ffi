@@ -1236,6 +1236,11 @@ func (e *Encoder) Close() error {
 		return nil
 	}
 	e.closed = true
+	if e.customIO != nil {
+		// Close canceled an in-flight callback before waiting for the mutex.
+		// Use a fresh lifetime for this call's own flush and trailer writes.
+		e.customIO.resetCancellation()
+	}
 
 	var closeErrors []error
 	if e.headerWritten {
