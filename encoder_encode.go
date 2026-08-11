@@ -45,6 +45,11 @@ func (e *Encoder) encodeAudioFrameLocked(frame Frame) error {
 
 func (e *Encoder) writeVideoPacketLocked(packet avcodec.Packet) error {
 	avcodec.SetPacketStreamIndex(packet, avformat.GetStreamIndex(e.videoStream))
+	// Some encoders leave CFR packet duration unset. Containers such as MP4
+	// need it to include the final sample in the track edit list.
+	if avcodec.GetPacketDuration(packet) <= 0 {
+		avcodec.SetPacketDuration(packet, 1)
+	}
 	streamNum, streamDen := avformat.GetStreamTimeBase(e.videoStream)
 	avcodec.RescalePacketTS(packet,
 		avcodec.GetCtxTimeBase(e.videoCodecCtx),
