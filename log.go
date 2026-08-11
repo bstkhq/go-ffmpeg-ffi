@@ -6,8 +6,8 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/ebitengine/purego"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/shim"
+	"github.com/ebitengine/purego"
 )
 
 // LogLevel represents FFmpeg log levels.
@@ -15,15 +15,15 @@ type LogLevel int32
 
 // Log level constants matching FFmpeg's AV_LOG_* values.
 const (
-	LogQuiet   LogLevel = -8  // Print no output
-	LogPanic   LogLevel = 0   // Something went really wrong, crash
-	LogFatal   LogLevel = 8   // Something went wrong, exit now
-	LogError   LogLevel = 16  // Something went wrong, recovery possible
-	LogWarning LogLevel = 24  // Something unexpected but recovery possible
-	LogInfo    LogLevel = 32  // Standard information
-	LogVerbose LogLevel = 40  // Detailed information
-	LogDebug   LogLevel = 48  // Stuff for debugging
-	LogTrace   LogLevel = 56  // Extremely verbose debugging
+	LogQuiet   LogLevel = -8 // Print no output
+	LogPanic   LogLevel = 0  // Something went really wrong, crash
+	LogFatal   LogLevel = 8  // Something went wrong, exit now
+	LogError   LogLevel = 16 // Something went wrong, recovery possible
+	LogWarning LogLevel = 24 // Something unexpected but recovery possible
+	LogInfo    LogLevel = 32 // Standard information
+	LogVerbose LogLevel = 40 // Detailed information
+	LogDebug   LogLevel = 48 // Stuff for debugging
+	LogTrace   LogLevel = 56 // Extremely verbose debugging
 )
 
 // String returns the string representation of the log level.
@@ -55,9 +55,10 @@ func (l LogLevel) String() string {
 type LogCallback func(level LogLevel, message string)
 
 var (
-	logCallbackMu sync.Mutex
-	logCallback   LogCallback
-	logCBHandle   uintptr
+	logCallbackMu  sync.Mutex
+	logCallback    LogCallback
+	logCallbackErr error
+	logCBHandle    uintptr
 )
 
 // SetLogLevel sets the FFmpeg log level.
@@ -80,6 +81,7 @@ func SetLogCallback(cb LogCallback) error {
 
 	logCallbackMu.Lock()
 	defer logCallbackMu.Unlock()
+	logCallbackErr = nil
 
 	if cb == nil {
 		// Restore default callback
@@ -97,9 +99,27 @@ func SetLogCallback(cb LogCallback) error {
 	return shim.SetLogCallback(logCBHandle)
 }
 
+// TakeLogCallbackError returns and clears the most recent panic recovered from
+// a LogCallback. It returns nil when no callback panic has been observed.
+func TakeLogCallbackError() error {
+	logCallbackMu.Lock()
+	defer logCallbackMu.Unlock()
+	err := logCallbackErr
+	logCallbackErr = nil
+	return err
+}
+
 // logCallbackTrampoline is called by the shim and forwards to the Go callback.
 // Signature: void (*)(void *avcl, int level, const char *msg)
 func logCallbackTrampoline(_ purego.CDecl, _ uintptr, level int32, msg *byte) {
+	defer func() {
+		if value := recover(); value != nil {
+			logCallbackMu.Lock()
+			logCallbackErr = callbackPanicError(value)
+			logCallbackMu.Unlock()
+		}
+	}()
+
 	logCallbackMu.Lock()
 	cb := logCallback
 	logCallbackMu.Unlock()
@@ -119,7 +139,7 @@ func logCallbackTrampoline(_ purego.CDecl, _ uintptr, level int32, msg *byte) {
 				goMsg = string(unsafe.Slice(msg, i))
 				break
 			}
-			if i > 4096 { // Safety limit
+			if i >= 4096 { // Safety limit
 				goMsg = string(unsafe.Slice(msg, i))
 				break
 			}
