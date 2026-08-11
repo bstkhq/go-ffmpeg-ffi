@@ -17,6 +17,11 @@ import (
 )
 
 // Decoder decodes media files.
+//
+// Do not call decoder operations concurrently. Close is the exception: it may
+// be called concurrently to interrupt a blocking read. Frames and packets
+// returned without Copy or Clone are borrowed and must not outlive the next
+// decoder operation.
 type Decoder struct {
 	mu          sync.Mutex
 	closeSignal sync.Once

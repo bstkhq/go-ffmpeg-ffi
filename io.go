@@ -19,6 +19,7 @@ import (
 )
 
 // IOCallbacks provides custom I/O operations for reading and writing media.
+// Callback implementations must be safe to invoke from FFmpeg-owned threads.
 type IOCallbacks struct {
 	// ReadContext is the cancellation-aware form of Read. When set, it is
 	// preferred over Read and receives the context for the active FFmpeg operation.
@@ -539,7 +540,8 @@ func NewCustomIOContextWithSize(callbacks *IOCallbacks, writable bool, bufferSiz
 	return ctx, nil
 }
 
-// Close releases the I/O context.
+// Close releases the I/O context. It cancels context-aware callbacks and waits
+// for active callback trampolines before releasing native memory.
 // Note: avio_context_free also frees the buffer, so we don't free it manually.
 func (c *CustomIOContext) Close() error {
 	c.cancelPending()

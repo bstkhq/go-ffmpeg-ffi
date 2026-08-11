@@ -15,6 +15,9 @@ import (
 )
 
 // Encoder encodes video and/or audio frames to a file.
+//
+// Do not call encoder operations concurrently. Close may be called to cancel a
+// cooperative context-aware custom I/O callback before final cleanup.
 type Encoder struct {
 	mu          sync.Mutex
 	closeSignal sync.Once

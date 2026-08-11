@@ -188,9 +188,10 @@ type wrappedBufferHold struct {
 
 // WrapBuffer wraps an existing buffer as a video frame without copying.
 //
-// The buffer is reference-counted by FFmpeg via AVBufferRef. The caller must keep using the frame
-// only until it is freed (Frame.Free / FrameFree). The underlying []byte is kept alive internally
-// until FFmpeg releases the AVBufferRef.
+// The buffer is reference-counted by FFmpeg via AVBufferRef. Its backing array
+// is pinned until FFmpeg releases the final reference. The caller must not
+// resize, reuse, or mutate data concurrently with native access and must release
+// the frame with Frame.Free or FrameFree.
 //
 // Supported formats:
 // - PixelFormatRGB24
