@@ -3,7 +3,7 @@
 package avutil
 
 import (
-	"github.com/obinnaokechukwu/ffgo/internal/platform"
+	"github.com/bstkhq/go-ffmpeg-ffi/internal/platform"
 )
 
 // Rational represents a rational number (fraction) as used by FFmpeg (AVRational).

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/obinnaokechukwu/ffgo/swscale"
+	"github.com/bstkhq/go-ffmpeg-ffi/swscale"
 )
 
 func TestScalerSetColorspace(t *testing.T) {

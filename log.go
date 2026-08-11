@@ -7,7 +7,7 @@ import (
 	"unsafe"
 
 	"github.com/ebitengine/purego"
-	"github.com/obinnaokechukwu/ffgo/internal/shim"
+	"github.com/bstkhq/go-ffmpeg-ffi/internal/shim"
 )
 
 // LogLevel represents FFmpeg log levels.

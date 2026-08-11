@@ -5,7 +5,7 @@ package ffgo
 import (
 	"unsafe"
 
-	"github.com/obinnaokechukwu/ffgo/avutil"
+	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 )
 
 // FrameWrapper provides a high-level interface to an FFmpeg AVFrame.

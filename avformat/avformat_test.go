@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/obinnaokechukwu/ffgo/internal/bindings"
+	"github.com/bstkhq/go-ffmpeg-ffi/internal/bindings"
 )
 
 var ffmpegAvailable bool

@@ -6,7 +6,7 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/obinnaokechukwu/ffgo/internal/shim"
+	"github.com/bstkhq/go-ffmpeg-ffi/internal/shim"
 )
 
 type ColorRange int32

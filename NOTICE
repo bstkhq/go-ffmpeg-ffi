@@ -1,0 +1,20 @@
+go-ffmpeg-ffi
+
+This project is a hard fork of ffgo:
+https://github.com/obinnaokechukwu/ffgo
+
+The fork baseline is upstream commit
+8e9c9c1956ff22af83544d725bb32691256f0a3a.
+
+The hard fork preserves the original Git history, license, and attribution.
+Original authors and contributors retain credit for their work. Changes made in
+go-ffmpeg-ffi are maintained independently and do not imply endorsement by the
+original project.
+
+Development and review of this hard fork may be assisted by OpenAI Codex. Human
+maintainers review and remain responsible for every accepted change.
+
+FFmpeg is a separate project and is not covered by this project's Apache-2.0
+license. FFmpeg licensing depends on its build configuration. FFmpeg and its
+marks belong to their respective owners; go-ffmpeg-ffi is not affiliated with
+or endorsed by the FFmpeg project.

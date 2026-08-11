@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obinnaokechukwu/ffgo/avutil"
+	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 )
 
 func TestHLSSegmenter_Integration(t *testing.T) {

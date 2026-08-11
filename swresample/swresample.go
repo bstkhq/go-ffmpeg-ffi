@@ -8,7 +8,7 @@ import (
 	"unsafe"
 
 	"github.com/ebitengine/purego"
-	"github.com/obinnaokechukwu/ffgo/internal/bindings"
+	"github.com/bstkhq/go-ffmpeg-ffi/internal/bindings"
 )
 
 // SwrContext is an opaque audio resampling context
@@ -25,12 +25,13 @@ var (
 	swr_alloc           func() uintptr
 	swr_init            func(s uintptr) int32
 	swr_free            func(s *SwrContext)
-	swr_convert         func(s, out, in uintptr, outCount, inCount int32) int32
+	swr_convert         func(s, out uintptr, outCount int32, in uintptr, inCount int32) int32
 	swr_convert_frame   func(s, output, input uintptr) int32
 	swr_get_delay       func(s uintptr, base int64) int64
 	swr_get_out_samples func(s uintptr, inSamples int32) int32
 	swr_is_initialized  func(s uintptr) int32
 	swr_close           func(s uintptr)
+	swresampleVersion   func() uint32
 
 	// For FFmpeg 5.1+ with AVChannelLayout
 	swr_alloc_set_opts2 func(ps *SwrContext,
@@ -58,6 +59,10 @@ func initLibrary() error {
 	libSWResample, err = bindings.LoadLibrary("swresample", []int{5, 4, 3})
 	if err != nil {
 		return fmt.Errorf("swresample: failed to load library: %w", err)
+	}
+	purego.RegisterLibFunc(&swresampleVersion, libSWResample, "swresample_version")
+	if err := bindings.ValidateLibraryVersion("swresample", swresampleVersion()); err != nil {
+		return err
 	}
 
 	// Bind required functions
@@ -158,7 +163,7 @@ func Convert(s SwrContext, out unsafe.Pointer, outCount int32,
 	if err := Init(); err != nil {
 		return 0, err
 	}
-	ret := swr_convert(uintptr(s), uintptr(out), uintptr(in), outCount, inCount)
+	ret := swr_convert(uintptr(s), uintptr(out), outCount, uintptr(in), inCount)
 	runtime.KeepAlive(out)
 	runtime.KeepAlive(in)
 	if ret < 0 {

@@ -5,9 +5,9 @@ package ffgo
 import (
 	"errors"
 
-	"github.com/obinnaokechukwu/ffgo/avcodec"
-	"github.com/obinnaokechukwu/ffgo/avformat"
-	"github.com/obinnaokechukwu/ffgo/avutil"
+	"github.com/bstkhq/go-ffmpeg-ffi/avcodec"
+	"github.com/bstkhq/go-ffmpeg-ffi/avformat"
+	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 )
 
 // HasDataStream reports whether the input contains any AVMEDIA_TYPE_DATA streams.

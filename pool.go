@@ -9,8 +9,8 @@ import (
 	"unsafe"
 
 	"github.com/ebitengine/purego"
-	"github.com/obinnaokechukwu/ffgo/avutil"
-	"github.com/obinnaokechukwu/ffgo/internal/handles"
+	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
+	"github.com/bstkhq/go-ffmpeg-ffi/internal/handles"
 )
 
 // FramePool reuses AVFrame allocations to reduce GC/FFmpeg allocation churn.
@@ -232,32 +232,16 @@ func (f *Frame) WrapBuffer(data []byte, width, height int, format PixelFormat) e
 	avutil.SetFrameHeight(f.ptr, int32(height))
 	avutil.SetFrameFormat(f.ptr, int32(format))
 
-	// Set data pointers/linesizes.
-	base := uintptr(f.ptr)
-	dataArr := (*[8]unsafe.Pointer)(unsafe.Pointer(base + 0)) // AVFrame.data offset is 0
-	lineArr := (*[8]int32)(unsafe.Pointer(base + 64))         // AVFrame.linesize offset is 64
-	for i := 0; i < 8; i++ {
-		dataArr[i] = nil
-		lineArr[i] = 0
-	}
+	// Set data pointers/linesizes and buffer bookkeeping using the selected ABI.
+	avutil.ConfigureFrameBuffer(f.ptr, bufRef)
 	for i, off := range planes {
-		dataArr[i] = unsafe.Pointer(uintptr(unsafe.Pointer(&data[0])) + uintptr(off))
-		lineArr[i] = int32(linesizes[i])
+		avutil.SetFrameDataPlane(
+			f.ptr,
+			i,
+			unsafe.Pointer(uintptr(unsafe.Pointer(&data[0]))+uintptr(off)),
+			int32(linesizes[i]),
+		)
 	}
-
-	// Ensure extended_data points to data[].
-	*(*unsafe.Pointer)(unsafe.Pointer(base + 96)) = unsafe.Pointer(base + 0) // AVFrame.extended_data offset is 96
-
-	// Install AVBufferRef into buf[0] and clear other buf pointers.
-	bufArr := (*[8]unsafe.Pointer)(unsafe.Pointer(base + 224)) // AVFrame.buf offset is 224
-	for i := 0; i < 8; i++ {
-		bufArr[i] = nil
-	}
-	bufArr[0] = bufRef
-
-	// Clear extended buffer bookkeeping.
-	*(*unsafe.Pointer)(unsafe.Pointer(base + 288)) = nil // AVFrame.extended_buf offset is 288
-	*(*int32)(unsafe.Pointer(base + 296)) = 0            // AVFrame.nb_extended_buf offset is 296
 
 	return nil
 }

@@ -1,5 +1,10 @@
 # ffgo Internal Design Document
 
+> **Inherited document:** this is the original ffgo design and is retained as
+> historical reference. It is not the canonical architecture of
+> go-ffmpeg-ffi. See [architecture.md](architecture.md) and
+> [roadmap.md](roadmap.md).
+
 > **Audience**: Library implementers and contributors only.
 >
 > This document specifies the internal architecture, constraints, and implementation requirements for building ffgo. The rules and gotchas documented here are **design constraints that implementers must handle internally** so that users of the library never encounter them.

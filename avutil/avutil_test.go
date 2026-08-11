@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/obinnaokechukwu/ffgo/internal/bindings"
+	"github.com/bstkhq/go-ffmpeg-ffi/internal/bindings"
 )
 
 var ffmpegAvailable bool
@@ -85,6 +85,32 @@ func TestFrameAllocAndSetup(t *testing.T) {
 	}
 	if GetFrameFormat(frame) != int32(PixelFormatYUV420P) {
 		t.Errorf("Format: expected %d, got %d", PixelFormatYUV420P, GetFrameFormat(frame))
+	}
+}
+
+func TestAudioFrameAllocAndSetup(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+	frame := FrameAlloc()
+	if frame == nil {
+		t.Fatal("FrameAlloc returned nil")
+	}
+	defer FrameFree(&frame)
+
+	FrameSetSampleRate(frame, 48000)
+	FrameSetChannels(frame, 2)
+	FrameSetFormat(frame, int32(SampleFormatS16))
+	FrameSetNbSamples(frame, 1024)
+
+	if got := GetFrameSampleRate(frame); got != 48000 {
+		t.Fatalf("sample rate = %d, want 48000", got)
+	}
+	if got := GetFrameChannels(frame); got != 2 {
+		t.Fatalf("channels = %d, want 2", got)
+	}
+	if err := FrameGetBufferErr(frame, 0); err != nil {
+		t.Fatalf("allocate audio frame buffer: %v", err)
 	}
 }
 

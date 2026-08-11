@@ -6,8 +6,8 @@ import (
 	"errors"
 	"unsafe"
 
-	"github.com/obinnaokechukwu/ffgo/avutil"
-	"github.com/obinnaokechukwu/ffgo/swscale"
+	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
+	"github.com/bstkhq/go-ffmpeg-ffi/swscale"
 )
 
 // AVColorSpace (frame metadata). Kept in sync with libavutil/pixfmt.h.

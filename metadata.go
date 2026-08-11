@@ -5,8 +5,8 @@ package ffgo
 import (
 	"unsafe"
 
-	"github.com/obinnaokechukwu/ffgo/avformat"
-	"github.com/obinnaokechukwu/ffgo/avutil"
+	"github.com/bstkhq/go-ffmpeg-ffi/avformat"
+	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 )
 
 // Metadata represents key-value metadata from a media file.

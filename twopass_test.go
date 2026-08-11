@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/obinnaokechukwu/ffgo/avcodec"
+	"github.com/bstkhq/go-ffmpeg-ffi/avcodec"
 )
 
 func TestTwoPassTranscode_Integration(t *testing.T) {
