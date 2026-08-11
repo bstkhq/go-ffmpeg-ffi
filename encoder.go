@@ -30,12 +30,14 @@ type Encoder struct {
 	videoCodecCtx avcodec.Context
 	videoStream   avformat.Stream
 	videoPacket   avcodec.Packet
+	videoState    encoderCodecState
 
 	// Audio encoding
 	audioCodecCtx  avcodec.Context
 	audioStream    avformat.Stream
 	audioPacket    avcodec.Packet
 	audioFrameSize int // Number of samples per frame for codec
+	audioState     encoderCodecState
 
 	// Stream copy mode
 	copyVideo      bool
@@ -1104,40 +1106,10 @@ func (e *Encoder) WriteFrame(frame Frame) error {
 		}
 	}
 
-	// Set frame PTS
-	if frame.ptr != nil {
-		avutil.SetFramePTS(frame.ptr, e.frameCount)
-		e.frameCount++
+	if frame.ptr == nil {
+		return e.flushEncodersLocked()
 	}
-
-	// Send frame to encoder
-	if err := avcodec.SendFrame(e.codecCtx, frame.ptr); err != nil {
-		// EAGAIN means we need to receive packets first
-		if !avutil.IsAgain(err) {
-			return err
-		}
-	}
-
-	// Receive and write encoded packets
-	for {
-		avcodec.PacketUnref(e.packet)
-
-		err := avcodec.ReceivePacket(e.codecCtx, e.packet)
-		if err != nil {
-			if avutil.IsAgain(err) || avutil.IsEOF(err) {
-				return nil // No more packets available
-			}
-			return err
-		}
-
-		// Rescale timestamps
-		avcodec.SetPacketStreamIndex(e.packet, avformat.GetStreamIndex(e.stream))
-
-		// Write packet
-		if err := avformat.InterleavedWriteFrame(e.formatCtx, e.packet); err != nil {
-			return err
-		}
-	}
+	return e.encodeVideoFrameLocked(frame)
 }
 
 // WriteVideoFrame encodes and writes a video frame.
@@ -1168,55 +1140,24 @@ func (e *Encoder) WriteAudioFrame(frame Frame) error {
 		}
 	}
 
-	// Set PTS for audio frame
-	if frame.ptr != nil {
-		pts := e.audioFrameCnt
-		avutil.SetFramePTS(frame.ptr, pts)
-		e.audioFrameCnt += int64(avutil.GetFrameNbSamples(frame.ptr))
-	}
-
-	// Send frame to encoder
-	if err := avcodec.SendFrame(e.audioCodecCtx, frame.ptr); err != nil {
-		if avutil.IsEOF(err) {
-			return nil
-		}
-		return err
-	}
-
-	// Receive and write packets
-	for {
-		avcodec.PacketUnref(e.audioPacket)
-
-		err := avcodec.ReceivePacket(e.audioCodecCtx, e.audioPacket)
-		if err != nil {
-			if avutil.IsEOF(err) || avutil.IsAgain(err) {
-				break
-			}
-			return err
-		}
-
-		// Set stream index
-		avcodec.SetPacketStreamIndex(e.audioPacket, avformat.GetStreamIndex(e.audioStream))
-
-		// Rescale timestamps to stream time base
-		streamTbNum, streamTbDen := avformat.GetStreamTimeBase(e.audioStream)
-		avcodec.RescalePacketTS(e.audioPacket,
-			avcodec.GetCtxTimeBase(e.audioCodecCtx),
-			avutil.NewRational(streamTbNum, streamTbDen))
-
-		// Write packet
-		if err := avformat.InterleavedWriteFrame(e.formatCtx, e.audioPacket); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return e.encodeAudioFrameLocked(frame)
 }
 
-// Flush flushes the encoder and writes remaining frames.
+// Flush flushes every configured encoder and writes all delayed packets.
+// It is idempotent. No more frames may be written after the first successful flush.
 func (e *Encoder) Flush() error {
-	// Send nil frame to flush encoder
-	return e.WriteFrame(Frame{})
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if e.closed {
+		return errors.New("ffgo: encoder is closed")
+	}
+	if !e.headerWritten {
+		if err := e.writeHeaderLocked(); err != nil {
+			return err
+		}
+	}
+	return e.flushEncodersLocked()
 }
 
 // Width returns the encoder width.
@@ -1286,55 +1227,22 @@ func (e *Encoder) Close() error {
 	}
 	e.closed = true
 
-	var firstErr error
-
-	// Flush video encoder
-	if e.videoCodecCtx != nil && e.headerWritten {
-		// Flush by sending nil frame (errors during flush are non-fatal)
-		_ = avcodec.SendFrame(e.videoCodecCtx, nil)
-
-		// Drain remaining packets
-		for {
-			avcodec.PacketUnref(e.videoPacket)
-			err := avcodec.ReceivePacket(e.videoCodecCtx, e.videoPacket)
-			if err != nil {
-				break
-			}
-			avcodec.SetPacketStreamIndex(e.videoPacket, avformat.GetStreamIndex(e.videoStream))
-			_ = avformat.InterleavedWriteFrame(e.formatCtx, e.videoPacket)
-		}
-	}
-
-	// Flush audio encoder
-	if e.audioCodecCtx != nil && e.headerWritten {
-		// Flush by sending nil frame (errors during flush are non-fatal)
-		_ = avcodec.SendFrame(e.audioCodecCtx, nil)
-
-		// Drain remaining packets
-		for {
-			avcodec.PacketUnref(e.audioPacket)
-			err := avcodec.ReceivePacket(e.audioCodecCtx, e.audioPacket)
-			if err != nil {
-				break
-			}
-			avcodec.SetPacketStreamIndex(e.audioPacket, avformat.GetStreamIndex(e.audioStream))
-			streamTbNum, streamTbDen := avformat.GetStreamTimeBase(e.audioStream)
-			avcodec.RescalePacketTS(e.audioPacket,
-				avcodec.GetCtxTimeBase(e.audioCodecCtx),
-				avutil.NewRational(streamTbNum, streamTbDen))
-			_ = avformat.InterleavedWriteFrame(e.formatCtx, e.audioPacket)
+	var closeErrors []error
+	if e.headerWritten {
+		if err := e.flushEncodersLocked(); err != nil {
+			closeErrors = append(closeErrors, err)
 		}
 	}
 
 	// Write trailer
 	if e.formatCtx != nil && e.headerWritten {
-		if err := avformat.WriteTrailer(e.formatCtx); err != nil && firstErr == nil {
-			firstErr = err
+		if err := avformat.WriteTrailer(e.formatCtx); err != nil {
+			closeErrors = append(closeErrors, err)
 		}
 	}
 
 	e.cleanup()
-	return firstErr
+	return errors.Join(closeErrors...)
 }
 
 // cleanup releases all resources.

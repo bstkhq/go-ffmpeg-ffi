@@ -812,6 +812,35 @@ func TestEncoderWriteVideoAndAudioFrames(t *testing.T) {
 		}
 	}
 
+	// Allocate and write enough silent audio frames for roughly one second.
+	audioFrame := FrameAlloc()
+	if audioFrame.IsNil() {
+		encoder.Close()
+		t.Fatal("Failed to allocate audio frame")
+	}
+	defer func() { _ = FrameFree(&audioFrame) }()
+	audioFrameSize := encoder.AudioFrameSize()
+	avutil.SetFrameFormat(audioFrame.ptr, int32(SampleFormatFLTP))
+	avutil.SetFrameNbSamples(audioFrame.ptr, int32(audioFrameSize))
+	avutil.SetFrameSampleRate(audioFrame.ptr, 44100)
+	avutil.FrameSetChannels(audioFrame.ptr, 2)
+	if err := AVUtil.FrameGetBuffer(audioFrame, 0); err != nil {
+		encoder.Close()
+		t.Fatalf("Failed to allocate audio frame buffer: %v", err)
+	}
+	numAudioFrames := (44100 + audioFrameSize - 1) / audioFrameSize
+	for i := 0; i < numAudioFrames; i++ {
+		if err := AVUtil.FrameMakeWritable(audioFrame); err != nil {
+			encoder.Close()
+			t.Fatalf("Audio FrameMakeWritable failed: %v", err)
+		}
+		fillSilentPlanarAudio(audioFrame, 2)
+		if err := encoder.WriteAudioFrame(audioFrame); err != nil {
+			encoder.Close()
+			t.Fatalf("WriteAudioFrame failed at frame %d: %v", i, err)
+		}
+	}
+
 	// Close encoder
 	if err := encoder.Close(); err != nil {
 		t.Fatalf("Close failed: %v", err)
@@ -826,7 +855,8 @@ func TestEncoderWriteVideoAndAudioFrames(t *testing.T) {
 		t.Error("Output file is empty")
 	}
 
-	t.Logf("Encoded %d video frames to %s (%d bytes)", numVideoFrames, outFile, info.Size())
+	t.Logf("Encoded %d video and %d audio frames to %s (%d bytes)",
+		numVideoFrames, numAudioFrames, outFile, info.Size())
 
 	// Verify output can be read
 	decoder, err := NewDecoder(outFile)
@@ -838,9 +868,36 @@ func TestEncoderWriteVideoAndAudioFrames(t *testing.T) {
 	if !decoder.HasVideo() {
 		t.Error("Output should have video")
 	}
-	// Note: Audio stream should be present even if we didn't write audio frames,
-	// but it will be empty/silent
-	t.Logf("Output verified: video=%v, audio=%v", decoder.HasVideo(), decoder.HasAudio())
+	if !decoder.HasAudio() {
+		t.Fatal("Output should have audio")
+	}
+	decoded := map[MediaType]int{}
+	for {
+		frame, err := decoder.ReadFrame()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if frame == nil {
+			break
+		}
+		decoded[frame.MediaType()]++
+	}
+	if decoded[MediaTypeVideo] != numVideoFrames {
+		t.Fatalf("decoded video frames = %d, want %d", decoded[MediaTypeVideo], numVideoFrames)
+	}
+	if decoded[MediaTypeAudio] != numAudioFrames {
+		t.Fatalf("decoded audio frames = %d, want %d", decoded[MediaTypeAudio], numAudioFrames)
+	}
+}
+
+func fillSilentPlanarAudio(frame Frame, channels int) {
+	data := avutil.GetFrameData(frame.ptr)
+	linesize := avutil.GetFrameLinesize(frame.ptr)[0]
+	for channel := 0; channel < channels; channel++ {
+		if data[channel] != nil && linesize > 0 {
+			clear(unsafe.Slice((*byte)(data[channel]), int(linesize)))
+		}
+	}
 }
 
 func TestSampleFormatConstants(t *testing.T) {

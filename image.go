@@ -112,55 +112,35 @@ func SaveFrame(frame Frame, filename string) error {
 		return errors.New("ffgo: failed to allocate packet")
 	}
 
-	// Send frame
-	err := avcodec.SendFrame(codecCtx, frameToEncode.ptr)
-	if err != nil {
-		avcodec.PacketFree(&packet)
+	defer avcodec.PacketFree(&packet)
+	defer func() {
 		if scaler != nil {
 			scaler.Close()
 		}
 		avcodec.Close(codecCtx)
 		avcodec.FreeContext(&codecCtx)
+	}()
+
+	var data []byte
+	state := encoderCodecState{}
+	appendPacket := func(packet avcodec.Packet) error {
+		packetData := avcodec.GetPacketData(packet)
+		packetSize := avcodec.GetPacketSize(packet)
+		if packetData == nil || packetSize <= 0 {
+			return errors.New("ffgo: image encoder produced an empty packet")
+		}
+		data = append(data, unsafe.Slice((*byte)(packetData), packetSize)...)
+		return nil
+	}
+	if err := state.encode(codecCtx, frameToEncode.ptr, packet, appendPacket); err != nil {
 		return err
 	}
-
-	// Receive packet
-	err = avcodec.ReceivePacket(codecCtx, packet)
-	if err != nil {
-		avcodec.PacketFree(&packet)
-		if scaler != nil {
-			scaler.Close()
-		}
-		avcodec.Close(codecCtx)
-		avcodec.FreeContext(&codecCtx)
+	if err := state.encode(codecCtx, nil, packet, appendPacket); err != nil {
 		return err
 	}
-
-	// Get packet data
-	packetData := avcodec.GetPacketData(packet)
-	packetSize := avcodec.GetPacketSize(packet)
-
-	if packetData == nil || packetSize <= 0 {
-		avcodec.PacketFree(&packet)
-		if scaler != nil {
-			scaler.Close()
-		}
-		avcodec.Close(codecCtx)
-		avcodec.FreeContext(&codecCtx)
+	if len(data) == 0 {
 		return errors.New("ffgo: encoder produced no data")
 	}
-
-	// Copy data to Go slice
-	data := make([]byte, packetSize)
-	copy(data, unsafe.Slice((*byte)(packetData), packetSize))
-
-	// Clean up FFmpeg resources first
-	avcodec.PacketFree(&packet)
-	if scaler != nil {
-		scaler.Close() // This frees the internal dstFrame
-	}
-	avcodec.Close(codecCtx)
-	avcodec.FreeContext(&codecCtx)
 
 	// Write to file
 	return os.WriteFile(filename, data, 0644)
@@ -334,6 +314,7 @@ func (d *Decoder) GetKeyframes() ([]Keyframe, error) {
 	if d.videoCodecCtx != nil {
 		avcodec.FlushBuffers(d.videoCodecCtx)
 	}
+	d.clearDecodeStateLocked()
 
 	return keyframes, nil
 }

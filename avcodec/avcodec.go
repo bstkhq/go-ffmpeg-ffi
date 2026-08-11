@@ -230,7 +230,7 @@ func SendPacket(ctx Context, pkt Packet) error {
 	}
 	ret := avcodecSendPacket(uintptr(ctx), uintptr(pkt))
 	runtime.KeepAlive(pkt)
-	if ret < 0 && ret != avutil.AVERROR_EAGAIN && ret != avutil.AVERROR_EOF {
+	if ret < 0 {
 		return avutil.NewError(ret, "avcodec_send_packet")
 	}
 	return nil
@@ -260,7 +260,7 @@ func SendFrame(ctx Context, frame avutil.Frame) error {
 	}
 	ret := avcodecSendFrame(uintptr(ctx), uintptr(frame))
 	runtime.KeepAlive(frame)
-	if ret < 0 && ret != avutil.AVERROR_EAGAIN && ret != avutil.AVERROR_EOF {
+	if ret < 0 {
 		return avutil.NewError(ret, "avcodec_send_frame")
 	}
 	return nil
