@@ -17,7 +17,7 @@ import (
 // set of FFmpeg shared libraries.
 var ErrUnsupported = errors.New("ffgo: unsupported FFmpeg ABI")
 
-// Layout contains every version-dependent structure layout used by ffgo.
+// Layout contains every public FFmpeg structure layout used directly by Go.
 type Layout struct {
 	FFmpegMajor     int
 	AVUtilMajor     int
@@ -27,18 +27,33 @@ type Layout struct {
 	SWResampleMajor int
 	AVFilterMajor   int
 	AVDeviceMajor   int
+
 	Frame           FrameLayout
 	FormatContext   FormatContextLayout
 	CodecParameters CodecParametersLayout
 	CodecContext    CodecContextLayout
+	Packet          PacketLayout
+	BSFContext      BSFContextLayout
+	Stream          StreamLayout
+	Chapter         ChapterLayout
+	Program         ProgramLayout
+	Codec           CodecLayout
+	InputFormat     InputFormatLayout
+	OutputFormat    OutputFormatLayout
+	FilterInOut     FilterInOutLayout
+	DictionaryEntry DictionaryEntryLayout
+	ChannelLayout   ChannelLayoutLayout
+	Subtitle        SubtitleLayout
+	SubtitleRect    SubtitleRectLayout
 }
 
 // FrameLayout contains offsets into AVFrame.
 type FrameLayout struct {
-	Data, Linesize, ExtendedData                         uintptr
-	Width, Height, NbSamples, Format, KeyFrame, PTS      uintptr
-	SampleRate, Buffer, ExtendedBuffer, NbExtendedBuffer uintptr
-	ChannelLayout                                        uintptr
+	Data, Linesize, ExtendedData       uintptr
+	Width, Height, NbSamples, Format   uintptr
+	KeyFrame, Flags, PTS               uintptr
+	SampleRate, Buffer, ExtendedBuffer uintptr
+	NbExtendedBuffer, ChannelLayout    uintptr
 }
 
 // FormatContextLayout contains offsets into AVFormatContext.
@@ -63,67 +78,263 @@ type CodecContextLayout struct {
 	HWFramesContext, HWDeviceContext, ChannelLayout uintptr
 }
 
-var layouts = map[[3]int]Layout{
-	{58, 60, 60}: {
-		FFmpegMajor: 6, AVUtilMajor: 58, AVCodecMajor: 60, AVFormatMajor: 60,
-		SWScaleMajor: 7, SWResampleMajor: 4, AVFilterMajor: 9, AVDeviceMajor: 60,
-		Frame: FrameLayout{
-			Data: 0, Linesize: 64, ExtendedData: 96,
-			Width: 104, Height: 108, NbSamples: 112, Format: 116,
-			KeyFrame: 120, PTS: 136, SampleRate: 208,
-			Buffer: 224, ExtendedBuffer: 288, NbExtendedBuffer: 296,
-			ChannelLayout: 448,
+// PacketLayout contains offsets into AVPacket.
+type PacketLayout struct {
+	PTS, DTS, Data, SizeField, StreamIndex, Flags uintptr
+	Duration, Position                            uintptr
+}
+
+// BSFContextLayout contains offsets into AVBSFContext.
+type BSFContextLayout struct {
+	ParametersIn, ParametersOut, TimeBaseIn, TimeBaseOut uintptr
+}
+
+// StreamLayout contains offsets into AVStream.
+type StreamLayout struct {
+	Index, ID, CodecParameters, TimeBase uintptr
+	Metadata, AverageFrameRate           uintptr
+}
+
+// ChapterLayout contains offsets into AVChapter.
+type ChapterLayout struct {
+	ID, TimeBase, Start, End, Metadata uintptr
+}
+
+// ProgramLayout contains offsets into AVProgram.
+type ProgramLayout struct {
+	ID, StreamIndex, NumStreamIndexes, Metadata uintptr
+}
+
+// CodecLayout contains offsets into AVCodec.
+type CodecLayout struct {
+	Name uintptr
+}
+
+// InputFormatLayout contains offsets into AVInputFormat.
+type InputFormatLayout struct {
+	Name, LongName uintptr
+}
+
+// OutputFormatLayout contains offsets into AVOutputFormat.
+type OutputFormatLayout struct {
+	Flags uintptr
+}
+
+// FilterInOutLayout contains offsets into AVFilterInOut.
+type FilterInOutLayout struct {
+	Name, FilterContext, PadIndex, Next uintptr
+}
+
+// DictionaryEntryLayout contains offsets into AVDictionaryEntry.
+type DictionaryEntryLayout struct {
+	Key, Value uintptr
+}
+
+// ChannelLayoutLayout contains offsets into AVChannelLayout.
+type ChannelLayoutLayout struct {
+	NumChannels uintptr
+}
+
+// SubtitleLayout contains offsets into AVSubtitle.
+type SubtitleLayout struct {
+	Format, StartDisplayTime, EndDisplayTime uintptr
+	NumRects, Rects, PTS, Size               uintptr
+}
+
+// SubtitleRectLayout contains offsets into AVSubtitleRect.
+type SubtitleRectLayout struct {
+	X, Y, Width, Height, NumColors uintptr
+	Data, Linesize, Flags, Type    uintptr
+	Text, ASS                      uintptr
+}
+
+var (
+	ffmpeg6 = makeFFmpeg6Layout()
+	ffmpeg7 = makeFFmpeg7Layout()
+	ffmpeg8 = makeFFmpeg8Layout()
+
+	layouts = map[[3]int]Layout{
+		{58, 60, 60}: ffmpeg6,
+		{59, 61, 61}: ffmpeg7,
+		{60, 62, 62}: ffmpeg8,
+	}
+)
+
+// commonLayout contains offsets verified to be identical in the pinned public
+// headers for the FFmpeg 6.0, 6.1, 7.0, 7.1, 8.0, and 8.1 release lines.
+// Family-specific constructors fill every structure that changed layout.
+func commonLayout() Layout {
+	return Layout{
+		Packet: PacketLayout{
+			PTS: 8, DTS: 16, Data: 24, SizeField: 32,
+			StreamIndex: 36, Flags: 40, Duration: 64, Position: 72,
 		},
-		FormatContext: FormatContextLayout{
-			InputFormat: 8, OutputFormat: 16, IOContext: 32,
-			NumStreams: 44, Streams: 48, Duration: 72, BitRate: 80,
-			Flags: 96, NumPrograms: 132, Programs: 136,
-			NumChapters: 164, Chapters: 168, Metadata: 176,
-			ProbeScore: 300,
+		BSFContext: BSFContextLayout{
+			ParametersIn: 24, ParametersOut: 32, TimeBaseIn: 40, TimeBaseOut: 48,
 		},
-		CodecParameters: CodecParametersLayout{
-			CodecType: 0, CodecID: 4, CodecTag: 8, Extradata: 16,
-			ExtradataSize: 24, Format: 28, Width: 56, Height: 60,
-			SampleRate: 116, ChannelLayout: 144,
+		Chapter: ChapterLayout{
+			ID: 0, TimeBase: 8, Start: 16, End: 24, Metadata: 32,
 		},
-		CodecContext: CodecContextLayout{
-			CodecType: 12, CodecID: 24, BitRate: 56, Flags: 76,
-			TimeBase: 100, Width: 116, Height: 120, GOPSize: 132,
-			PixelFormat: 136, MaxBFrames: 160, SampleRate: 352,
-			SampleFormat: 360, FrameSize: 364, FrameRate: 704,
-			HWFramesContext: 840, HWDeviceContext: 864, ChannelLayout: 912,
+		Program: ProgramLayout{
+			ID: 0, StreamIndex: 16, NumStreamIndexes: 24, Metadata: 32,
 		},
-	},
-	{59, 61, 61}: {
-		FFmpegMajor: 7, AVUtilMajor: 59, AVCodecMajor: 61, AVFormatMajor: 61,
-		SWScaleMajor: 8, SWResampleMajor: 5, AVFilterMajor: 10, AVDeviceMajor: 61,
-		Frame: FrameLayout{
-			Data: 0, Linesize: 64, ExtendedData: 96,
-			Width: 104, Height: 108, NbSamples: 112, Format: 116,
-			KeyFrame: 120, PTS: 136, SampleRate: 192,
-			Buffer: 200, ExtendedBuffer: 264, NbExtendedBuffer: 272,
-			ChannelLayout: 408,
+		Codec:        CodecLayout{Name: 0},
+		InputFormat:  InputFormatLayout{Name: 0, LongName: 8},
+		OutputFormat: OutputFormatLayout{Flags: 44},
+		FilterInOut: FilterInOutLayout{
+			Name: 0, FilterContext: 8, PadIndex: 16, Next: 24,
 		},
-		FormatContext: FormatContextLayout{
-			InputFormat: 8, OutputFormat: 16, IOContext: 32,
-			NumStreams: 44, Streams: 48, Duration: 104, BitRate: 112,
-			Flags: 128, NumPrograms: 164, Programs: 168,
-			NumChapters: 72, Chapters: 80, Metadata: 192,
-			ProbeScore: 324,
+		DictionaryEntry: DictionaryEntryLayout{Key: 0, Value: 8},
+		ChannelLayout:   ChannelLayoutLayout{NumChannels: 4},
+		Subtitle: SubtitleLayout{
+			Format: 0, StartDisplayTime: 4, EndDisplayTime: 8,
+			NumRects: 12, Rects: 16, PTS: 24, Size: 32,
 		},
-		CodecParameters: CodecParametersLayout{
-			CodecType: 0, CodecID: 4, CodecTag: 8, Extradata: 16,
-			ExtradataSize: 24, Format: 44, Width: 72, Height: 76,
-			SampleRate: 152, ChannelLayout: 128,
-		},
-		CodecContext: CodecContextLayout{
-			CodecType: 12, CodecID: 24, BitRate: 56, Flags: 64,
-			TimeBase: 84, Width: 116, Height: 120, GOPSize: 332,
-			PixelFormat: 140, MaxBFrames: 200, SampleRate: 344,
-			SampleFormat: 348, FrameSize: 376, FrameRate: 100,
-			HWFramesContext: 552, HWDeviceContext: 560, ChannelLayout: 352,
-		},
-	},
+	}
+}
+
+func makeFFmpeg6Layout() Layout {
+	layout := commonLayout()
+	layout.FFmpegMajor = 6
+	layout.AVUtilMajor = 58
+	layout.AVCodecMajor = 60
+	layout.AVFormatMajor = 60
+	layout.SWScaleMajor = 7
+	layout.SWResampleMajor = 4
+	layout.AVFilterMajor = 9
+	layout.AVDeviceMajor = 60
+	layout.Frame = FrameLayout{
+		Data: 0, Linesize: 64, ExtendedData: 96,
+		Width: 104, Height: 108, NbSamples: 112, Format: 116,
+		KeyFrame: 120, Flags: 316, PTS: 136, SampleRate: 208,
+		Buffer: 224, ExtendedBuffer: 288, NbExtendedBuffer: 296,
+		ChannelLayout: 448,
+	}
+	layout.FormatContext = FormatContextLayout{
+		InputFormat: 8, OutputFormat: 16, IOContext: 32,
+		NumStreams: 44, Streams: 48, Duration: 72, BitRate: 80,
+		Flags: 96, NumPrograms: 132, Programs: 136,
+		NumChapters: 164, Chapters: 168, Metadata: 176,
+		ProbeScore: 300,
+	}
+	layout.CodecParameters = CodecParametersLayout{
+		CodecType: 0, CodecID: 4, CodecTag: 8, Extradata: 16,
+		ExtradataSize: 24, Format: 28, Width: 56, Height: 60,
+		SampleRate: 116, ChannelLayout: 144,
+	}
+	layout.CodecContext = CodecContextLayout{
+		CodecType: 12, CodecID: 24, BitRate: 56, Flags: 76,
+		TimeBase: 100, Width: 116, Height: 120, GOPSize: 132,
+		PixelFormat: 136, MaxBFrames: 160, SampleRate: 352,
+		SampleFormat: 360, FrameSize: 364, FrameRate: 704,
+		HWFramesContext: 840, HWDeviceContext: 864, ChannelLayout: 912,
+	}
+	layout.Stream = StreamLayout{
+		Index: 8, ID: 12, CodecParameters: 16, TimeBase: 32,
+		Metadata: 80, AverageFrameRate: 88,
+	}
+	layout.SubtitleRect = SubtitleRectLayout{
+		X: 0, Y: 4, Width: 8, Height: 12, NumColors: 16,
+		Data: 24, Linesize: 56, Flags: 96, Type: 72,
+		Text: 80, ASS: 88,
+	}
+	return layout
+}
+
+func makeFFmpeg7Layout() Layout {
+	layout := commonLayout()
+	layout.FFmpegMajor = 7
+	layout.AVUtilMajor = 59
+	layout.AVCodecMajor = 61
+	layout.AVFormatMajor = 61
+	layout.SWScaleMajor = 8
+	layout.SWResampleMajor = 5
+	layout.AVFilterMajor = 10
+	layout.AVDeviceMajor = 61
+	layout.Frame = FrameLayout{
+		Data: 0, Linesize: 64, ExtendedData: 96,
+		Width: 104, Height: 108, NbSamples: 112, Format: 116,
+		KeyFrame: 120, Flags: 292, PTS: 136, SampleRate: 192,
+		Buffer: 200, ExtendedBuffer: 264, NbExtendedBuffer: 272,
+		ChannelLayout: 408,
+	}
+	layout.FormatContext = FormatContextLayout{
+		InputFormat: 8, OutputFormat: 16, IOContext: 32,
+		NumStreams: 44, Streams: 48, Duration: 104, BitRate: 112,
+		Flags: 128, NumPrograms: 164, Programs: 168,
+		NumChapters: 72, Chapters: 80, Metadata: 192,
+		ProbeScore: 324,
+	}
+	layout.CodecParameters = CodecParametersLayout{
+		CodecType: 0, CodecID: 4, CodecTag: 8, Extradata: 16,
+		ExtradataSize: 24, Format: 44, Width: 72, Height: 76,
+		SampleRate: 152, ChannelLayout: 128,
+	}
+	layout.CodecContext = CodecContextLayout{
+		CodecType: 12, CodecID: 24, BitRate: 56, Flags: 64,
+		TimeBase: 84, Width: 116, Height: 120, GOPSize: 332,
+		PixelFormat: 140, MaxBFrames: 200, SampleRate: 344,
+		SampleFormat: 348, FrameSize: 376, FrameRate: 100,
+		HWFramesContext: 552, HWDeviceContext: 560, ChannelLayout: 352,
+	}
+	layout.Stream = StreamLayout{
+		Index: 8, ID: 12, CodecParameters: 16, TimeBase: 32,
+		Metadata: 80, AverageFrameRate: 88,
+	}
+	layout.SubtitleRect = SubtitleRectLayout{
+		X: 0, Y: 4, Width: 8, Height: 12, NumColors: 16,
+		Data: 24, Linesize: 56, Flags: 72, Type: 76,
+		Text: 80, ASS: 88,
+	}
+	return layout
+}
+
+func makeFFmpeg8Layout() Layout {
+	layout := commonLayout()
+	layout.FFmpegMajor = 8
+	layout.AVUtilMajor = 60
+	layout.AVCodecMajor = 62
+	layout.AVFormatMajor = 62
+	layout.SWScaleMajor = 9
+	layout.SWResampleMajor = 6
+	layout.AVFilterMajor = 11
+	layout.AVDeviceMajor = 62
+	layout.Frame = FrameLayout{
+		Data: 0, Linesize: 64, ExtendedData: 96,
+		Width: 104, Height: 108, NbSamples: 112, Format: 116,
+		Flags: 276, PTS: 136, SampleRate: 180,
+		Buffer: 184, ExtendedBuffer: 248, NbExtendedBuffer: 256,
+		ChannelLayout: 384,
+	}
+	layout.FormatContext = FormatContextLayout{
+		InputFormat: 8, OutputFormat: 16, IOContext: 32,
+		NumStreams: 44, Streams: 48, Duration: 104, BitRate: 112,
+		Flags: 128, NumPrograms: 164, Programs: 168,
+		NumChapters: 72, Chapters: 80, Metadata: 192,
+		ProbeScore: 324,
+	}
+	layout.CodecParameters = CodecParametersLayout{
+		CodecType: 0, CodecID: 4, CodecTag: 8, Extradata: 16,
+		ExtradataSize: 24, Format: 44, Width: 72, Height: 76,
+		SampleRate: 152, ChannelLayout: 128,
+	}
+	layout.CodecContext = CodecContextLayout{
+		CodecType: 12, CodecID: 24, BitRate: 56, Flags: 64,
+		TimeBase: 84, Width: 112, Height: 116, GOPSize: 332,
+		PixelFormat: 136, MaxBFrames: 200, SampleRate: 344,
+		SampleFormat: 348, FrameSize: 376, FrameRate: 100,
+		HWFramesContext: 552, HWDeviceContext: 560, ChannelLayout: 352,
+	}
+	layout.Stream = StreamLayout{
+		Index: 8, ID: 12, CodecParameters: 16, TimeBase: 32,
+		Metadata: 80, AverageFrameRate: 88,
+	}
+	layout.SubtitleRect = SubtitleRectLayout{
+		X: 0, Y: 4, Width: 8, Height: 12, NumColors: 16,
+		Data: 24, Linesize: 56, Flags: 72, Type: 76,
+		Text: 80, ASS: 88,
+	}
+	return layout
 }
 
 // Detect selects a layout from the runtime library versions. Version values
@@ -134,9 +345,28 @@ func Detect(avutilVersion, avcodecVersion, avformatVersion uint32) (Layout, erro
 		return layout, nil
 	}
 	return Layout{}, fmt.Errorf(
-		"%w: libavutil %d, libavcodec %d, libavformat %d; supported combinations are FFmpeg 6 (58/60/60) and FFmpeg 7 (59/61/61)",
+		"%w: libavutil %d, libavcodec %d, libavformat %d; supported combinations are FFmpeg 6 (58/60/60), FFmpeg 7 (59/61/61), and FFmpeg 8 (60/62/62)",
 		ErrUnsupported, key[0], key[1], key[2],
 	)
+}
+
+// ForFFmpegMajor returns the layout for a supported FFmpeg release family.
+func ForFFmpegMajor(ffmpegMajor int) (Layout, bool) {
+	switch ffmpegMajor {
+	case 6:
+		return ffmpeg6, true
+	case 7:
+		return ffmpeg7, true
+	case 8:
+		return ffmpeg8, true
+	default:
+		return Layout{}, false
+	}
+}
+
+// Supported returns supported layouts in loader preference order.
+func Supported() []Layout {
+	return []Layout{ffmpeg8, ffmpeg7, ffmpeg6}
 }
 
 // LibraryMajor returns the shared-library major expected by this FFmpeg ABI.
