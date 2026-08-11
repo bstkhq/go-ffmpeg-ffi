@@ -838,6 +838,9 @@ func (d *Decoder) Close() error {
 		if d.interrupt != nil {
 			d.interrupt.stop()
 		}
+		if d.customIO != nil {
+			d.customIO.cancelPending()
+		}
 	})
 	d.mu.Lock()
 	defer d.mu.Unlock()

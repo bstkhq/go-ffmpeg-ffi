@@ -16,7 +16,8 @@ import (
 
 // Encoder encodes video and/or audio frames to a file.
 type Encoder struct {
-	mu sync.Mutex
+	mu          sync.Mutex
+	closeSignal sync.Once
 
 	formatCtx avformat.FormatContext
 	ioCtx     avformat.IOContext
@@ -1220,6 +1221,11 @@ func (e *Encoder) AudioSampleFormat() SampleFormat {
 
 // Close finalizes and closes the encoder.
 func (e *Encoder) Close() error {
+	e.closeSignal.Do(func() {
+		if e.customIO != nil {
+			e.customIO.cancelPending()
+		}
+	})
 	e.mu.Lock()
 	defer e.mu.Unlock()
 

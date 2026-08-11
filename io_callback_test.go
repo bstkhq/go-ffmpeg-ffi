@@ -4,9 +4,11 @@ package ffgo
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"testing"
+	"time"
 
 	"github.com/bstkhq/go-ffmpeg-ffi/avcodec"
 	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
@@ -169,5 +171,85 @@ func TestEncoderFromIOOwnsContextAndWritesFrames(t *testing.T) {
 	}
 	if got := handles.Count(); got != before {
 		t.Fatalf("registered handles = %d, want baseline %d", got, before)
+	}
+}
+
+func TestDecoderFromIOContextCancelsBlockedOpen(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+	before := handles.Count()
+	ctx, cancel := context.WithCancel(context.Background())
+	readStarted := make(chan struct{})
+	result := make(chan error, 1)
+
+	go func() {
+		_, err := NewDecoderFromIOContext(ctx, &IOCallbacks{
+			ReadContext: func(ctx context.Context, _ []byte) (int, error) {
+				close(readStarted)
+				<-ctx.Done()
+				return 0, ctx.Err()
+			},
+		}, "mpegts")
+		result <- err
+	}()
+
+	select {
+	case <-readStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("FFmpeg did not invoke the read callback")
+	}
+	cancel()
+
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("NewDecoderFromIOContext error = %v, want context.Canceled", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("canceled decoder construction remained blocked")
+	}
+	if got := handles.Count(); got != before {
+		t.Fatalf("registered handles = %d, want baseline %d", got, before)
+	}
+}
+
+func TestCustomIOCloseCancelsActiveCallback(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+	readStarted := make(chan struct{})
+	ioCtx, err := NewCustomIOContext(&IOCallbacks{
+		ReadContext: func(ctx context.Context, _ []byte) (int, error) {
+			close(readStarted)
+			<-ctx.Done()
+			return 0, ctx.Err()
+		},
+	}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ioCtx.beginOperation()
+	callbackDone := make(chan int32, 1)
+	buffer := make([]byte, 8)
+	go func() {
+		callbackDone <- customIOReadCallback(purego.CDecl{}, ioCtx.handle, &buffer[0], int32(len(buffer)))
+	}()
+	select {
+	case <-readStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("read callback did not start")
+	}
+	if err := ioCtx.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case code := <-callbackDone:
+		if code != avutil.AVERROR_EXTERNAL {
+			t.Fatalf("callback returned %d, want %d", code, avutil.AVERROR_EXTERNAL)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("CustomIOContext.Close did not cancel the callback")
 	}
 }
