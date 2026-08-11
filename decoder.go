@@ -435,7 +435,13 @@ func (d *Decoder) ReadPacket() (*Packet, error) {
 func (d *Decoder) OpenVideoDecoder() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	return d.openVideoDecoderLocked()
+}
 
+func (d *Decoder) openVideoDecoderLocked() error {
+	if d.closed {
+		return errors.New("ffgo: decoder is closed")
+	}
 	if d.videoStreamIdx < 0 {
 		return errors.New("ffgo: no video stream")
 	}
@@ -481,7 +487,13 @@ func (d *Decoder) OpenVideoDecoder() error {
 func (d *Decoder) OpenAudioDecoder() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	return d.openAudioDecoderLocked()
+}
 
+func (d *Decoder) openAudioDecoderLocked() error {
+	if d.closed {
+		return errors.New("ffgo: decoder is closed")
+	}
 	if d.audioStreamIdx < 0 {
 		return errors.New("ffgo: no audio stream")
 	}
@@ -528,31 +540,7 @@ func (d *Decoder) OpenAudioDecoder() error {
 func (d *Decoder) DecodeVideoPacket(pkt *Packet) (Frame, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-
-	if !d.videoDecoderOpen {
-		return Frame{}, errors.New("ffgo: video decoder not opened; call OpenVideoDecoder first")
-	}
-
-	// Send packet to decoder
-	var raw avcodec.Packet
-	if pkt != nil {
-		raw = pkt.ptr
-	}
-	if err := avcodec.SendPacket(d.videoCodecCtx, raw); err != nil {
-		return Frame{}, err
-	}
-
-	// Receive decoded frame
-	avutil.FrameUnref(d.frame)
-	err := avcodec.ReceiveFrame(d.videoCodecCtx, d.frame)
-	if err != nil {
-		if avutil.IsAgain(err) || avutil.IsEOF(err) {
-			return Frame{}, nil
-		}
-		return Frame{}, err
-	}
-
-	return Frame{ptr: d.frame, owned: false}, nil
+	return d.decodePacketLocked(MediaTypeVideo, pkt)
 }
 
 // DecodeVideoPacketCopy decodes a video packet and returns an owned frame.
@@ -574,30 +562,38 @@ func (d *Decoder) DecodeVideoPacketCopy(pkt *Packet) (Frame, error) {
 func (d *Decoder) DecodeAudioPacket(pkt *Packet) (Frame, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	return d.decodePacketLocked(MediaTypeAudio, pkt)
+}
 
-	if !d.audioDecoderOpen {
-		return Frame{}, errors.New("ffgo: audio decoder not opened; call OpenAudioDecoder first")
+func (d *Decoder) decodePacketLocked(mediaType MediaType, packet *Packet) (Frame, error) {
+	if d.closed {
+		return Frame{}, errors.New("ffgo: decoder is closed")
 	}
 
-	// Send packet to decoder
-	var raw avcodec.Packet
-	if pkt != nil {
-		raw = pkt.ptr
-	}
-	if err := avcodec.SendPacket(d.audioCodecCtx, raw); err != nil {
-		return Frame{}, err
-	}
-
-	// Receive decoded frame
-	avutil.FrameUnref(d.frame)
-	err := avcodec.ReceiveFrame(d.audioCodecCtx, d.frame)
+	state, ctx, err := d.codecStateLocked(mediaType)
 	if err != nil {
-		if avutil.IsAgain(err) || avutil.IsEOF(err) {
-			return Frame{}, nil
-		}
 		return Frame{}, err
 	}
+	if packet == nil || packet.ptr == nil {
+		state.requestFlush()
+	} else {
+		clone, err := cloneRawPacket(packet.ptr)
+		if err != nil {
+			return Frame{}, err
+		}
+		if err := state.enqueueOwned(clone); err != nil {
+			avcodec.PacketFree(&clone)
+			return Frame{}, err
+		}
+	}
 
+	ready, err := state.next(ctx, d.frame)
+	if err != nil {
+		return Frame{}, err
+	}
+	if !ready {
+		return Frame{}, nil
+	}
 	return Frame{ptr: d.frame, owned: false}, nil
 }
 
