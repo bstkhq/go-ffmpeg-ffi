@@ -1,205 +1,90 @@
-# Contributing to ffgo
+# Contributing to go-ffmpeg-ffi
 
-Thank you for your interest in contributing to ffgo! This document provides guidelines and instructions for contributing.
+Thank you for helping build go-ffmpeg-ffi. This is a hard fork of
+[ffgo](https://github.com/obinnaokechukwu/ffgo); please preserve the original
+authors' attribution when moving or modifying inherited work.
 
-## Code of Conduct
+The source tree remains transitional until the first release. See the
+[architecture](docs/architecture.md) for technical decisions and the
+[roadmap](docs/roadmap.md) for the six bootstrap PRs.
 
-Be respectful, professional, and constructive. We're all here to build something great.
+## Before opening a change
 
-## Getting Started
+- Search existing issues and PRs.
+- Use a focused branch and keep changes inside one roadmap subsystem.
+- State the operating system, architecture, Go version, complete FFmpeg library
+  versions, shim status, and reproduction steps for bugs.
+- Prefer small redistributable media fixtures; include sound when testing the
+  go-avebi playback path.
+- Do not present inherited features as verified until the compatibility matrix
+  proves them.
 
-### Prerequisites
+## Code rules
 
-- Go 1.21 or later
-- FFmpeg 4.x-7.x development libraries
-- GCC/Clang (for building the shim)
+- Format Go code with `gofmt` and keep exported APIs documented.
+- Return contextual errors instead of panicking on runtime or media failures.
+- Make native ownership explicit and pair every allocation with deterministic
+  cleanup.
+- Never retain an ordinary Go heap pointer in native code. Use integer callback
+  handles and keep callbacks panic-safe.
+- Keep all version-specific layouts in `internal/abi`; do not add local magic
+  offsets.
+- Treat missing optional symbols as capabilities and missing required symbols
+  as initialization errors.
+- Update the canonical architecture or roadmap instead of creating another plan
+  document.
 
-### Setup Development Environment
+## Test expectations
+
+At minimum, run:
 
 ```bash
-# Clone the repository
-git clone https://github.com/obinnaokechukwu/ffgo.git
-cd ffgo
-
-# Install FFmpeg libraries
-sudo apt install ffmpeg libavcodec-dev libavformat-dev libavutil-dev libswscale-dev  # Ubuntu
-brew install ffmpeg  # macOS
-
-# Build the shim
-cd shim
-./build.sh
-cd ..
-
-# Run tests
-go test ./...
+gofmt -w <changed-go-files>
+go vet -unsafeptr=false ./...
+CGO_ENABLED=0 go build ./...
+CGO_ENABLED=0 go test ./...
 ```
 
-## How to Contribute
+The `unsafeptr` analyzer is disabled because this FFI layer intentionally
+converts native addresses. Those conversions require ABI-specific review and
+integration or stress coverage instead of a blanket analyzer exemption.
 
-### Reporting Issues
+FFmpeg-facing changes must also run the relevant pinned integration job from the
+[test matrix](docs/roadmap.md#pr-5-make-compatibility-claims-executable). ABI,
+ownership, callbacks, or native cleanup changes require the corresponding
+stress or sanitizer coverage. PR descriptions must report exactly what was run;
+“all versions” is not sufficient.
 
-- Check existing issues first to avoid duplicates
-- Provide clear reproduction steps
-- Include Go version, FFmpeg version, and OS
-- Attach sample media files if relevant (preferably small)
+## Commits and pull requests
 
-### Submitting Pull Requests
+Use clear imperative commit subjects and explain why unsafe or ABI-sensitive
+code is correct. A bootstrap PR may contain several logical commits, but its
+scope must remain one of the six roadmap units.
 
-1. **Fork the repository** and create a feature branch
-   ```bash
-   git checkout -b feature/my-feature
-   ```
+Development may be assisted by OpenAI Codex. Human contributors remain the
+authors, reviewers, and accountable maintainers. When Codex materially helped a
+commit, add this trailer after the commit message body:
 
-2. **Follow the implementation order** (if adding new features):
-   - Internal packages first (`internal/`)
-   - Shim updates if needed (`shim/`)
-   - Low-level bindings (`avutil/`, `avcodec/`, `avformat/`, `swscale/`)
-   - High-level API (`ffgo.go`, `decoder.go`, `encoder.go`, etc.)
-
-3. **Write tests** for all new functionality
-   ```bash
-   # Add tests to *_test.go files
-   go test -v ./...
-   ```
-
-4. **Follow Go conventions**:
-   - Run `go fmt` on all code
-   - Run `go vet` to catch common issues
-   - Use meaningful variable and function names
-   - Document exported functions and types
-
-5. **Test thoroughly**:
-   ```bash
-   # Test with CGO disabled
-   CGO_ENABLED=0 go build ./...
-   CGO_ENABLED=0 go test ./...
-   
-   # Run examples
-   go run examples/decode/main.go testdata/test.mp4
-   go run examples/transcode/main.go testdata/test.mp4 /tmp/output.mp4
-   ```
-
-6. **Update documentation** if needed:
-   - Update `docs/user-guide.md` for user-facing changes
-   - Update `docs/internal-design.md` for architecture changes
-   - Update `README.md` examples if relevant
-
-7. **Commit with clear messages**:
-   ```bash
-   git commit -m "Add support for X"
-   # OR
-   git commit -m "Fix Y bug in Z"
-   ```
-
-8. **Push and create PR**:
-   ```bash
-   git push origin feature/my-feature
-   ```
-   Then open a pull request on GitHub with a clear description.
-
-## Development Guidelines
-
-### Code Style
-
-- Follow standard Go style (enforced by `go fmt`)
-- Keep functions focused and small
-- Prefer explicit error handling over panics
-- Use meaningful names over abbreviations (except standard Go idioms)
-
-### Memory Management
-
-- Always pair allocations with frees
-- Use `defer` for cleanup
-- Never store Go pointers in C memory
-- Use the handle system for callbacks (see `internal/handles/`)
-
-### Error Handling
-
-- Return errors, don't panic (except for programmer errors)
-- Use `FFmpegError` for FFmpeg-specific errors
-- Provide context in error messages
-
-### Testing
-
-- Unit tests for pure Go code
-- Integration tests for FFmpeg interactions
-- Include both success and failure cases
-- Test with different FFmpeg versions if possible
-
-### Platform Considerations
-
-Remember these platform-specific constraints:
-
-- **Struct by value**: Only works on Darwin (macOS); use pointers elsewhere
-- **Callback limit**: purego has a 2000 callback limit
-- **String lifetime**: Use `runtime.KeepAlive()` for strings passed to C
-
-See `docs/internal-design.md` section 15 for full gotcha list.
-
-## Project Structure
-
-```
-ffgo/
-├── ffgo.go              # Main public API
-├── decoder.go           # Decoder implementation
-├── encoder.go           # Encoder implementation
-├── scaler.go            # Scaler implementation
-├── frame.go             # Frame wrapper
-├── io.go                # Custom I/O implementation
-├── log.go               # Logging support
-├── errors.go            # Error types
-│
-├── avutil/              # Low-level avutil bindings
-├── avcodec/             # Low-level avcodec bindings
-├── avformat/            # Low-level avformat bindings
-├── swscale/             # Low-level swscale bindings
-│
-├── internal/
-│   ├── bindings/        # purego function registrations
-│   ├── handles/         # Go object handle system
-│   └── platform/        # Platform detection
-│
-├── shim/                # C shim for variadic functions
-├── examples/            # Working examples
-├── testdata/            # Test media files
-└── docs/                # Documentation
+```text
+Assisted-by: OpenAI Codex
 ```
 
-## Adding New Features
+Do not invent a Codex email address for `Co-authored-by`. Use that Git trailer
+only when a real contributor has supplied a verifiable name and email. PRs
+should also disclose material AI assistance and the human validation performed.
 
-### Adding Low-Level Bindings
+## Review checklist
 
-1. Add function signature to appropriate package (`avutil/`, `avcodec/`, etc.)
-2. Register function in `internal/bindings/`
-3. Add tests
-4. Document in function comments
-
-### Adding High-Level API
-
-1. Design API in public package (`decoder.go`, `encoder.go`, etc.)
-2. Implement using low-level bindings
-3. Add comprehensive tests
-4. Add example to `examples/`
-5. Document in `docs/user-guide.md`
-
-## Testing Checklist
-
-Before submitting a PR, ensure:
-
-- [ ] `go fmt ./...` passes
-- [ ] `go vet ./...` passes
-- [ ] `CGO_ENABLED=0 go build ./...` succeeds
-- [ ] `CGO_ENABLED=0 go test ./...` passes
-- [ ] All examples build and run
-- [ ] Documentation is updated
-- [ ] Commit messages are clear
-
-## Getting Help
-
-- **Questions**: Open a GitHub Discussion
-- **Bugs**: Open a GitHub Issue
-- **Documentation**: Check `docs/` directory
+- The PR names affected FFmpeg release lines and platforms.
+- ABI, ownership, callback, and compatibility effects are described.
+- Tests and exact loaded library/shim versions are recorded.
+- Documentation and examples match what is actually verified.
+- Inherited attribution and Apache-2.0 notices remain intact.
+- Codex assistance, if material, is disclosed.
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the Apache 2.0 License.
+Contributions are licensed under Apache-2.0. FFmpeg remains separately licensed
+under LGPL or GPL according to its build. Do not add prebuilt FFmpeg or shim
+artifacts without their corresponding license, source/configuration material,
+and distribution review.

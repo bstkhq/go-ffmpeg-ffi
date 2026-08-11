@@ -1,5 +1,9 @@
 # ffgo User Guide
 
+> **Inherited document:** examples may still use the original module and API.
+> It remains useful as migration input, but is not yet the canonical
+> go-ffmpeg-ffi user guide. Start at the [project README](../README.md).
+
 **ffgo** is a pure Go FFmpeg binding library. It lets you decode, encode, transcode, and process media files without requiring CGO.
 
 ---
