@@ -8,8 +8,8 @@ package avutil
 import (
 	"unsafe"
 
-	"github.com/ebitengine/purego"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/bindings"
+	"github.com/ebitengine/purego"
 )
 
 // Frame is an opaque FFmpeg AVFrame pointer.
@@ -211,10 +211,10 @@ const AV_NOPTS_VALUE = NoPTSValue
 var (
 	offsetData, offsetLinesize, offsetExtendedData uintptr
 	offsetWidth, offsetHeight, offsetNbSamples     uintptr
-	offsetFormat, offsetKeyFrame, offsetPts        uintptr
+	offsetFormat, offsetFrameFlags, offsetPts      uintptr
 	offsetSampleRate, offsetBuffer                 uintptr
 	offsetExtendedBuffer, offsetNbExtendedBuffer   uintptr
-	offsetChLayout                                 uintptr
+	offsetChLayout, offsetChLayoutChannels         uintptr
 )
 
 func setFrameOffsets() {
@@ -226,13 +226,14 @@ func setFrameOffsets() {
 	offsetHeight = layout.Height
 	offsetNbSamples = layout.NbSamples
 	offsetFormat = layout.Format
-	offsetKeyFrame = layout.KeyFrame
+	offsetFrameFlags = layout.Flags
 	offsetPts = layout.PTS
 	offsetSampleRate = layout.SampleRate
 	offsetBuffer = layout.Buffer
 	offsetExtendedBuffer = layout.ExtendedBuffer
 	offsetNbExtendedBuffer = layout.NbExtendedBuffer
 	offsetChLayout = layout.ChannelLayout
+	offsetChLayoutChannels = bindings.ABI().ChannelLayout.NumChannels
 }
 
 // GetFrameWidth returns the width of the frame.
@@ -351,7 +352,7 @@ func GetFrameChannels(frame Frame) int32 {
 	if frame == nil {
 		return 0
 	}
-	return *(*int32)(unsafe.Pointer(uintptr(frame) + offsetChLayout + 4))
+	return *(*int32)(unsafe.Pointer(uintptr(frame) + offsetChLayout + offsetChLayoutChannels))
 }
 
 // FrameSetFormat is an alias for SetFrameFormat
@@ -372,12 +373,16 @@ func FrameGetBuffer(frame Frame, align int32) int32 {
 	return avFrameGetBuffer(uintptr(frame), align)
 }
 
-// GetFrameKeyFrame returns 1 if this is a key frame, 0 otherwise.
+// GetFrameKeyFrame returns 1 if this is a key frame, 0 otherwise. FFmpeg 8
+// removed AVFrame.key_frame, so all supported families use AV_FRAME_FLAG_KEY.
 func GetFrameKeyFrame(frame Frame) int32 {
 	if frame == nil {
 		return 0
 	}
-	return *(*int32)(unsafe.Pointer(uintptr(frame) + offsetKeyFrame))
+	if *(*int32)(unsafe.Pointer(uintptr(frame) + offsetFrameFlags))&(1<<1) != 0 {
+		return 1
+	}
+	return 0
 }
 
 // GetFrameLinesizePlane returns the linesize for a given plane.

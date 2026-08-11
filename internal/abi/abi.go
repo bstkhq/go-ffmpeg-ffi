@@ -49,11 +49,10 @@ type Layout struct {
 
 // FrameLayout contains offsets into AVFrame.
 type FrameLayout struct {
-	Data, Linesize, ExtendedData       uintptr
-	Width, Height, NbSamples, Format   uintptr
-	KeyFrame, Flags, PTS               uintptr
-	SampleRate, Buffer, ExtendedBuffer uintptr
-	NbExtendedBuffer, ChannelLayout    uintptr
+	Data, Linesize, ExtendedData                 uintptr
+	Width, Height, NbSamples, Format, Flags, PTS uintptr
+	SampleRate, Buffer, ExtendedBuffer           uintptr
+	NbExtendedBuffer, ChannelLayout              uintptr
 }
 
 // FormatContextLayout contains offsets into AVFormatContext.
@@ -206,7 +205,7 @@ func makeFFmpeg6Layout() Layout {
 	layout.Frame = FrameLayout{
 		Data: 0, Linesize: 64, ExtendedData: 96,
 		Width: 104, Height: 108, NbSamples: 112, Format: 116,
-		KeyFrame: 120, Flags: 316, PTS: 136, SampleRate: 208,
+		Flags: 316, PTS: 136, SampleRate: 208,
 		Buffer: 224, ExtendedBuffer: 288, NbExtendedBuffer: 296,
 		ChannelLayout: 448,
 	}
@@ -254,7 +253,7 @@ func makeFFmpeg7Layout() Layout {
 	layout.Frame = FrameLayout{
 		Data: 0, Linesize: 64, ExtendedData: 96,
 		Width: 104, Height: 108, NbSamples: 112, Format: 116,
-		KeyFrame: 120, Flags: 292, PTS: 136, SampleRate: 192,
+		Flags: 292, PTS: 136, SampleRate: 192,
 		Buffer: 200, ExtendedBuffer: 264, NbExtendedBuffer: 272,
 		ChannelLayout: 408,
 	}
