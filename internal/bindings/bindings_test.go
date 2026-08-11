@@ -3,7 +3,10 @@
 package bindings
 
 import (
+	"errors"
 	"testing"
+
+	"github.com/bstkhq/go-ffmpeg-ffi/internal/abi"
 )
 
 func TestLibrarySearchPaths(t *testing.T) {
@@ -43,7 +46,13 @@ func TestLoadFFmpeg(t *testing.T) {
 
 	err := Load()
 	if err != nil {
-		t.Fatalf("FFmpeg not available: %v", err)
+		if errors.Is(err, abi.ErrUnsupported) {
+			if IsLoaded() {
+				t.Fatal("bindings reported loaded after rejecting the FFmpeg ABI")
+			}
+			t.Skipf("installed FFmpeg is outside the supported ABI matrix: %v", err)
+		}
+		t.Fatalf("loading FFmpeg: %v", err)
 	}
 
 	if !IsLoaded() {
