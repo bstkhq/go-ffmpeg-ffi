@@ -39,6 +39,8 @@ type Decoder struct {
 	packetQueue      []decoderQueuedPacket
 	demuxEOF         bool
 	activeMedia      MediaType
+	prefetchedFrame  avutil.Frame
+	prefetchedMedia  MediaType
 	customIO         *CustomIOContext
 	cleanup          func()
 	closed           bool

@@ -36,6 +36,7 @@ func (d *Decoder) SeekPrecise(ts time.Duration) error {
 	if d.audioCodecCtx != nil {
 		avcodec.FlushBuffers(d.audioCodecCtx)
 	}
+	d.clearDecodeStateLocked()
 
 	// If no video stream, we're done
 	if d.videoStreamIdx < 0 || !d.videoDecoderOpen {
@@ -61,53 +62,17 @@ func (d *Decoder) SeekPrecise(ts time.Duration) error {
 		targetPTS = targetTS * int64(tbDen) / (int64(tbNum) * 1000000)
 	}
 
-	// Decode frames until we reach or pass the target PTS
+	// Decode frames until we reach or pass the target PTS.
 	for {
-		// Read packet
-		if err := avformat.ReadFrame(d.formatCtx, d.packet); err != nil {
-			if avutil.IsEOF(err) {
-				return nil // Reached end, stop
-			}
+		frame, err := d.nextFrameLocked(MediaTypeVideo)
+		if err != nil {
 			return err
 		}
-
-		streamIdx := avcodec.GetPacketStreamIndex(d.packet)
-		if int(streamIdx) != d.videoStreamIdx {
-			avcodec.PacketUnref(d.packet)
-			continue
+		if frame.IsNil() {
+			return nil
 		}
-
-		// Send to decoder
-		if err := avcodec.SendPacket(d.videoCodecCtx, d.packet); err != nil {
-			avcodec.PacketUnref(d.packet)
-			if avutil.IsAgain(err) {
-				continue
-			}
-			return err
-		}
-		avcodec.PacketUnref(d.packet)
-
-		// Receive frames
-		for {
-			err := avcodec.ReceiveFrame(d.videoCodecCtx, d.frame)
-			if err != nil {
-				if avutil.IsAgain(err) {
-					break // Need more packets
-				}
-				if avutil.IsEOF(err) {
-					return nil
-				}
-				return err
-			}
-
-			// Check if we've reached the target
-			framePTS := avutil.GetFramePTS(d.frame)
-			if framePTS >= targetPTS {
-				// We've reached or passed the target
-				// Unref the frame so next decode gets this frame
-				avutil.FrameUnref(d.frame)
-				return nil
-			}
+		if avutil.GetFramePTS(frame.ptr) >= targetPTS {
+			return d.prefetchCurrentFrameLocked(MediaTypeVideo)
 		}
 	}
 }
@@ -255,6 +220,7 @@ func (d *Decoder) SeekAny(ts time.Duration) error {
 	if d.audioCodecCtx != nil {
 		avcodec.FlushBuffers(d.audioCodecCtx)
 	}
+	d.clearDecodeStateLocked()
 
 	return nil
 }
@@ -280,6 +246,7 @@ func (d *Decoder) SeekByBytes(bytePos int64) error {
 	if d.audioCodecCtx != nil {
 		avcodec.FlushBuffers(d.audioCodecCtx)
 	}
+	d.clearDecodeStateLocked()
 
 	return nil
 }

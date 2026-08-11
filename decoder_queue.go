@@ -105,8 +105,42 @@ func (d *Decoder) clearDecodeStateLocked() {
 	d.packetQueue = nil
 	d.demuxEOF = false
 	d.activeMedia = MediaTypeUnknown
+	if d.prefetchedFrame != nil {
+		avutil.FrameFree(&d.prefetchedFrame)
+	}
+	d.prefetchedMedia = MediaTypeUnknown
 	avcodec.PacketUnref(d.packet)
 	avutil.FrameUnref(d.frame)
+}
+
+func (d *Decoder) prefetchCurrentFrameLocked(mediaType MediaType) error {
+	frame := avutil.FrameAlloc()
+	if frame == nil {
+		return ErrOutOfMemory
+	}
+	if err := avutil.FrameRef(frame, d.frame); err != nil {
+		avutil.FrameFree(&frame)
+		return err
+	}
+	if d.prefetchedFrame != nil {
+		avutil.FrameFree(&d.prefetchedFrame)
+	}
+	d.prefetchedFrame = frame
+	d.prefetchedMedia = mediaType
+	return nil
+}
+
+func (d *Decoder) takePrefetchedFrameLocked(mediaType MediaType) (bool, error) {
+	if d.prefetchedFrame == nil || d.prefetchedMedia != mediaType {
+		return false, nil
+	}
+	avutil.FrameUnref(d.frame)
+	if err := avutil.FrameRef(d.frame, d.prefetchedFrame); err != nil {
+		return false, err
+	}
+	avutil.FrameFree(&d.prefetchedFrame)
+	d.prefetchedMedia = MediaTypeUnknown
+	return true, nil
 }
 
 func (d *Decoder) codecStateLocked(mediaType MediaType) (*decoderCodecState, avcodec.Context, error) {

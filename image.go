@@ -334,6 +334,7 @@ func (d *Decoder) GetKeyframes() ([]Keyframe, error) {
 	if d.videoCodecCtx != nil {
 		avcodec.FlushBuffers(d.videoCodecCtx)
 	}
+	d.clearDecodeStateLocked()
 
 	return keyframes, nil
 }

@@ -9,6 +9,12 @@ import (
 )
 
 func (d *Decoder) nextFrameLocked(mediaType MediaType) (Frame, error) {
+	if ready, err := d.takePrefetchedFrameLocked(mediaType); err != nil {
+		return Frame{}, err
+	} else if ready {
+		return Frame{ptr: d.frame, owned: false}, nil
+	}
+
 	state, ctx, err := d.codecStateLocked(mediaType)
 	if err != nil {
 		return Frame{}, err
@@ -44,6 +50,17 @@ func (d *Decoder) nextFrameLocked(mediaType MediaType) (Frame, error) {
 
 func (d *Decoder) readFrameLocked() (*FrameWrapper, error) {
 	for {
+		if d.prefetchedFrame != nil {
+			mediaType := d.prefetchedMedia
+			ready, err := d.takePrefetchedFrameLocked(mediaType)
+			if err != nil {
+				return nil, err
+			}
+			if ready {
+				return WrapFrame(Frame{ptr: d.frame, owned: false}, mediaType), nil
+			}
+		}
+
 		if d.activeMedia != MediaTypeUnknown {
 			state, ctx, err := d.codecStateLocked(d.activeMedia)
 			if err != nil {
