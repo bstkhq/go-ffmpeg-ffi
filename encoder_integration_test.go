@@ -35,7 +35,7 @@ func TestEncoderFlushPreservesDelayedFrames(t *testing.T) {
 		encoder.Close()
 		t.Fatal("failed to allocate frame")
 	}
-	defer FrameFree(&frame)
+	defer func() { _ = FrameFree(&frame) }()
 	AVUtil.SetFrameWidth(frame, 160)
 	AVUtil.SetFrameHeight(frame, 120)
 	AVUtil.SetFrameFormat(frame, int32(PixelFormatYUV420P))
