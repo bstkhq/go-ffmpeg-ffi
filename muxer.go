@@ -476,6 +476,7 @@ func (m *Muxer) WritePacket(ms *MuxerStream, packet *Packet) error {
 
 // WriteTrailer finalizes the container.
 // Must be called after all frames/packets are written.
+// It drains every encoded stream through codec EOF before writing the trailer.
 func (m *Muxer) WriteTrailer() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

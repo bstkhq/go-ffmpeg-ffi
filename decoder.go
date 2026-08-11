@@ -74,7 +74,9 @@ type DecoderOptions struct {
 	// auto-detection fails or yields a low probe score.
 	TryMultipleFormats bool
 
-	// Streams specifies which stream types to decode (nil = all streams)
+	// Streams specifies which stream types to decode (nil = all streams).
+	// Packets for every selected stream are retained until consumed. Select only
+	// the streams you need when using DecodeVideo or DecodeAudio exclusively.
 	Streams []MediaType
 
 	// ProgramID selects a specific program to decode in multi-program inputs (e.g. MPEG-TS).
@@ -603,6 +605,7 @@ func (d *Decoder) DecodeAudioPacketCopy(pkt *Packet) (Frame, error) {
 
 // DecodeVideo reads and decodes the next video frame.
 // This is a convenience method that handles packet reading internally.
+// Packets for other selected streams remain available to DecodeAudio or ReadFrame.
 // The returned frame is owned by the decoder; do not call FrameFree on it.
 // If you need to keep the frame beyond the next decode call, make a copy.
 // Returns nil frame on EOF.
@@ -632,6 +635,7 @@ func (d *Decoder) DecodeVideoCopy() (Frame, error) {
 
 // DecodeAudio reads and decodes the next audio frame.
 // This is a convenience method that handles packet reading internally.
+// Packets for other selected streams remain available to DecodeVideo or ReadFrame.
 // The returned frame is owned by the decoder; do not call FrameFree on it.
 // If you need to keep the frame beyond the next decode call, make a copy.
 // Returns nil frame on EOF.
@@ -684,7 +688,7 @@ func (d *Decoder) ReadFrameCopy() (*FrameWrapper, error) {
 	return fw.Copy()
 }
 
-// FlushDecoder flushes all decoder buffers.
+// FlushDecoder discards buffered codec output and queued packets for selected streams.
 func (d *Decoder) FlushDecoder() {
 	d.mu.Lock()
 	defer d.mu.Unlock()

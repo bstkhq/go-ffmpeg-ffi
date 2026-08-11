@@ -1143,7 +1143,8 @@ func (e *Encoder) WriteAudioFrame(frame Frame) error {
 	return e.encodeAudioFrameLocked(frame)
 }
 
-// Flush flushes the encoder and writes remaining frames.
+// Flush flushes every configured encoder and writes all delayed packets.
+// It is idempotent. No more frames may be written after the first successful flush.
 func (e *Encoder) Flush() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()

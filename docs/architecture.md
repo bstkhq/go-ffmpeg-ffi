@@ -3,8 +3,9 @@
 ## Status
 
 This document defines the target architecture for the go-ffmpeg-ffi hard fork.
-The current source tree is transitional: FFmpeg 6-8 ABI selection is being
-implemented before the ownership and state-machine work described below.
+FFmpeg 6-8 ABI selection and codec send/receive state machines are implemented.
+The current source tree remains transitional while ownership, callbacks,
+cancellation, and the public API are tightened in later roadmap work.
 
 ## Goals
 
