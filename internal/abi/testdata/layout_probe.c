@@ -92,6 +92,7 @@ int main(void) {
     FIELD(AVFormatContext, chapters);
     FIELD(AVFormatContext, metadata);
     FIELD(AVFormatContext, probe_score);
+    FIELD(AVFormatContext, interrupt_callback);
     SIZE(AVFormatContext);
 
     FIELD(AVPacket, pts);

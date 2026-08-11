@@ -423,6 +423,7 @@ var (
 	offsetNbPrograms, offsetPrograms                  uintptr
 	offsetNbChapters, offsetChapters                  uintptr
 	offsetContextMetadata, offsetProbeScore           uintptr
+	offsetInterruptCallback                           uintptr
 
 	offsetChapterID, offsetChapterTimeBase uintptr
 	offsetChapterStart, offsetChapterEnd   uintptr
@@ -628,6 +629,23 @@ func SetIOContext(ctx FormatContext, pb IOContext) {
 	*(*unsafe.Pointer)(unsafe.Pointer(uintptr(ctx) + offsetIOContext)) = pb
 }
 
+// SetInterruptCallback configures AVFormatContext.interrupt_callback.
+// callback is a native callback pointer with signature int(void *opaque), and
+// opaque is an integer token passed unchanged to it. Passing zeroes clears it.
+func SetInterruptCallback(ctx FormatContext, callback, opaque uintptr) {
+	if ctx == nil {
+		return
+	}
+	type interruptCallback struct {
+		callback uintptr
+		opaque   uintptr
+	}
+	*(*interruptCallback)(unsafe.Pointer(uintptr(ctx) + offsetInterruptCallback)) = interruptCallback{
+		callback: callback,
+		opaque:   opaque,
+	}
+}
+
 // GetStreamIndex returns the stream index.
 func GetStreamIndex(stream Stream) int32 {
 	if stream == nil {
@@ -669,6 +687,7 @@ func setABIOffsets() {
 	offsetChapters = format.Chapters
 	offsetContextMetadata = format.Metadata
 	offsetProbeScore = format.ProbeScore
+	offsetInterruptCallback = format.InterruptCallback
 
 	chapter := layout.Chapter
 	offsetChapterID = chapter.ID
