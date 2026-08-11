@@ -50,9 +50,13 @@ jobs:
             sha256: '464beb5e7bf0c311e68b45ae2f04e9cc2af88851abb4082231742a74d97b524c'
     env:
       FFMPEG_PREFIX: ${{ github.workspace }}/.ffmpeg/${{ matrix.ffmpeg }}
-      TMPDIR: ${{ github.workspace }}/.work/tmp
     steps:
       - uses: actions/checkout@v4
+
+      - name: Prepare workspace temp directory
+        run: |
+          mkdir -p .work/tmp
+          echo "TMPDIR=$GITHUB_WORKSPACE/.work/tmp" >> "$GITHUB_ENV"
 
       - name: Set up Go
         uses: actions/setup-go@v5
