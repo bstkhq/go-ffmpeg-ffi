@@ -10,11 +10,12 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 
-	"github.com/ebitengine/purego"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/abi"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/platform"
+	"github.com/ebitengine/purego"
 )
 
 // ErrNotLoaded is returned when FFmpeg functions are called before Load().
@@ -23,7 +24,32 @@ var ErrNotLoaded = errors.New("ffgo: FFmpeg libraries not loaded; call ffgo.Init
 // ErrLibraryNotFound is returned when a required FFmpeg library cannot be found.
 var ErrLibraryNotFound = errors.New("ffgo: FFmpeg library not found")
 
-// Library handles
+type loadedLibrary struct {
+	handle uintptr
+	path   string
+}
+
+type coreLibraries struct {
+	avutil, avcodec, avformat loadedLibrary
+	avutilVersion             func() uint32
+	avcodecVersion            func() uint32
+	avformatVersion           func() uint32
+	layout                    abi.Layout
+}
+
+type dynamicLoader struct {
+	open    func(string) (uintptr, error)
+	close   func(uintptr) error
+	version func(uintptr, string) (func() uint32, error)
+}
+
+var systemLoader = dynamicLoader{
+	open:    tryOpen,
+	close:   purego.Dlclose,
+	version: registerVersionFunction,
+}
+
+// Library handles and selected runtime state.
 var (
 	libAVUtil   uintptr
 	libAVCodec  uintptr
@@ -36,7 +62,7 @@ var (
 	currentABI abi.Layout
 )
 
-// Version function bindings
+// Version function bindings.
 var (
 	avutilVersion   func() uint32
 	avcodecVersion  func() uint32
@@ -49,9 +75,8 @@ func IsLoaded() bool {
 	return loaded
 }
 
-// Load loads FFmpeg libraries and registers all function bindings.
-// It is safe to call multiple times; subsequent calls are no-ops.
-// Returns an error if libraries cannot be found or loaded.
+// Load loads a coherent set of FFmpeg libraries and registers their version
+// functions. It is safe to call multiple times; subsequent calls are no-ops.
 func Load() error {
 	loadOnce.Do(func() {
 		loadErr = doLoad()
@@ -63,123 +88,218 @@ func Load() error {
 }
 
 func doLoad() error {
-	// Load libraries in dependency order (CRITICAL per design doc)
-	// avutil must be first, then others that depend on it
-	var err error
-
-	// 1. Load avutil (no dependencies)
-	libAVUtil, err = loadLibrary("avutil", []int{59, 58, 57, 56})
-	if err != nil {
-		return fmt.Errorf("loading libavutil: %w", err)
-	}
-
-	// 2. Load avcodec (depends on avutil)
-	libAVCodec, err = loadLibrary("avcodec", []int{61, 60, 59, 58})
-	if err != nil {
-		return fmt.Errorf("loading libavcodec: %w", err)
-	}
-
-	// 3. Load avformat (depends on avcodec, avutil)
-	libAVFormat, err = loadLibrary("avformat", []int{61, 60, 59, 58})
-	if err != nil {
-		return fmt.Errorf("loading libavformat: %w", err)
-	}
-
-	// 4. Load swscale (depends on avutil) - optional
-	libSWScale, _ = loadLibrary("swscale", []int{8, 7, 6, 5})
-
-	// Register version functions
-	purego.RegisterLibFunc(&avutilVersion, libAVUtil, "avutil_version")
-	purego.RegisterLibFunc(&avcodecVersion, libAVCodec, "avcodec_version")
-	purego.RegisterLibFunc(&avformatVersion, libAVFormat, "avformat_version")
-
-	if libSWScale != 0 {
-		purego.RegisterLibFunc(&swscaleVersion, libSWScale, "swscale_version")
-	}
-
-	currentABI, err = abi.Detect(avutilVersion(), avcodecVersion(), avformatVersion())
+	core, err := selectCoreLibraries(systemLoader)
 	if err != nil {
 		return err
 	}
-	if swscaleVersion != nil && int(swscaleVersion()>>16) != currentABI.SWScaleMajor {
-		return fmt.Errorf("%w: libswscale %d is incompatible with FFmpeg %d (expected %d)",
-			abi.ErrUnsupported, swscaleVersion()>>16, currentABI.FFmpegMajor, currentABI.SWScaleMajor)
+
+	libAVUtil = core.avutil.handle
+	libAVCodec = core.avcodec.handle
+	libAVFormat = core.avformat.handle
+	avutilVersion = core.avutilVersion
+	avcodecVersion = core.avcodecVersion
+	avformatVersion = core.avformatVersion
+	currentABI = core.layout
+
+	// swscale is optional, but if present it must match the selected family.
+	swscale, err := openLibrary(systemLoader, "swscale", []int{currentABI.SWScaleMajor}, true)
+	if err == nil {
+		versionFn, versionErr := systemLoader.version(swscale.handle, "swscale_version")
+		if versionErr != nil {
+			_ = systemLoader.close(swscale.handle)
+			closeCoreLibraries(systemLoader, core)
+			clearCoreState()
+			return fmt.Errorf("loading libswscale: %w", versionErr)
+		}
+		if versionErr = validateLibraryVersion(currentABI, "swscale", versionFn()); versionErr != nil {
+			_ = systemLoader.close(swscale.handle)
+			closeCoreLibraries(systemLoader, core)
+			clearCoreState()
+			return versionErr
+		}
+		libSWScale = swscale.handle
+		swscaleVersion = versionFn
 	}
 
 	return nil
 }
 
-// loadLibrary attempts to load a library by trying versioned names.
-func loadLibrary(name string, versions []int) (uintptr, error) {
-	// Try each search path
-	for _, searchPath := range LibrarySearchPaths() {
-		// Try versioned names first (more specific)
-		for _, ver := range versions {
-			libName := platform.FormatLibraryName(name, ver)
-			fullPath := filepath.Join(searchPath, libName)
-
-			// Try to open
-			lib, err := tryOpen(fullPath)
-			if err == nil {
-				return lib, nil
-			}
-		}
-
-		// Try unversioned name
-		libName := platform.FormatLibraryName(name, 0)
-		fullPath := filepath.Join(searchPath, libName)
-		lib, err := tryOpen(fullPath)
+func selectCoreLibraries(loader dynamicLoader) (coreLibraries, error) {
+	var failures []string
+	for _, layout := range abi.Supported() {
+		core, err := openCoreFamily(loader, layout, false)
 		if err == nil {
-			return lib, nil
+			return core, nil
 		}
+		failures = append(failures, fmt.Sprintf("FFmpeg %d: %v", layout.FFmpegMajor, err))
 	}
 
-	// Try just the library name (let the system find it)
-	for _, ver := range versions {
-		libName := platform.FormatLibraryName(name, ver)
-		lib, err := tryOpen(libName)
-		if err == nil {
-			return lib, nil
-		}
-	}
-
-	// Try unversioned
-	libName := platform.FormatLibraryName(name, 0)
-	lib, err := tryOpen(libName)
+	// Some custom installations expose only unversioned names. Probe them once,
+	// then accept them only if the complete runtime tuple is supported.
+	core, err := openCoreFamily(loader, abi.Layout{}, true)
 	if err == nil {
-		return lib, nil
+		return core, nil
+	}
+	if errors.Is(err, abi.ErrUnsupported) {
+		return coreLibraries{}, err
+	}
+	failures = append(failures, fmt.Sprintf("unversioned: %v", err))
+
+	return coreLibraries{}, fmt.Errorf(
+		"%w: no complete FFmpeg 6, 7, or 8 core set found (%s)",
+		ErrLibraryNotFound, strings.Join(failures, "; "),
+	)
+}
+
+func openCoreFamily(loader dynamicLoader, wanted abi.Layout, unversioned bool) (coreLibraries, error) {
+	versions := func(major int) []int {
+		if unversioned {
+			return nil
+		}
+		return []int{major}
 	}
 
-	return 0, fmt.Errorf("%w: %s", ErrLibraryNotFound, name)
+	var core coreLibraries
+	var err error
+	core.avutil, err = openLibrary(loader, "avutil", versions(wanted.AVUtilMajor), unversioned)
+	if err != nil {
+		return coreLibraries{}, fmt.Errorf("loading libavutil: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			closeCoreLibraries(loader, core)
+		}
+	}()
+
+	core.avcodec, err = openLibrary(loader, "avcodec", versions(wanted.AVCodecMajor), unversioned)
+	if err != nil {
+		return coreLibraries{}, fmt.Errorf("loading libavcodec: %w", err)
+	}
+	core.avformat, err = openLibrary(loader, "avformat", versions(wanted.AVFormatMajor), unversioned)
+	if err != nil {
+		return coreLibraries{}, fmt.Errorf("loading libavformat: %w", err)
+	}
+
+	core.avutilVersion, err = loader.version(core.avutil.handle, "avutil_version")
+	if err != nil {
+		return coreLibraries{}, fmt.Errorf("binding avutil_version: %w", err)
+	}
+	core.avcodecVersion, err = loader.version(core.avcodec.handle, "avcodec_version")
+	if err != nil {
+		return coreLibraries{}, fmt.Errorf("binding avcodec_version: %w", err)
+	}
+	core.avformatVersion, err = loader.version(core.avformat.handle, "avformat_version")
+	if err != nil {
+		return coreLibraries{}, fmt.Errorf("binding avformat_version: %w", err)
+	}
+
+	core.layout, err = abi.Detect(
+		core.avutilVersion(),
+		core.avcodecVersion(),
+		core.avformatVersion(),
+	)
+	if err != nil {
+		return coreLibraries{}, err
+	}
+	if !unversioned && core.layout.FFmpegMajor != wanted.FFmpegMajor {
+		err = fmt.Errorf(
+			"%w: FFmpeg %d library names resolved to FFmpeg %d",
+			abi.ErrUnsupported, wanted.FFmpegMajor, core.layout.FFmpegMajor,
+		)
+		return coreLibraries{}, err
+	}
+
+	return core, nil
+}
+
+func closeCoreLibraries(loader dynamicLoader, core coreLibraries) {
+	for _, lib := range []loadedLibrary{core.avformat, core.avcodec, core.avutil} {
+		if lib.handle != 0 {
+			_ = loader.close(lib.handle)
+		}
+	}
+}
+
+func clearCoreState() {
+	libAVUtil = 0
+	libAVCodec = 0
+	libAVFormat = 0
+	avutilVersion = nil
+	avcodecVersion = nil
+	avformatVersion = nil
+	currentABI = abi.Layout{}
+}
+
+// openLibrary tries all versioned candidates before considering an
+// unversioned name. This prevents an unrelated unversioned development symlink
+// from pre-empting a supported version in a later search path.
+func openLibrary(loader dynamicLoader, name string, versions []int, includeUnversioned bool) (loadedLibrary, error) {
+	candidates := libraryCandidates(name, versions, includeUnversioned)
+	for _, candidate := range candidates {
+		handle, err := loader.open(candidate)
+		if err == nil {
+			return loadedLibrary{handle: handle, path: candidate}, nil
+		}
+	}
+	return loadedLibrary{}, fmt.Errorf(
+		"%w: %s (tried %d candidates)", ErrLibraryNotFound, name, len(candidates),
+	)
+}
+
+func libraryCandidates(name string, versions []int, includeUnversioned bool) []string {
+	paths := LibrarySearchPaths()
+	seen := make(map[string]struct{})
+	candidates := make([]string, 0, (len(paths)+1)*(len(versions)+1))
+	appendCandidate := func(candidate string) {
+		if _, ok := seen[candidate]; ok {
+			return
+		}
+		seen[candidate] = struct{}{}
+		candidates = append(candidates, candidate)
+	}
+
+	for _, version := range versions {
+		name := platform.FormatLibraryName(name, version)
+		for _, searchPath := range paths {
+			appendCandidate(filepath.Join(searchPath, name))
+		}
+		appendCandidate(name)
+	}
+	if includeUnversioned {
+		name := platform.FormatLibraryName(name, 0)
+		for _, searchPath := range paths {
+			appendCandidate(filepath.Join(searchPath, name))
+		}
+		appendCandidate(name)
+	}
+	return candidates
 }
 
 // tryOpen attempts to open a library with RTLD_NOW | RTLD_GLOBAL.
-// RTLD_GLOBAL is REQUIRED per design doc - FFmpeg libraries have cross-references.
+// RTLD_GLOBAL is required because FFmpeg libraries reference one another.
 func tryOpen(path string) (uintptr, error) {
-	// Note: purego.RTLD_GLOBAL is critical for FFmpeg
-	lib, err := purego.Dlopen(path, purego.RTLD_NOW|purego.RTLD_GLOBAL)
-	if err != nil {
-		return 0, err
-	}
-	return lib, nil
+	return purego.Dlopen(path, purego.RTLD_NOW|purego.RTLD_GLOBAL)
 }
 
-// FindLibrary searches for a library and returns its full path.
-// This is useful for diagnostics.
-func FindLibrary(name string, versions []int) (string, error) {
-	for _, searchPath := range LibrarySearchPaths() {
-		for _, ver := range versions {
-			libName := platform.FormatLibraryName(name, ver)
-			fullPath := filepath.Join(searchPath, libName)
-			if _, err := os.Stat(fullPath); err == nil {
-				return fullPath, nil
-			}
+func registerVersionFunction(handle uintptr, name string) (fn func() uint32, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			fn = nil
+			err = fmt.Errorf("required symbol %s is unavailable: %v", name, recovered)
 		}
-		// Try unversioned
-		libName := platform.FormatLibraryName(name, 0)
-		fullPath := filepath.Join(searchPath, libName)
-		if _, err := os.Stat(fullPath); err == nil {
-			return fullPath, nil
+	}()
+	purego.RegisterLibFunc(&fn, handle, name)
+	return fn, nil
+}
+
+// FindLibrary searches for a library file and returns its full path. It does
+// not load the library and is intended for diagnostics.
+func FindLibrary(name string, versions []int) (string, error) {
+	for _, candidate := range libraryCandidates(name, versions, true) {
+		if filepath.IsAbs(candidate) {
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate, nil
+			}
 		}
 	}
 	return "", fmt.Errorf("%w: %s", ErrLibraryNotFound, name)
@@ -191,65 +311,50 @@ func LibrarySearchPaths() []string {
 
 	switch runtime.GOOS {
 	case "linux":
-		// Check LD_LIBRARY_PATH first
 		if ldPath := os.Getenv("LD_LIBRARY_PATH"); ldPath != "" {
 			paths = append(paths, filepath.SplitList(ldPath)...)
 		}
-		// Standard paths
 		paths = append(paths,
 			"/usr/lib/x86_64-linux-gnu",
 			"/usr/lib/aarch64-linux-gnu",
 			"/usr/local/lib",
 			"/usr/lib",
 			"/lib/x86_64-linux-gnu",
+			"/lib/aarch64-linux-gnu",
 			"/lib",
 		)
-
 	case "darwin":
-		// Check DYLD_LIBRARY_PATH first
 		if dyldPath := os.Getenv("DYLD_LIBRARY_PATH"); dyldPath != "" {
 			paths = append(paths, filepath.SplitList(dyldPath)...)
 		}
-		// Homebrew paths
 		paths = append(paths,
-			"/opt/homebrew/lib",                     // Apple Silicon
-			"/usr/local/lib",                        // Intel
-			"/opt/homebrew/opt/ffmpeg/lib",          // Homebrew FFmpeg
-			"/usr/local/opt/ffmpeg/lib",             // Homebrew FFmpeg (Intel)
-			"/opt/homebrew/Cellar/ffmpeg/7.1_4/lib", // Specific versions
-			"/opt/homebrew/Cellar/ffmpeg/6.1.1_6/lib",
+			"/opt/homebrew/lib",
+			"/usr/local/lib",
+			"/opt/homebrew/opt/ffmpeg/lib",
+			"/usr/local/opt/ffmpeg/lib",
 		)
-
 	case "windows":
-		// Check PATH
 		if winPath := os.Getenv("PATH"); winPath != "" {
 			paths = append(paths, filepath.SplitList(winPath)...)
 		}
-		// Executable directory
 		if exe, err := os.Executable(); err == nil {
 			paths = append(paths, filepath.Dir(exe))
 		}
-		// Common FFmpeg locations
 		paths = append(paths,
 			"C:\\ffmpeg\\bin",
 			"C:\\Program Files\\ffmpeg\\bin",
 		)
-
 	case "freebsd":
 		if ldPath := os.Getenv("LD_LIBRARY_PATH"); ldPath != "" {
 			paths = append(paths, filepath.SplitList(ldPath)...)
 		}
-		paths = append(paths,
-			"/usr/local/lib",
-			"/usr/lib",
-		)
+		paths = append(paths, "/usr/local/lib", "/usr/lib")
 	}
 
 	return paths
 }
 
-// AVUtilVersion returns the avutil library version.
-// Returns 0 if libraries are not loaded.
+// AVUtilVersion returns the avutil library version, or 0 before Load succeeds.
 func AVUtilVersion() uint32 {
 	if !loaded || avutilVersion == nil {
 		return 0
@@ -257,8 +362,7 @@ func AVUtilVersion() uint32 {
 	return avutilVersion()
 }
 
-// AVCodecVersion returns the avcodec library version.
-// Returns 0 if libraries are not loaded.
+// AVCodecVersion returns the avcodec library version, or 0 before Load succeeds.
 func AVCodecVersion() uint32 {
 	if !loaded || avcodecVersion == nil {
 		return 0
@@ -266,8 +370,7 @@ func AVCodecVersion() uint32 {
 	return avcodecVersion()
 }
 
-// AVFormatVersion returns the avformat library version.
-// Returns 0 if libraries are not loaded.
+// AVFormatVersion returns the avformat library version, or 0 before Load succeeds.
 func AVFormatVersion() uint32 {
 	if !loaded || avformatVersion == nil {
 		return 0
@@ -275,8 +378,7 @@ func AVFormatVersion() uint32 {
 	return avformatVersion()
 }
 
-// SWScaleVersion returns the swscale library version.
-// Returns 0 if libraries are not loaded or swscale is not available.
+// SWScaleVersion returns the swscale version, or 0 when it is unavailable.
 func SWScaleVersion() uint32 {
 	if !loaded || swscaleVersion == nil {
 		return 0
@@ -284,8 +386,7 @@ func SWScaleVersion() uint32 {
 	return swscaleVersion()
 }
 
-// ABI returns the structure layout selected from the loaded FFmpeg libraries.
-// It returns the zero value if the libraries have not loaded successfully.
+// ABI returns the layout selected from the loaded FFmpeg libraries.
 func ABI() abi.Layout {
 	if !loaded {
 		return abi.Layout{}
@@ -299,49 +400,61 @@ func ValidateLibraryVersion(name string, version uint32) error {
 	if err := Load(); err != nil {
 		return err
 	}
-	expected, ok := currentABI.LibraryMajor(name)
+	return validateLibraryVersion(currentABI, name, version)
+}
+
+func validateLibraryVersion(layout abi.Layout, name string, version uint32) error {
+	expected, ok := layout.LibraryMajor(name)
 	if !ok {
 		return fmt.Errorf("ffgo: unknown FFmpeg library %q", name)
 	}
 	actual := int(version >> 16)
 	if actual != expected {
-		return fmt.Errorf("%w: lib%s %d is incompatible with FFmpeg %d (expected %d)",
-			abi.ErrUnsupported, name, actual, currentABI.FFmpegMajor, expected)
+		return fmt.Errorf(
+			"%w: lib%s %d is incompatible with FFmpeg %d (expected %d)",
+			abi.ErrUnsupported, name, actual, layout.FFmpegMajor, expected,
+		)
 	}
 	return nil
 }
 
 // LibAVUtil returns the avutil library handle.
-func LibAVUtil() uintptr {
-	return libAVUtil
-}
+func LibAVUtil() uintptr { return libAVUtil }
 
 // LibAVCodec returns the avcodec library handle.
-func LibAVCodec() uintptr {
-	return libAVCodec
-}
+func LibAVCodec() uintptr { return libAVCodec }
 
 // LibAVFormat returns the avformat library handle.
-func LibAVFormat() uintptr {
-	return libAVFormat
-}
+func LibAVFormat() uintptr { return libAVFormat }
 
 // LibSWScale returns the swscale library handle.
-func LibSWScale() uintptr {
-	return libSWScale
-}
+func LibSWScale() uintptr { return libSWScale }
 
-// HasSWScale returns true if swscale library is available.
-func HasSWScale() bool {
-	return libSWScale != 0
-}
+// HasSWScale reports whether a compatible swscale library is available.
+func HasSWScale() bool { return libSWScale != 0 }
 
-// LoadLibrary loads a library by name, trying the specified versions.
-// This is exported for use by optional packages like swresample and avfilter.
-func LoadLibrary(name string, versions []int) (uintptr, error) {
-	// Ensure core libraries are loaded first
+// LoadOptionalLibrary loads the major of an optional library selected by the
+// already loaded core ABI.
+func LoadOptionalLibrary(name string) (uintptr, error) {
 	if err := Load(); err != nil {
 		return 0, err
 	}
-	return loadLibrary(name, versions)
+	expected, ok := currentABI.LibraryMajor(name)
+	if !ok {
+		return 0, fmt.Errorf("ffgo: unknown FFmpeg library %q", name)
+	}
+	library, err := openLibrary(systemLoader, name, []int{expected}, true)
+	if err != nil {
+		return 0, err
+	}
+	versionFn, err := systemLoader.version(library.handle, name+"_version")
+	if err != nil {
+		_ = systemLoader.close(library.handle)
+		return 0, err
+	}
+	if err := validateLibraryVersion(currentABI, name, versionFn()); err != nil {
+		_ = systemLoader.close(library.handle)
+		return 0, err
+	}
+	return library.handle, nil
 }

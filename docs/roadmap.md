@@ -29,6 +29,8 @@ document presents inherited claims as go-ffmpeg-ffi guarantees.
 - Inventory every direct FFmpeg structure access and move verified layouts into
   `internal/abi`; no private magic offsets remain.
 - Generate or verify layouts for FFmpeg 6, 7, and 8 against matching headers.
+- Establish a pinned Linux amd64 gate for the latest patch of the 6.0, 6.1,
+  7.0, 7.1, 8.0, and 8.1 release lines.
 - Version the C shim by operating system, architecture, shim API, and FFmpeg
   family; add a startup handshake and reject mismatches.
 - Reject mixed families, FFmpeg 4, FFmpeg 9/master, and unknown layouts with a
@@ -66,10 +68,11 @@ delayed frames are neither lost nor duplicated.
 Complete when stress runs show no invalid callback pointers, leaked handles,
 unbounded native memory, file-descriptor growth, or blocked shutdowns.
 
-## PR 5: make compatibility claims executable
+## PR 5: expand compatibility evidence and stress coverage
 
-CI tests every published release line inside the supported majors, using the
-latest patched release pinned for that line:
+PR 2 establishes the Linux amd64 release-line gate. PR 5 expands that same
+matrix with the complete behavioral, resource, and downstream integration
+suite, using the latest patched release pinned for each line:
 
 | Line | Initial pin | Required |
 | --- | --- | --- |
@@ -88,9 +91,9 @@ Testing every release line catches header and build differences without running
 every historical patch that shares the same stable library ABI. A scheduled job
 checks for newer patch releases; pin updates remain explicit and reviewable.
 
-Each required CI job:
+Each required matrix job:
 
-- builds an LGPL-only shared FFmpeg configuration and the matching shim;
+- builds a shared FFmpeg test configuration and the matching shim;
 - verifies tarball signatures or checksums and records the configure flags;
 - asserts the actual loaded versions and shim handshake;
 - runs unit and integration tests with `CGO_ENABLED=0`;
@@ -100,6 +103,10 @@ Each required CI job:
 - records goroutines, callback handles, file descriptors, RSS, and native
   allocations, with sanitizer or Valgrind coverage for the C shim;
 - tests no-shim behavior separately for features that are genuinely optional.
+
+CI-only FFmpeg builds may enable GPL codecs needed by inherited tests. They are
+not distributed. Prebuilt release shims remain subject to the LGPL-only policy
+in [Architecture](architecture.md#distribution).
 
 Local validation repeats the matrix from versioned directories inside the
 workspace, never a transient system path. For each FFmpeg line it first tests

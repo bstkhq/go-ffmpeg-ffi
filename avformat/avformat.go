@@ -8,10 +8,10 @@ import (
 	"runtime"
 	"unsafe"
 
-	"github.com/ebitengine/purego"
 	"github.com/bstkhq/go-ffmpeg-ffi/avcodec"
 	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/bindings"
+	"github.com/ebitengine/purego"
 )
 
 // FormatContext is an opaque FFmpeg AVFormatContext pointer.
@@ -423,15 +423,24 @@ var (
 	offsetNbPrograms, offsetPrograms                  uintptr
 	offsetNbChapters, offsetChapters                  uintptr
 	offsetContextMetadata, offsetProbeScore           uintptr
-)
 
-// AVChapter struct field offsets (for FFmpeg 6.x)
-const (
-	offsetChapterID       = 0  // int64_t id (actually stored as int64_t in FFmpeg 6.x)
-	offsetChapterTimeBase = 8  // AVRational time_base (num at +8, den at +12)
-	offsetChapterStart    = 16 // int64_t start
-	offsetChapterEnd      = 24 // int64_t end
-	offsetChapterMetadata = 32 // AVDictionary *metadata
+	offsetChapterID, offsetChapterTimeBase uintptr
+	offsetChapterStart, offsetChapterEnd   uintptr
+	offsetChapterMetadata                  uintptr
+
+	offsetProgramID, offsetProgramStreamIndex         uintptr
+	offsetProgramNbStreamIndex, offsetProgramMetadata uintptr
+
+	offsetInputFormatName, offsetInputFormatLongName uintptr
+
+	offsetStreamIndex, offsetStreamCodecPar    uintptr
+	offsetStreamTimeBase, offsetStreamMetadata uintptr
+	offsetStreamAvgFrameRate                   uintptr
+
+	offsetOutputFormatFlags uintptr
+
+	offsetDictEntryKey, offsetDictEntryValue uintptr
+	offsetChannelLayoutChannels              uintptr
 )
 
 // Chapter is an opaque FFmpeg AVChapter pointer.
@@ -439,14 +448,6 @@ type Chapter = unsafe.Pointer
 
 // Program is an opaque FFmpeg AVProgram pointer.
 type Program = unsafe.Pointer
-
-// AVProgram struct field offsets (FFmpeg 6.x/7.x)
-const (
-	offsetProgramID            = 0  // int id
-	offsetProgramStreamIndex   = 16 // int *stream_index
-	offsetProgramNbStreamIndex = 24 // unsigned nb_stream_indexes
-	offsetProgramMetadata      = 32 // AVDictionary *metadata
-)
 
 // GetNumPrograms returns the number of programs in the context (e.g. MPEG-TS).
 func GetNumPrograms(ctx FormatContext) int {
@@ -510,12 +511,6 @@ func GetProgramMetadata(p Program) avutil.Dictionary {
 	}
 	return *(*unsafe.Pointer)(unsafe.Pointer(uintptr(p) + offsetProgramMetadata))
 }
-
-// AVInputFormat struct field offsets (FFmpeg 6.x/7.x)
-const (
-	offsetInputFormatName     = 0 // const char *name
-	offsetInputFormatLongName = 8 // const char *long_name
-)
 
 // GetInputFormat returns the input format (demuxer) selected for the context.
 func GetInputFormat(ctx FormatContext) InputFormat {
@@ -633,17 +628,6 @@ func SetIOContext(ctx FormatContext, pb IOContext) {
 	*(*unsafe.Pointer)(unsafe.Pointer(uintptr(ctx) + offsetIOContext)) = pb
 }
 
-// AVStream struct field offsets (for FFmpeg 6.x/7.x)
-// Verified with offsetof() on FFmpeg 7.1.1
-const (
-	offsetStreamIndex        = 8  // int index
-	offsetStreamID           = 12 // int id
-	offsetStreamCodecPar     = 16 // AVCodecParameters *codecpar
-	offsetStreamTimeBase     = 32 // AVRational time_base
-	offsetStreamMetadata     = 80 // AVDictionary *metadata
-	offsetStreamAvgFrameRate = 88 // AVRational avg_frame_rate
-)
-
 // GetStreamIndex returns the stream index.
 func GetStreamIndex(stream Stream) int32 {
 	if stream == nil {
@@ -685,6 +669,36 @@ func setABIOffsets() {
 	offsetChapters = format.Chapters
 	offsetContextMetadata = format.Metadata
 	offsetProbeScore = format.ProbeScore
+
+	chapter := layout.Chapter
+	offsetChapterID = chapter.ID
+	offsetChapterTimeBase = chapter.TimeBase
+	offsetChapterStart = chapter.Start
+	offsetChapterEnd = chapter.End
+	offsetChapterMetadata = chapter.Metadata
+
+	program := layout.Program
+	offsetProgramID = program.ID
+	offsetProgramStreamIndex = program.StreamIndex
+	offsetProgramNbStreamIndex = program.NumStreamIndexes
+	offsetProgramMetadata = program.Metadata
+
+	inputFormat := layout.InputFormat
+	offsetInputFormatName = inputFormat.Name
+	offsetInputFormatLongName = inputFormat.LongName
+	offsetOutputFormatFlags = layout.OutputFormat.Flags
+
+	stream := layout.Stream
+	offsetStreamIndex = stream.Index
+	offsetStreamCodecPar = stream.CodecParameters
+	offsetStreamTimeBase = stream.TimeBase
+	offsetStreamMetadata = stream.Metadata
+	offsetStreamAvgFrameRate = stream.AverageFrameRate
+
+	dictionaryEntry := layout.DictionaryEntry
+	offsetDictEntryKey = dictionaryEntry.Key
+	offsetDictEntryValue = dictionaryEntry.Value
+	offsetChannelLayoutChannels = layout.ChannelLayout.NumChannels
 
 	parameters := layout.CodecParameters
 	offsetCodecParType = parameters.CodecType
@@ -751,7 +765,7 @@ func GetCodecParChannels(par avcodec.Parameters) int32 {
 	if par == nil {
 		return 0
 	}
-	return *(*int32)(unsafe.Pointer(uintptr(par) + offsetCodecParChLayout + 4))
+	return *(*int32)(unsafe.Pointer(uintptr(par) + offsetCodecParChLayout + offsetChannelLayoutChannels))
 }
 
 // GetCodecParExtradata returns the extradata bytes from codec parameters.
@@ -838,15 +852,9 @@ func GetStreamAvgFrameRate(stream Stream) (num, den int32) {
 	if stream == nil {
 		return 0, 1
 	}
-	num = *(*int32)(unsafe.Pointer(uintptr(stream) + offsetStreamAvgFrameRate))
-	den = *(*int32)(unsafe.Pointer(uintptr(stream) + offsetStreamAvgFrameRate + 4))
-	return
+	rate := *(*avutil.Rational)(unsafe.Pointer(uintptr(stream) + offsetStreamAvgFrameRate))
+	return rate.Num, rate.Den
 }
-
-// AVOutputFormat field offsets (for FFmpeg 6.x)
-const (
-	offsetOutputFormatFlags = 44 // int flags
-)
 
 // Output format flag constants
 const (
@@ -937,8 +945,7 @@ func SetStreamTimeBase(stream Stream, num, den int32) {
 	if stream == nil {
 		return
 	}
-	*(*int32)(unsafe.Pointer(uintptr(stream) + offsetStreamTimeBase)) = num
-	*(*int32)(unsafe.Pointer(uintptr(stream) + offsetStreamTimeBase + 4)) = den
+	*(*avutil.Rational)(unsafe.Pointer(uintptr(stream) + offsetStreamTimeBase)) = avutil.NewRational(num, den)
 }
 
 // GetStreamTimeBase returns the time base for a stream.
@@ -946,9 +953,8 @@ func GetStreamTimeBase(stream Stream) (num, den int32) {
 	if stream == nil {
 		return 0, 1
 	}
-	num = *(*int32)(unsafe.Pointer(uintptr(stream) + offsetStreamTimeBase))
-	den = *(*int32)(unsafe.Pointer(uintptr(stream) + offsetStreamTimeBase + 4))
-	return
+	timeBase := *(*avutil.Rational)(unsafe.Pointer(uintptr(stream) + offsetStreamTimeBase))
+	return timeBase.Num, timeBase.Den
 }
 
 // IOAllocContext allocates and initializes an AVIOContext for custom I/O.
@@ -987,12 +993,6 @@ const (
 	AV_DICT_DONT_OVERWRITE  = 16 // Don't overwrite existing entries
 	AV_DICT_APPEND          = 32 // Append to existing entry value
 	AV_DICT_MULTIKEY        = 64 // Allow to store several equal keys in the dictionary
-)
-
-// AVDictionaryEntry struct field offsets
-const (
-	offsetDictEntryKey   = 0 // char *key
-	offsetDictEntryValue = 8 // char *value
 )
 
 // GetMetadata returns the metadata dictionary from a format context.
@@ -1085,9 +1085,8 @@ func GetChapterTimeBase(ch Chapter) (num, den int32) {
 	if ch == nil {
 		return 0, 1
 	}
-	num = *(*int32)(unsafe.Pointer(uintptr(ch) + offsetChapterTimeBase))
-	den = *(*int32)(unsafe.Pointer(uintptr(ch) + offsetChapterTimeBase + 4))
-	return num, den
+	timeBase := *(*avutil.Rational)(unsafe.Pointer(uintptr(ch) + offsetChapterTimeBase))
+	return timeBase.Num, timeBase.Den
 }
 
 // GetChapterStart returns the start time of the chapter in time_base units.

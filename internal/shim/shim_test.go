@@ -3,11 +3,14 @@
 package shim
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/bstkhq/go-ffmpeg-ffi/internal/abi"
 )
 
 func TestFindShimLibrary_RespectsFFGOShimDir(t *testing.T) {
@@ -72,6 +75,89 @@ func TestExpectedLibraryName(t *testing.T) {
 			t.Errorf("expected ffshim.dll on windows, got %s", name)
 		}
 	}
+}
+
+func TestValidateVersionInfoSupportedFamilies(t *testing.T) {
+	tests := []struct {
+		ffmpeg                    int
+		avutil, avcodec, avformat uint32
+	}{
+		{ffmpeg: 6, avutil: 58, avcodec: 60, avformat: 60},
+		{ffmpeg: 7, avutil: 59, avcodec: 61, avformat: 61},
+		{ffmpeg: 8, avutil: 60, avcodec: 62, avformat: 62},
+	}
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("FFmpeg %d", tt.ffmpeg), func(t *testing.T) {
+			core, ok := abi.ForFFmpegMajor(tt.ffmpeg)
+			if !ok {
+				t.Fatal("missing core layout")
+			}
+			info := VersionInfo{
+				API:                APIVersion,
+				BuildAVUtilMajor:   tt.avutil,
+				BuildAVCodecMajor:  tt.avcodec,
+				BuildAVFormatMajor: tt.avformat,
+				RuntimeAVUtil:      shimTestVersion(tt.avutil, 1, 0),
+				RuntimeAVCodec:     shimTestVersion(tt.avcodec, 1, 0),
+				RuntimeAVFormat:    shimTestVersion(tt.avformat, 1, 0),
+			}
+			got, err := validateVersionInfo(core, info)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.FFmpegMajor != tt.ffmpeg {
+				t.Fatalf("FFmpeg major = %d, want %d", got.FFmpegMajor, tt.ffmpeg)
+			}
+		})
+	}
+}
+
+func TestValidateVersionInfoRejectsMismatches(t *testing.T) {
+	core, ok := abi.ForFFmpegMajor(7)
+	if !ok {
+		t.Fatal("missing FFmpeg 7 layout")
+	}
+	valid := VersionInfo{
+		API:                APIVersion,
+		BuildAVUtilMajor:   59,
+		BuildAVCodecMajor:  61,
+		BuildAVFormatMajor: 61,
+		RuntimeAVUtil:      shimTestVersion(59, 1, 0),
+		RuntimeAVCodec:     shimTestVersion(61, 1, 0),
+		RuntimeAVFormat:    shimTestVersion(61, 1, 0),
+	}
+
+	tests := []struct {
+		name string
+		edit func(*VersionInfo)
+	}{
+		{name: "shim API", edit: func(info *VersionInfo) { info.API++ }},
+		{name: "mixed build tuple", edit: func(info *VersionInfo) { info.BuildAVUtilMajor = 58 }},
+		{name: "mixed runtime tuple", edit: func(info *VersionInfo) { info.RuntimeAVCodec = shimTestVersion(60, 1, 0) }},
+		{name: "different build and runtime", edit: func(info *VersionInfo) {
+			info.BuildAVUtilMajor = 58
+			info.BuildAVCodecMajor = 60
+			info.BuildAVFormatMajor = 60
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			info := valid
+			tt.edit(&info)
+			if _, err := validateVersionInfo(core, info); err == nil {
+				t.Fatal("validateVersionInfo unexpectedly succeeded")
+			}
+		})
+	}
+
+	ffmpeg8, _ := abi.ForFFmpegMajor(8)
+	if _, err := validateVersionInfo(ffmpeg8, valid); err == nil {
+		t.Fatal("shim for FFmpeg 7 was accepted with an FFmpeg 8 core")
+	}
+}
+
+func shimTestVersion(major, minor, patch uint32) uint32 {
+	return major<<16 | minor<<8 | patch
 }
 
 func TestBuildInstructions(t *testing.T) {

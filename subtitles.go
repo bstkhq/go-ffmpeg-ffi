@@ -61,9 +61,9 @@ type SubtitleRect struct {
 type SubtitleDecoder struct {
 	mu sync.Mutex
 
-	codecCtx       avcodec.Context
+	codecCtx          avcodec.Context
 	subtitleStreamIdx int
-	streamInfo     *StreamInfo
+	streamInfo        *StreamInfo
 
 	// AVSubtitle struct for decoding
 	subtitle unsafe.Pointer
@@ -115,8 +115,8 @@ func NewSubtitleDecoder(stream *StreamInfo) (*SubtitleDecoder, error) {
 		return nil, err
 	}
 
-	// Allocate AVSubtitle struct (32 bytes)
-	subtitle := avutil.Malloc(32)
+	// AVSubtitle is allocated by the caller for avcodec_decode_subtitle2.
+	subtitle := avutil.Malloc(bindings.ABI().Subtitle.Size)
 	if subtitle == nil {
 		avcodec.Close(codecCtx)
 		avcodec.FreeContext(&codecCtx)
@@ -231,31 +231,6 @@ func (d *SubtitleDecoder) Close() error {
 	return nil
 }
 
-// AVSubtitle struct offsets (FFmpeg 6.x/7.x)
-const (
-	offsetSubFormat           = 0  // uint32_t format
-	offsetSubStartDisplayTime = 4  // uint32_t start_display_time
-	offsetSubEndDisplayTime   = 8  // uint32_t end_display_time
-	offsetSubNumRects         = 12 // unsigned num_rects
-	offsetSubRects            = 16 // AVSubtitleRect **rects
-	offsetSubPTS              = 24 // int64_t pts
-)
-
-// AVSubtitleRect struct offsets
-const (
-	offsetRectX        = 0  // int x
-	offsetRectY        = 4  // int y
-	offsetRectW        = 8  // int w
-	offsetRectH        = 12 // int h
-	offsetRectNbColors = 16 // int nb_colors
-	offsetRectData0    = 24 // uint8_t *data[0]
-	offsetRectData1    = 32 // uint8_t *data[1] (palette)
-	offsetRectLinesize0 = 56 // int linesize[0]
-	offsetRectType     = 72 // enum AVSubtitleType type
-	offsetRectText     = 80 // char *text
-	offsetRectASS      = 88 // char *ass
-)
-
 // AVSubtitleType constants
 const (
 	subtitleTypeNone   = 0
@@ -266,17 +241,17 @@ const (
 
 // clearSubtitle zeroes out the AVSubtitle struct.
 func clearSubtitle(sub unsafe.Pointer) {
-	for i := 0; i < 32; i++ {
-		*(*byte)(unsafe.Pointer(uintptr(sub) + uintptr(i))) = 0
-	}
+	clear(unsafe.Slice((*byte)(sub), bindings.ABI().Subtitle.Size))
 }
 
 // parseSubtitle extracts data from AVSubtitle into our Subtitle type.
 func parseSubtitle(sub unsafe.Pointer) *Subtitle {
-	startTime := *(*uint32)(unsafe.Pointer(uintptr(sub) + offsetSubStartDisplayTime))
-	endTime := *(*uint32)(unsafe.Pointer(uintptr(sub) + offsetSubEndDisplayTime))
-	pts := *(*int64)(unsafe.Pointer(uintptr(sub) + offsetSubPTS))
-	numRects := *(*uint32)(unsafe.Pointer(uintptr(sub) + offsetSubNumRects))
+	subtitleLayout := bindings.ABI().Subtitle
+	rectLayout := bindings.ABI().SubtitleRect
+	startTime := *(*uint32)(unsafe.Pointer(uintptr(sub) + subtitleLayout.StartDisplayTime))
+	endTime := *(*uint32)(unsafe.Pointer(uintptr(sub) + subtitleLayout.EndDisplayTime))
+	pts := *(*int64)(unsafe.Pointer(uintptr(sub) + subtitleLayout.PTS))
+	numRects := *(*uint32)(unsafe.Pointer(uintptr(sub) + subtitleLayout.NumRects))
 
 	result := &Subtitle{
 		StartTime: time.Duration(startTime) * time.Millisecond,
@@ -289,7 +264,7 @@ func parseSubtitle(sub unsafe.Pointer) *Subtitle {
 	}
 
 	// Get rectangles
-	rectsPtr := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(sub) + offsetSubRects))
+	rectsPtr := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(sub) + subtitleLayout.Rects))
 	if rectsPtr == nil {
 		return result
 	}
@@ -301,32 +276,32 @@ func parseSubtitle(sub unsafe.Pointer) *Subtitle {
 			continue
 		}
 
-		rectType := *(*int32)(unsafe.Pointer(uintptr(rectPtr) + offsetRectType))
+		rectType := *(*int32)(unsafe.Pointer(uintptr(rectPtr) + rectLayout.Type))
 
 		switch rectType {
 		case subtitleTypeText:
 			result.Type = SubtitleTypeText
-			textPtr := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(rectPtr) + offsetRectText))
+			textPtr := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(rectPtr) + rectLayout.Text))
 			if textPtr != nil {
 				result.Text = goString(textPtr)
 			}
 		case subtitleTypeASS:
 			result.Type = SubtitleTypeASS
-			assPtr := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(rectPtr) + offsetRectASS))
+			assPtr := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(rectPtr) + rectLayout.ASS))
 			if assPtr != nil {
 				result.Text = goString(assPtr)
 			}
 		case subtitleTypeBitmap:
 			result.Type = SubtitleTypeBitmap
-			x := *(*int32)(unsafe.Pointer(uintptr(rectPtr) + offsetRectX))
-			y := *(*int32)(unsafe.Pointer(uintptr(rectPtr) + offsetRectY))
-			w := *(*int32)(unsafe.Pointer(uintptr(rectPtr) + offsetRectW))
-			h := *(*int32)(unsafe.Pointer(uintptr(rectPtr) + offsetRectH))
-			ls0 := *(*int32)(unsafe.Pointer(uintptr(rectPtr) + offsetRectLinesize0))
+			x := *(*int32)(unsafe.Pointer(uintptr(rectPtr) + rectLayout.X))
+			y := *(*int32)(unsafe.Pointer(uintptr(rectPtr) + rectLayout.Y))
+			w := *(*int32)(unsafe.Pointer(uintptr(rectPtr) + rectLayout.Width))
+			h := *(*int32)(unsafe.Pointer(uintptr(rectPtr) + rectLayout.Height))
+			ls0 := *(*int32)(unsafe.Pointer(uintptr(rectPtr) + rectLayout.Linesize))
 
 			var data []byte
 			if w > 0 && h > 0 && ls0 > 0 {
-				dataPtr := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(rectPtr) + offsetRectData0))
+				dataPtr := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(rectPtr) + rectLayout.Data))
 				// Copy bitmap indices: linesize*height bytes
 				if dataPtr != nil {
 					n := int(ls0) * int(h)
@@ -339,8 +314,8 @@ func parseSubtitle(sub unsafe.Pointer) *Subtitle {
 			}
 
 			var palette []byte
-			palPtr := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(rectPtr) + offsetRectData1))
-			nbColors := *(*int32)(unsafe.Pointer(uintptr(rectPtr) + offsetRectNbColors))
+			palPtr := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(rectPtr) + rectLayout.Data + unsafe.Sizeof(uintptr(0))))
+			nbColors := *(*int32)(unsafe.Pointer(uintptr(rectPtr) + rectLayout.NumColors))
 			if palPtr != nil && nbColors > 0 && nbColors <= 256 {
 				n := int(nbColors) * 4
 				palette = make([]byte, n)

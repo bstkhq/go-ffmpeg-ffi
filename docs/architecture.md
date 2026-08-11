@@ -3,8 +3,8 @@
 ## Status
 
 This document defines the target architecture for the go-ffmpeg-ffi hard fork.
-The current source tree is transitional: it includes the known FFmpeg 6/7
-corrections, but not every rule below has been implemented yet.
+The current source tree is transitional: FFmpeg 6-8 ABI selection is being
+implemented before the ownership and state-machine work described below.
 
 ## Goals
 
@@ -94,8 +94,9 @@ A Go compatibility package can select layouts at runtime, but Go cannot inspect
 C headers. Therefore every direct structure access must meet all of these rules:
 
 1. It is represented in one central `internal/abi` layout.
-2. Its offset and size are generated or verified against the headers for every
-   supported library major and architecture.
+2. Every used offset, and every size used for allocation, is generated or
+   verified against the headers for every supported library major and
+   architecture.
 3. It has a focused test that compares the Go view with a C-compiled reference.
 4. No package defines private magic offsets.
 5. An unknown or inconsistent version tuple is rejected before field access.

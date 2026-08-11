@@ -8,9 +8,9 @@ import (
 	"runtime"
 	"unsafe"
 
-	"github.com/ebitengine/purego"
 	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/bindings"
+	"github.com/ebitengine/purego"
 )
 
 // Codec is an opaque FFmpeg AVCodec pointer.
@@ -325,8 +325,16 @@ func ParametersCopy(dst, src Parameters) error {
 	return nil
 }
 
-// AVCodecParameters fields used directly by this package.
-var offsetCodecParTag uintptr
+// Public structure offsets selected from the runtime FFmpeg ABI.
+var (
+	offsetCodecParTag, offsetCodecName uintptr
+
+	offsetPacketPts, offsetPacketDts           uintptr
+	offsetPacketData, offsetPacketSize         uintptr
+	offsetPacketStreamIndex, offsetPacketFlags uintptr
+	offsetPacketDuration, offsetPacketPos      uintptr
+	offsetChannelLayoutChannels                uintptr
+)
 
 // SetCodecParTag sets the codec tag in codec parameters.
 // Setting to 0 allows the muxer to choose an appropriate tag.
@@ -382,15 +390,11 @@ func PacketUnref(pkt Packet) {
 	avPacketUnref(uintptr(pkt))
 }
 
-// AVCodec struct field offset for name (const char *name at offset 0)
-const offsetCodecName = 8 // After enum AVMediaType type (4 bytes + padding)
-
 // GetCodecName returns the name of the codec.
 func GetCodecName(codec Codec) string {
 	if codec == nil {
 		return ""
 	}
-	// AVCodec.name is at offset 8 (after type field)
 	namePtr := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(codec) + offsetCodecName))
 	if namePtr == nil {
 		return ""
@@ -414,18 +418,6 @@ func goString(ptr unsafe.Pointer) string {
 	}
 	return string(buf)
 }
-
-// Packet field offsets (for FFmpeg 6.x/7.x)
-const (
-	offsetPacketPts         = 8  // int64 pts
-	offsetPacketDts         = 16 // int64 dts
-	offsetPacketData        = 24 // uint8_t *data
-	offsetPacketSize        = 32 // int size
-	offsetPacketStreamIndex = 36 // int stream_index
-	offsetPacketFlags       = 40 // int flags
-	offsetPacketDuration    = 64 // int64 duration
-	offsetPacketPos         = 72 // int64 pos
-)
 
 // GetPacketPTS returns the presentation timestamp.
 func GetPacketPTS(pkt Packet) int64 {
@@ -545,6 +537,19 @@ var (
 func setABIOffsets() {
 	layout := bindings.ABI()
 	offsetCodecParTag = layout.CodecParameters.CodecTag
+	offsetCodecName = layout.Codec.Name
+
+	packet := layout.Packet
+	offsetPacketPts = packet.PTS
+	offsetPacketDts = packet.DTS
+	offsetPacketData = packet.Data
+	offsetPacketSize = packet.SizeField
+	offsetPacketStreamIndex = packet.StreamIndex
+	offsetPacketFlags = packet.Flags
+	offsetPacketDuration = packet.Duration
+	offsetPacketPos = packet.Position
+	offsetChannelLayoutChannels = layout.ChannelLayout.NumChannels
+
 	context := layout.CodecContext
 	offsetCtxBitRate = context.BitRate
 	offsetCtxFlags = context.Flags
@@ -616,8 +621,7 @@ func SetCtxTimeBase(ctx Context, num, den int32) {
 	if ctx == nil {
 		return
 	}
-	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxTimeBase)) = num
-	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxTimeBase + 4)) = den
+	*(*avutil.Rational)(unsafe.Pointer(uintptr(ctx) + offsetCtxTimeBase)) = avutil.NewRational(num, den)
 }
 
 // SetCtxGopSize sets the GOP size in codec context.
@@ -678,10 +682,9 @@ func SetCtxFlags(ctx Context, flags int32) {
 	if ctx == nil {
 		return
 	}
-	// Prefer AVOptions to avoid struct-layout dependencies across FFmpeg versions.
-	if err := avutil.OptSetInt(ctx, "flags", int64(flags), 0); err == nil {
-		return
-	}
+	// Flags include AV_CODEC_FLAG_CLOSED_GOP (bit 31), which AVOptions rejects
+	// after converting the signed Go value. This field is part of the verified
+	// ABI layout, so write it directly and preserve every flag bit.
 	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxFlags)) = flags
 }
 
@@ -690,8 +693,7 @@ func SetCtxFramerate(ctx Context, num, den int32) {
 	if ctx == nil {
 		return
 	}
-	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxFramerate)) = num
-	*(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxFramerate + 4)) = den
+	*(*avutil.Rational)(unsafe.Pointer(uintptr(ctx) + offsetCtxFramerate)) = avutil.NewRational(num, den)
 }
 
 // Codec flag constants
@@ -732,8 +734,7 @@ func GetCtxChannels(ctx Context) int32 {
 	if ctx == nil {
 		return 0
 	}
-	// ch_layout.nb_channels is at offset 4 within the AVChannelLayout struct
-	return *(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxChLayout + 4))
+	return *(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxChLayout + offsetChannelLayoutChannels))
 }
 
 // GetCtxSampleFmt returns the sample format from codec context.
@@ -854,9 +855,7 @@ func GetCtxTimeBase(ctx Context) avutil.Rational {
 	if ctx == nil {
 		return avutil.Rational{}
 	}
-	num := *(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxTimeBase))
-	den := *(*int32)(unsafe.Pointer(uintptr(ctx) + offsetCtxTimeBase + 4))
-	return avutil.NewRational(num, den)
+	return *(*avutil.Rational)(unsafe.Pointer(uintptr(ctx) + offsetCtxTimeBase))
 }
 
 // SetPacketPTS sets the presentation timestamp.

@@ -7,8 +7,8 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/ebitengine/purego"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/bindings"
+	"github.com/ebitengine/purego"
 )
 
 // SwrContext is an opaque audio resampling context
@@ -56,7 +56,7 @@ func Init() error {
 
 func initLibrary() error {
 	var err error
-	libSWResample, err = bindings.LoadLibrary("swresample", []int{5, 4, 3})
+	libSWResample, err = bindings.LoadOptionalLibrary("swresample")
 	if err != nil {
 		return fmt.Errorf("swresample: failed to load library: %w", err)
 	}

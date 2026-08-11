@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/ebitengine/purego"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/bindings"
+	"github.com/ebitengine/purego"
 )
 
 var (
@@ -26,8 +26,7 @@ var (
 func Init() error {
 	initOnce.Do(func() {
 		var err error
-		// libavdevice major versions track FFmpeg majors (common: 58-61).
-		libAVDevice, err = bindings.LoadLibrary("avdevice", []int{61, 60, 59, 58})
+		libAVDevice, err = bindings.LoadOptionalLibrary("avdevice")
 		if err != nil {
 			initErr = fmt.Errorf("avdevice: failed to load library: %w", err)
 			return

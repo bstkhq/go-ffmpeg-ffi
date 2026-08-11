@@ -27,39 +27,104 @@ jobs:
         env:
           CGO_ENABLED: "0"
 
-  # Test with FFmpeg (Linux amd64)
+  # Test every supported FFmpeg release line on one pinned platform.
   test-with-ffmpeg-linux:
     runs-on: ubuntu-latest
-    name: Test (Linux amd64)
+    name: Test (Linux amd64, FFmpeg ${{ matrix.ffmpeg }})
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ffmpeg: '6.0.1'
+            sha256: '9b16b8731d78e596b4be0d720428ca42df642bb2d78342881ff7f5bc29fc9623'
+          - ffmpeg: '6.1.6'
+            sha256: 'd4fcb164028dd3beee5d92c0ac72e46aac6973c75ea12dc14de07bf8f407370a'
+          - ffmpeg: '7.0.3'
+            sha256: 'bbb18f3cc5c1c34b21cf176c0168c4d9aa97697542a97f60d491a58a814dea65'
+          - ffmpeg: '7.1.5'
+            sha256: 'de668509caf9e35e3cd162473441fdb29538c6d96ed080292b3cf9e6fc5d558f'
+          - ffmpeg: '8.0.3'
+            sha256: '6136812ea6d4e68bdba27e33c2a94382711cdf4f8602ffef056ff792bd6f9818'
+          - ffmpeg: '8.1.2'
+            sha256: '464beb5e7bf0c311e68b45ae2f04e9cc2af88851abb4082231742a74d97b524c'
+    env:
+      FFMPEG_PREFIX: ${{ github.workspace }}/.ffmpeg/${{ matrix.ffmpeg }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Prepare workspace temp directory
+        run: |
+          mkdir -p .work/tmp
+          echo "TMPDIR=$GITHUB_WORKSPACE/.work/tmp" >> "$GITHUB_ENV"
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
 
-      - name: Install FFmpeg
+      - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg libavcodec-dev libavformat-dev libavutil-dev \
-            libswscale-dev libswresample-dev libavfilter-dev libavdevice-dev
+          sudo apt-get install -y build-essential curl nasm pkg-config libx264-dev zlib1g-dev
+
+      - name: Restore FFmpeg build
+        id: ffmpeg-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.FFMPEG_PREFIX }}
+          key: ffmpeg-linux-amd64-${{ matrix.ffmpeg }}-v1
+
+      - name: Build FFmpeg ${{ matrix.ffmpeg }}
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p .work/ffmpeg-source "$FFMPEG_PREFIX" "$TMPDIR"
+          curl --fail --location --retry 3 \
+            --output .work/ffmpeg.tar.xz \
+            "https://ffmpeg.org/releases/ffmpeg-${{ matrix.ffmpeg }}.tar.xz"
+          echo "${{ matrix.sha256 }}  .work/ffmpeg.tar.xz" | sha256sum --check --strict
+          tar -xf .work/ffmpeg.tar.xz --strip-components=1 -C .work/ffmpeg-source
+          cd .work/ffmpeg-source
+          ./configure \
+            --prefix="$FFMPEG_PREFIX" \
+            --enable-shared \
+            --disable-static \
+            --disable-doc \
+            --disable-debug \
+            --disable-autodetect \
+            --disable-network \
+            --disable-ffplay \
+            --enable-gpl \
+            --enable-libx264 \
+            --enable-zlib
+          make -j4
+          make install
+
+      - name: Select FFmpeg ${{ matrix.ffmpeg }}
+        run: |
+          echo "$FFMPEG_PREFIX/bin" >> "$GITHUB_PATH"
+          echo "LD_LIBRARY_PATH=$FFMPEG_PREFIX/lib" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_PATH=$FFMPEG_PREFIX/lib/pkgconfig" >> "$GITHUB_ENV"
+
+      - name: Verify selected FFmpeg release
+        run: ffmpeg -version | head -n 1 | grep -F "ffmpeg version ${{ matrix.ffmpeg }} "
+
+      - name: Verify FFmpeg ABI layout
+        run: |
+          mkdir -p .work "$TMPDIR"
+          cc -std=c11 -Wall -Wextra -Werror \
+            $(pkg-config --cflags libavutil libavcodec libavformat libavfilter libavdevice libswscale libswresample) \
+            internal/abi/testdata/layout_probe.c \
+            -o .work/layout-probe
+          .work/layout-probe > .work/layout.txt
+          go run ./internal/abi/cmd/check-layout < .work/layout.txt
 
       - name: Build shim
         working-directory: shim
         run: ./build.sh
 
-      - name: Set library path
-        run: echo "LD_LIBRARY_PATH=${{ github.workspace }}/shim:$LD_LIBRARY_PATH" >> $GITHUB_ENV
-
-      - name: Run tests
-        run: go test -v ./...
-        env:
-          CGO_ENABLED: "0"
-          FFGO_SHIM_DIR: ${{ github.workspace }}/shim
-
-      - name: Run integration tests
-        run: go test -v -run Integration ./...
+      - name: Run unit and integration tests
+        run: go test -count=1 -v ./...
         env:
           CGO_ENABLED: "0"
           FFGO_SHIM_DIR: ${{ github.workspace }}/shim

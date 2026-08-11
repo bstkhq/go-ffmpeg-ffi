@@ -7,10 +7,10 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/ebitengine/purego"
 	"github.com/bstkhq/go-ffmpeg-ffi/avcodec"
 	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/bindings"
+	"github.com/ebitengine/purego"
 )
 
 // BitstreamFilter represents an FFmpeg bitstream filter.
@@ -35,6 +35,10 @@ var (
 	avBsfReceivePacket func(ctx, pkt uintptr) int32
 
 	bsfBindingsRegistered bool
+	offsetBsfParIn        uintptr
+	offsetBsfParOut       uintptr
+	offsetBsfTimeBaseIn   uintptr
+	offsetBsfTimeBaseOut  uintptr
 )
 
 func registerBSFBindings() {
@@ -50,6 +54,11 @@ func registerBSFBindings() {
 	if lib == 0 {
 		return
 	}
+	layout := bindings.ABI().BSFContext
+	offsetBsfParIn = layout.ParametersIn
+	offsetBsfParOut = layout.ParametersOut
+	offsetBsfTimeBaseIn = layout.TimeBaseIn
+	offsetBsfTimeBaseOut = layout.TimeBaseOut
 
 	purego.RegisterLibFunc(&avBsfGetByName, lib, "av_bsf_get_by_name")
 	purego.RegisterLibFunc(&avBsfAllocContext, lib, "av_bsf_alloc")
@@ -85,14 +94,6 @@ const (
 
 	// BSFNameNull is a passthrough filter (for testing).
 	BSFNameNull = "null"
-)
-
-// BSFContext field offsets
-const (
-	offsetBsfParIn       = 24 // AVCodecParameters *par_in
-	offsetBsfParOut      = 32 // AVCodecParameters *par_out
-	offsetBsfTimeBaseIn  = 40 // AVRational time_base_in
-	offsetBsfTimeBaseOut = 48 // AVRational time_base_out
 )
 
 // NewBitstreamFilter creates a new bitstream filter.
@@ -158,8 +159,7 @@ func (f *BitstreamFilter) SetInputTimeBase(num, den int32) {
 		return
 	}
 
-	*(*int32)(unsafe.Pointer(uintptr(f.ctx) + offsetBsfTimeBaseIn)) = num
-	*(*int32)(unsafe.Pointer(uintptr(f.ctx) + offsetBsfTimeBaseIn + 4)) = den
+	*(*avutil.Rational)(unsafe.Pointer(uintptr(f.ctx) + offsetBsfTimeBaseIn)) = avutil.NewRational(num, den)
 }
 
 // Init initializes the filter after configuration.
@@ -264,9 +264,8 @@ func (f *BitstreamFilter) GetOutputTimeBase() (num, den int32) {
 		return 0, 1
 	}
 
-	num = *(*int32)(unsafe.Pointer(uintptr(f.ctx) + offsetBsfTimeBaseOut))
-	den = *(*int32)(unsafe.Pointer(uintptr(f.ctx) + offsetBsfTimeBaseOut + 4))
-	return
+	timeBase := *(*avutil.Rational)(unsafe.Pointer(uintptr(f.ctx) + offsetBsfTimeBaseOut))
+	return timeBase.Num, timeBase.Den
 }
 
 // Close releases all filter resources.
