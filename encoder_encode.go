@@ -54,7 +54,7 @@ func (e *Encoder) writeVideoPacketLocked(packet avcodec.Packet) error {
 	avcodec.RescalePacketTS(packet,
 		avcodec.GetCtxTimeBase(e.videoCodecCtx),
 		NewRational(streamNum, streamDen))
-	return avformat.InterleavedWriteFrame(e.formatCtx, packet)
+	return e.writeOutputPacketLocked(packet)
 }
 
 func (e *Encoder) writeAudioPacketLocked(packet avcodec.Packet) error {
@@ -63,7 +63,7 @@ func (e *Encoder) writeAudioPacketLocked(packet avcodec.Packet) error {
 	avcodec.RescalePacketTS(packet,
 		avcodec.GetCtxTimeBase(e.audioCodecCtx),
 		NewRational(streamNum, streamDen))
-	return avformat.InterleavedWriteFrame(e.formatCtx, packet)
+	return e.writeOutputPacketLocked(packet)
 }
 
 func (e *Encoder) flushEncodersLocked() error {

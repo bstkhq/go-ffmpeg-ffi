@@ -20,6 +20,7 @@ type Encoder struct {
 
 	formatCtx avformat.FormatContext
 	ioCtx     avformat.IOContext
+	customIO  *CustomIOContext
 	path      string
 
 	// Optional: used when I/O is opened lazily (e.g. network outputs) or needs avio_open2 options.
@@ -726,7 +727,7 @@ func (e *Encoder) writeHeaderLocked() error {
 		}
 	}()
 
-	if err := avformat.WriteHeader(e.formatCtx, &dict); err != nil {
+	if err := e.writeOutputHeaderLocked(&dict); err != nil {
 		return err
 	}
 	e.headerWritten = true
@@ -902,7 +903,7 @@ func (e *Encoder) WritePacket(packet *Packet) error {
 	avcodec.SetPacketStreamIndex(packet.ptr, int32(outputStreamIdx))
 
 	// Write packet
-	return avformat.InterleavedWriteFrame(e.formatCtx, packet.ptr)
+	return e.writeOutputPacketLocked(packet.ptr)
 }
 
 // applyVideoOptions applies advanced video encoding options via av_opt_set.
@@ -1236,7 +1237,7 @@ func (e *Encoder) Close() error {
 
 	// Write trailer
 	if e.formatCtx != nil && e.headerWritten {
-		if err := avformat.WriteTrailer(e.formatCtx); err != nil {
+		if err := e.writeOutputTrailerLocked(); err != nil {
 			closeErrors = append(closeErrors, err)
 		}
 	}
@@ -1271,8 +1272,15 @@ func (e *Encoder) cleanup() {
 		avcodec.FreeContext(&e.audioCodecCtx)
 	}
 
-	// Close I/O context (errors during cleanup are non-fatal)
-	if e.ioCtx != nil && e.formatCtx != nil {
+	// Close I/O context (errors during cleanup are non-fatal).
+	if e.customIO != nil {
+		if e.formatCtx != nil {
+			avformat.SetIOContext(e.formatCtx, nil)
+		}
+		_ = e.customIO.Close()
+		e.customIO = nil
+		e.ioCtx = nil
+	} else if e.ioCtx != nil && e.formatCtx != nil {
 		_ = avformat.IOCloseP(&e.ioCtx)
 	}
 

@@ -3,10 +3,12 @@
 package ffgo
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"testing"
 
+	"github.com/bstkhq/go-ffmpeg-ffi/avcodec"
 	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/handles"
 	"github.com/ebitengine/purego"
@@ -102,5 +104,70 @@ func TestCustomIOWriteRejectsShortWrite(t *testing.T) {
 	}
 	if !errors.Is(err, io.ErrShortWrite) {
 		t.Fatalf("operation error %v does not preserve io.ErrShortWrite", err)
+	}
+}
+
+func TestDecoderFromIOPreservesReadError(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+	wantErr := errors.New("source unavailable")
+	before := handles.Count()
+
+	_, err := NewDecoderFromIO(&IOCallbacks{
+		Read: func([]byte) (int, error) { return 0, wantErr },
+	}, "")
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("NewDecoderFromIO error %v does not preserve %v", err, wantErr)
+	}
+	if got := handles.Count(); got != before {
+		t.Fatalf("registered handles = %d, want baseline %d", got, before)
+	}
+}
+
+func TestEncoderFromIOOwnsContextAndWritesFrames(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+	before := handles.Count()
+	var output bytes.Buffer
+	encoder, err := NewEncoderToWriter(&output, "mpegts", EncoderConfig{
+		Width:       16,
+		Height:      16,
+		PixelFormat: PixelFormatYUV420P,
+		CodecID:     avcodec.CodecIDMPEG2VIDEO,
+		BitRate:     100_000,
+		FrameRate:   10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	frame := FrameAlloc()
+	if frame.IsNil() {
+		_ = encoder.Close()
+		t.Fatal("failed to allocate frame")
+	}
+	defer func() { _ = FrameFree(&frame) }()
+	avutil.SetFrameWidth(frame.ptr, 16)
+	avutil.SetFrameHeight(frame.ptr, 16)
+	avutil.SetFrameFormat(frame.ptr, int32(PixelFormatYUV420P))
+	if err := avutil.FrameGetBufferErr(frame.ptr, 0); err != nil {
+		_ = encoder.Close()
+		t.Fatal(err)
+	}
+	fillTestFrame(frame, 0, 16, 16)
+	if err := encoder.WriteFrame(frame); err != nil {
+		_ = encoder.Close()
+		t.Fatal(err)
+	}
+	if err := encoder.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if output.Len() == 0 {
+		t.Fatal("encoder produced no output")
+	}
+	if got := handles.Count(); got != before {
+		t.Fatalf("registered handles = %d, want baseline %d", got, before)
 	}
 }

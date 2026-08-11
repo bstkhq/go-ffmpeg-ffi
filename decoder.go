@@ -719,7 +719,7 @@ func (d *Decoder) SeekTimestamp(timestamp int64) error {
 	}
 
 	// Seek to keyframe before target
-	if err := avformat.SeekFrame(d.formatCtx, -1, timestamp, avformat.SeekFlagBackward); err != nil {
+	if err := d.seekInputLocked(-1, timestamp, avformat.SeekFlagBackward); err != nil {
 		return err
 	}
 

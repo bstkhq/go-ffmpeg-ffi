@@ -73,7 +73,7 @@ func (d *Decoder) ReadDataPacket() (*Packet, error) {
 
 	for {
 		avcodec.PacketUnref(d.packet)
-		if err := avformat.ReadFrame(d.formatCtx, d.packet); err != nil {
+		if err := d.readInputPacketLocked(d.packet); err != nil {
 			if avutil.IsEOF(err) {
 				return nil, nil
 			}

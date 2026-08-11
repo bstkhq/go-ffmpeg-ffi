@@ -270,6 +270,46 @@ func (c *CustomIOContext) finishOperation(nativeErr error) error {
 	return errors.Join(nativeErr, callbackErr)
 }
 
+func (d *Decoder) readInputPacketLocked(packet avcodec.Packet) error {
+	if d.customIO == nil {
+		return avformat.ReadFrame(d.formatCtx, packet)
+	}
+	d.customIO.beginOperation()
+	return d.customIO.finishOperation(avformat.ReadFrame(d.formatCtx, packet))
+}
+
+func (d *Decoder) seekInputLocked(streamIndex int32, timestamp int64, flags int32) error {
+	if d.customIO == nil {
+		return avformat.SeekFrame(d.formatCtx, streamIndex, timestamp, flags)
+	}
+	d.customIO.beginOperation()
+	return d.customIO.finishOperation(avformat.SeekFrame(d.formatCtx, streamIndex, timestamp, flags))
+}
+
+func (e *Encoder) writeOutputHeaderLocked(options *avutil.Dictionary) error {
+	if e.customIO == nil {
+		return avformat.WriteHeader(e.formatCtx, options)
+	}
+	e.customIO.beginOperation()
+	return e.customIO.finishOperation(avformat.WriteHeader(e.formatCtx, options))
+}
+
+func (e *Encoder) writeOutputPacketLocked(packet avcodec.Packet) error {
+	if e.customIO == nil {
+		return avformat.InterleavedWriteFrame(e.formatCtx, packet)
+	}
+	e.customIO.beginOperation()
+	return e.customIO.finishOperation(avformat.InterleavedWriteFrame(e.formatCtx, packet))
+}
+
+func (e *Encoder) writeOutputTrailerLocked() error {
+	if e.customIO == nil {
+		return avformat.WriteTrailer(e.formatCtx)
+	}
+	e.customIO.beginOperation()
+	return e.customIO.finishOperation(avformat.WriteTrailer(e.formatCtx))
+}
+
 // NewCustomIOContext creates a new custom I/O context with the given callbacks.
 func NewCustomIOContext(callbacks *IOCallbacks, writable bool) (*CustomIOContext, error) {
 	return NewCustomIOContextWithSize(callbacks, writable, defaultIOBufferSize)
@@ -449,7 +489,8 @@ func NewDecoderFromIOWithOptions(callbacks *IOCallbacks, opts *DecoderOptions) (
 	}
 
 	// Open input with custom I/O (pass empty string since we have custom I/O)
-	if err := avformat.OpenInput(&formatCtx, "", inputFmt, &avDict); err != nil {
+	ioCtx.beginOperation()
+	if err := ioCtx.finishOperation(avformat.OpenInput(&formatCtx, "", inputFmt, &avDict)); err != nil {
 		if avDict != nil {
 			avutil.DictFree(&avDict)
 		}
@@ -464,7 +505,8 @@ func NewDecoderFromIOWithOptions(callbacks *IOCallbacks, opts *DecoderOptions) (
 	}
 
 	// Find stream info
-	if err := avformat.FindStreamInfo(formatCtx, nil); err != nil {
+	ioCtx.beginOperation()
+	if err := ioCtx.finishOperation(avformat.FindStreamInfo(formatCtx, nil)); err != nil {
 		avformat.CloseInput(&formatCtx)
 		ioCtx.Close()
 		return nil, err
@@ -650,6 +692,7 @@ func NewEncoderFromIO(callbacks *IOCallbacks, format string, config EncoderConfi
 
 	// Set custom I/O
 	avformat.SetIOContext(formatCtx, ioCtx.AVIOContext())
+	avformat.AddFlags(formatCtx, avformat.AVFMT_FLAG_CUSTOM_IO)
 
 	// Create a new stream in the output container
 	stream := avformat.NewStream(formatCtx, nil)
@@ -728,7 +771,8 @@ func NewEncoderFromIO(callbacks *IOCallbacks, format string, config EncoderConfi
 	}
 
 	// Write header
-	if err := avformat.WriteHeader(formatCtx, nil); err != nil {
+	ioCtx.beginOperation()
+	if err := ioCtx.finishOperation(avformat.WriteHeader(formatCtx, nil)); err != nil {
 		avcodec.FreeContext(&codecCtx)
 		avformat.FreeContext(formatCtx)
 		ioCtx.Close()
@@ -752,6 +796,11 @@ func NewEncoderFromIO(callbacks *IOCallbacks, format string, config EncoderConfi
 
 	return &Encoder{
 		formatCtx:     formatCtx,
+		ioCtx:         ioCtx.AVIOContext(),
+		customIO:      ioCtx,
+		videoCodecCtx: codecCtx,
+		videoStream:   stream,
+		videoPacket:   packet,
 		codecCtx:      codecCtx,
 		stream:        stream,
 		packet:        packet,
@@ -762,5 +811,6 @@ func NewEncoderFromIO(callbacks *IOCallbacks, format string, config EncoderConfi
 		timeBaseNum:   1,
 		timeBaseDen:   int32(frameRate),
 		headerWritten: true, // Header was already written above
+		hasVideo:      true,
 	}, nil
 }
