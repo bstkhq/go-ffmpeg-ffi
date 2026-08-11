@@ -35,6 +35,65 @@ func TestFramePool_GetPutAndLimit(t *testing.T) {
 	}
 }
 
+func TestFramePoolRejectsForeignAndDuplicateFrames(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+
+	pool := NewFramePool(2)
+	defer pool.Close()
+	other := NewFramePool(1)
+	defer other.Close()
+
+	foreign := FrameAlloc()
+	defer func() { _ = FrameFree(&foreign) }()
+	if err := pool.Put(&foreign); err == nil {
+		t.Fatal("pool accepted a frame it did not lease")
+	}
+
+	leased, err := pool.Get()
+	if err != nil {
+		t.Fatal(err)
+	}
+	copyOfLease := leased
+	if err := other.Put(&leased); err == nil {
+		t.Fatal("another pool accepted the lease")
+	}
+	if err := FrameFree(&leased); err == nil {
+		t.Fatal("FrameFree accepted a pooled frame")
+	}
+	if err := pool.Put(&leased); err != nil {
+		t.Fatal(err)
+	}
+	if !copyOfLease.IsNil() {
+		t.Fatal("copied lease remained usable after return")
+	}
+	if err := pool.Put(&copyOfLease); err == nil {
+		t.Fatal("pool accepted the same lease twice")
+	}
+}
+
+func TestFramePoolAccountsForReturnAfterClose(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+
+	pool := NewFramePool(1)
+	frame, err := pool.Get()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.Put(&frame); err != nil {
+		t.Fatal(err)
+	}
+	if pool.inUse != 0 {
+		t.Fatalf("in-use frames = %d, want 0", pool.inUse)
+	}
+}
+
 func TestFrameWrapBuffer_RGB24(t *testing.T) {
 	if !requireFFmpeg(t) {
 		return

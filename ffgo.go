@@ -167,8 +167,9 @@ type (
 	// Some APIs return borrowed frames (e.g. decoder output) which MUST NOT be freed.
 	// If you need an owned frame, clone it with FrameClone / Frame.Clone.
 	Frame struct {
-		ptr   avutil.Frame
-		owned bool // true if the caller owns the frame and must free it
+		ptr       avutil.Frame
+		owned     bool // true if the caller owns the frame and must free it
+		poolLease *framePoolLease
 	}
 
 	// Packet is an encoded packet of data (AVPacket* wrapper).
@@ -300,7 +301,9 @@ func PacketClone(src *Packet) (*Packet, error) {
 }
 
 // IsNil reports whether the frame pointer is nil.
-func (f Frame) IsNil() bool { return f.ptr == nil }
+func (f Frame) IsNil() bool {
+	return f.ptr == nil || (f.poolLease != nil && f.poolLease.returned.Load())
+}
 
 // Clone returns an owned frame that references the same underlying buffers as f.
 // The returned frame MUST be freed by the caller (via Frame.Free / FrameFree).
@@ -316,6 +319,12 @@ func (f *Frame) Free() error {
 	}
 	if !f.owned {
 		return errors.New("ffgo: attempted to free a borrowed frame; clone it first")
+	}
+	if f.poolLease != nil {
+		if f.poolLease.returned.Load() {
+			return errors.New("ffgo: frame pool lease has already been returned")
+		}
+		return errors.New("ffgo: pooled frame must be returned with FramePool.Put")
 	}
 	avutil.FrameFree(&f.ptr)
 	f.ptr = nil
@@ -461,7 +470,7 @@ func FrameFree(frame *Frame) error {
 
 // FrameRef creates a reference to src in dst.
 func FrameRef(dst, src Frame) error {
-	if dst.ptr == nil || src.ptr == nil {
+	if dst.IsNil() || src.IsNil() {
 		return errors.New("ffgo: FrameRef requires non-nil src and dst")
 	}
 	return avutil.FrameRef(dst.ptr, src.ptr)
@@ -472,7 +481,7 @@ func FrameRef(dst, src Frame) error {
 // The returned frame is owned by the caller and must be freed with FrameFree.
 // If src is nil, it returns (nil, nil).
 func FrameClone(src Frame) (Frame, error) {
-	if src.ptr == nil {
+	if src.IsNil() {
 		return Frame{}, nil
 	}
 	dst := avutil.FrameAlloc()

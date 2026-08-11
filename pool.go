@@ -8,9 +8,9 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	"github.com/ebitengine/purego"
 	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/handles"
+	"github.com/ebitengine/purego"
 )
 
 // FramePool reuses AVFrame allocations to reduce GC/FFmpeg allocation churn.
@@ -22,6 +22,11 @@ type FramePool struct {
 	closed   bool
 	inUse    int
 	maxInUse int
+}
+
+type framePoolLease struct {
+	pool     *FramePool
+	returned atomic.Bool
 }
 
 // NewFramePool creates a new pool. If maxInUse <= 0, the pool is unbounded.
@@ -55,7 +60,11 @@ func (p *FramePool) Get() (Frame, error) {
 
 	avutil.FrameUnref(fr)
 	p.inUse++
-	return Frame{ptr: fr, owned: true}, nil
+	return Frame{
+		ptr:       fr,
+		owned:     true,
+		poolLease: &framePoolLease{pool: p},
+	}, nil
 }
 
 // Put returns an owned frame to the pool and clears the caller's reference.
@@ -69,24 +78,35 @@ func (p *FramePool) Put(f *Frame) error {
 	if !f.owned {
 		return errors.New("ffgo: cannot put borrowed frame into pool")
 	}
+	if f.poolLease == nil || f.poolLease.pool != p {
+		return errors.New("ffgo: frame was not leased by this pool")
+	}
+	if !f.poolLease.returned.CompareAndSwap(false, true) {
+		return errors.New("ffgo: frame pool lease has already been returned")
+	}
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.inUse <= 0 {
+		return errors.New("ffgo: frame pool lease accounting underflow")
+	}
+	p.inUse--
 
 	if p.closed {
 		// Pool is closed: free the frame.
 		avutil.FrameFree(&f.ptr)
 		f.ptr = nil
 		f.owned = false
+		f.poolLease = nil
 		return nil
 	}
 
 	avutil.FrameUnref(f.ptr)
 	p.idle = append(p.idle, f.ptr)
-	p.inUse--
 
 	f.ptr = nil
 	f.owned = false
+	f.poolLease = nil
 	return nil
 }
 
