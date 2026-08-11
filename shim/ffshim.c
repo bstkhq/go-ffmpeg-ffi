@@ -175,6 +175,22 @@ void* ffshim_new_chapter(void *ctx, int64_t id, int tb_num, int tb_den, int64_t 
  * VERSION INFO
  * ============================================================================ */
 
+unsigned int ffshim_api_version(void) {
+    return FFSHIM_API_VERSION;
+}
+
+unsigned int ffshim_build_avutil_major(void) {
+    return LIBAVUTIL_VERSION_MAJOR;
+}
+
+unsigned int ffshim_build_avcodec_major(void) {
+    return LIBAVCODEC_VERSION_MAJOR;
+}
+
+unsigned int ffshim_build_avformat_major(void) {
+    return LIBAVFORMAT_VERSION_MAJOR;
+}
+
 unsigned int ffshim_avutil_version(void) {
     return avutil_version();
 }

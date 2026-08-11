@@ -34,6 +34,8 @@ import (
 	"sync"
 	"unsafe"
 
+	"github.com/bstkhq/go-ffmpeg-ffi/internal/abi"
+	"github.com/bstkhq/go-ffmpeg-ffi/internal/bindings"
 	"github.com/ebitengine/purego"
 )
 
@@ -43,13 +45,37 @@ var ErrShimNotLoaded = errors.New("ffgo: shim library not loaded; logging and so
 // ErrShimNotFound is returned when the shim library cannot be found.
 var ErrShimNotFound = errors.New("ffgo: shim library not found")
 
+// ErrIncompatibleShim is returned when a shim was built for another shim API
+// or FFmpeg ABI family.
+var ErrIncompatibleShim = errors.New("ffgo: incompatible shim library")
+
+// APIVersion is the version of the Go-to-shim function contract.
+const APIVersion uint32 = 1
+
+// VersionInfo describes the shim contract and the FFmpeg libraries it was
+// compiled against and resolved at runtime.
+type VersionInfo struct {
+	API uint32
+
+	BuildAVUtilMajor   uint32
+	BuildAVCodecMajor  uint32
+	BuildAVFormatMajor uint32
+
+	RuntimeAVUtil   uint32
+	RuntimeAVCodec  uint32
+	RuntimeAVFormat uint32
+
+	FFmpegMajor int
+}
+
 var (
-	libShim   uintptr
-	loaded    bool
-	loadErr   error
-	loadMu    sync.Mutex
-	shimPath  string // Path where shim was found (for diagnostics)
-	searchErr string // Detailed search error message
+	libShim     uintptr
+	loaded      bool
+	loadErr     error
+	loadMu      sync.Mutex
+	shimPath    string // Path where shim was found (for diagnostics)
+	searchErr   string // Detailed search error message
+	versionInfo VersionInfo
 
 	// Function bindings
 	shimLogSetCallback func(cb uintptr)
@@ -91,12 +117,12 @@ var (
 	shimCodecCtxSetHWFrames  func(ctx uintptr, ref uintptr)
 
 	// AVFormatContext / chapter / program helpers (optional)
-	shimFormatCtxDuration    func(ctx uintptr) int64
-	shimFormatCtxBitRate     func(ctx uintptr) int64
-	shimFormatCtxNbChapters  func(ctx uintptr) uint32
-	shimFormatCtxChapter     func(ctx uintptr, index int32) uintptr
-	shimFormatCtxNbPrograms  func(ctx uintptr) uint32
-	shimFormatCtxProgram     func(ctx uintptr, index int32) uintptr
+	shimFormatCtxDuration   func(ctx uintptr) int64
+	shimFormatCtxBitRate    func(ctx uintptr) int64
+	shimFormatCtxNbChapters func(ctx uintptr) uint32
+	shimFormatCtxChapter    func(ctx uintptr, index int32) uintptr
+	shimFormatCtxNbPrograms func(ctx uintptr) uint32
+	shimFormatCtxProgram    func(ctx uintptr, index int32) uintptr
 
 	shimChapterID       func(ch uintptr) int64
 	shimChapterTimeBase func(ch uintptr, outNum, outDen *int32)
@@ -130,6 +156,14 @@ func Load() error {
 		return nil
 	}
 	if loadErr != nil {
+		if errors.Is(loadErr, ErrShimNotFound) {
+			return nil
+		}
+		return loadErr
+	}
+	if err := bindings.Load(); err != nil {
+		loadErr = fmt.Errorf("ffgo: cannot validate shim without a supported FFmpeg runtime: %w", err)
+		searchErr = loadErr.Error()
 		return loadErr
 	}
 
@@ -145,11 +179,23 @@ func Load() error {
 	if err != nil {
 		loadErr = fmt.Errorf("failed to load shim at %s: %w", path, err)
 		searchErr = loadErr.Error()
-		return nil
+		return loadErr
+	}
+
+	info, err := readVersionInfo(lib)
+	if err == nil {
+		info, err = validateVersionInfo(bindings.ABI(), info)
+	}
+	if err != nil {
+		_ = purego.Dlclose(lib)
+		loadErr = fmt.Errorf("%w at %s: %v", ErrIncompatibleShim, path, err)
+		searchErr = loadErr.Error()
+		return loadErr
 	}
 
 	libShim = lib
 	shimPath = path
+	versionInfo = info
 	registerBindings()
 	loaded = true
 	return nil
@@ -174,6 +220,17 @@ func Path() string {
 	loadMu.Lock()
 	defer loadMu.Unlock()
 	return shimPath
+}
+
+// Info returns the validated shim version information, or the zero value when
+// no compatible shim is loaded.
+func Info() VersionInfo {
+	loadMu.Lock()
+	defer loadMu.Unlock()
+	if !loaded {
+		return VersionInfo{}
+	}
+	return versionInfo
 }
 
 // LoadError returns detailed error information if the shim failed to load.
@@ -205,7 +262,10 @@ func Status() string {
 	defer loadMu.Unlock()
 
 	if loaded {
-		return fmt.Sprintf("loaded from %s", shimPath)
+		return fmt.Sprintf(
+			"loaded from %s (shim API %d, FFmpeg %d)",
+			shimPath, versionInfo.API, versionInfo.FFmpegMajor,
+		)
 	}
 	if loadErr != nil {
 		return fmt.Sprintf("not loaded: %s", loadErr)
@@ -258,6 +318,79 @@ func BuildInstructions() string {
 	default:
 		return fmt.Sprintf("Platform %s/%s is not supported for shim building", runtime.GOOS, runtime.GOARCH)
 	}
+}
+
+func readVersionInfo(handle uintptr) (VersionInfo, error) {
+	var (
+		api                func() uint32
+		buildAVUtilMajor   func() uint32
+		buildAVCodecMajor  func() uint32
+		buildAVFormatMajor func() uint32
+		runtimeAVUtil      func() uint32
+		runtimeAVCodec     func() uint32
+		runtimeAVFormat    func() uint32
+	)
+	symbols := []struct {
+		fn   any
+		name string
+	}{
+		{&api, "ffshim_api_version"},
+		{&buildAVUtilMajor, "ffshim_build_avutil_major"},
+		{&buildAVCodecMajor, "ffshim_build_avcodec_major"},
+		{&buildAVFormatMajor, "ffshim_build_avformat_major"},
+		{&runtimeAVUtil, "ffshim_avutil_version"},
+		{&runtimeAVCodec, "ffshim_avcodec_version"},
+		{&runtimeAVFormat, "ffshim_avformat_version"},
+	}
+	for _, binding := range symbols {
+		if err := registerRequiredLibFunc(binding.fn, handle, binding.name); err != nil {
+			return VersionInfo{}, err
+		}
+	}
+
+	return VersionInfo{
+		API:                api(),
+		BuildAVUtilMajor:   buildAVUtilMajor(),
+		BuildAVCodecMajor:  buildAVCodecMajor(),
+		BuildAVFormatMajor: buildAVFormatMajor(),
+		RuntimeAVUtil:      runtimeAVUtil(),
+		RuntimeAVCodec:     runtimeAVCodec(),
+		RuntimeAVFormat:    runtimeAVFormat(),
+	}, nil
+}
+
+func validateVersionInfo(core abi.Layout, info VersionInfo) (VersionInfo, error) {
+	if info.API != APIVersion {
+		return VersionInfo{}, fmt.Errorf("shim API %d, expected %d", info.API, APIVersion)
+	}
+
+	buildLayout, err := abi.Detect(
+		info.BuildAVUtilMajor<<16,
+		info.BuildAVCodecMajor<<16,
+		info.BuildAVFormatMajor<<16,
+	)
+	if err != nil {
+		return VersionInfo{}, fmt.Errorf("unsupported build-time FFmpeg tuple: %w", err)
+	}
+	runtimeLayout, err := abi.Detect(info.RuntimeAVUtil, info.RuntimeAVCodec, info.RuntimeAVFormat)
+	if err != nil {
+		return VersionInfo{}, fmt.Errorf("unsupported runtime FFmpeg tuple: %w", err)
+	}
+	if buildLayout.FFmpegMajor != runtimeLayout.FFmpegMajor {
+		return VersionInfo{}, fmt.Errorf(
+			"shim was built for FFmpeg %d but resolved FFmpeg %d at runtime",
+			buildLayout.FFmpegMajor, runtimeLayout.FFmpegMajor,
+		)
+	}
+	if core.FFmpegMajor != runtimeLayout.FFmpegMajor {
+		return VersionInfo{}, fmt.Errorf(
+			"shim resolved FFmpeg %d but Go loaded FFmpeg %d",
+			runtimeLayout.FFmpegMajor, core.FFmpegMajor,
+		)
+	}
+
+	info.FFmpegMajor = runtimeLayout.FFmpegMajor
+	return info, nil
 }
 
 func registerBindings() {
@@ -321,6 +454,16 @@ func registerBindings() {
 	registerOptionalLibFunc(&shimProgramNbStreamIdx, libShim, "ffshim_program_nb_stream_indexes")
 	registerOptionalLibFunc(&shimProgramStreamIndexPtr, libShim, "ffshim_program_stream_index")
 	registerOptionalLibFunc(&shimProgramMetadata, libShim, "ffshim_program_metadata")
+}
+
+func registerRequiredLibFunc(fptr any, handle uintptr, name string) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("required symbol %s is unavailable: %v", name, recovered)
+		}
+	}()
+	purego.RegisterLibFunc(fptr, handle, name)
+	return nil
 }
 
 func registerOptionalLibFunc(fptr any, handle uintptr, name string) {
