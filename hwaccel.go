@@ -133,6 +133,8 @@ type HWDecoder struct {
 
 	hwDevice            *HWDevice
 	outputSoftwareFrame bool
+	decodeState         decoderCodecState
+	demuxEOF            bool
 	closed              bool
 }
 
@@ -280,47 +282,7 @@ func (d *HWDecoder) DecodeVideo() (Frame, error) {
 		return Frame{}, errors.New("ffgo: decoder is closed")
 	}
 
-	for {
-		// Try to receive a frame first
-		ret := avcodec.ReceiveFrame(d.videoCodecCtx, d.frame)
-		if ret == nil {
-			// Successfully received a frame
-			// Check if we need to transfer from GPU to CPU
-			if d.outputSoftwareFrame && d.swFrame != nil {
-				avutil.FrameUnref(d.swFrame)
-				err := avutil.HWFrameTransferData(d.swFrame, d.frame, 0)
-				if err == nil {
-					// Transfer succeeded, copy properties
-					avutil.SetFramePTS(d.swFrame, avutil.GetFramePTS(d.frame))
-					return Frame{ptr: d.swFrame, owned: false}, nil
-				}
-				// Transfer failed (frame might already be in software format)
-			}
-			return Frame{ptr: d.frame, owned: false}, nil
-		}
-
-		// Need more data, read a packet
-		if err := avformat.ReadFrame(d.formatCtx, d.packet); err != nil {
-			return Frame{}, err
-		}
-
-		// Check if this packet is for our video stream
-		streamIdx := avcodec.GetPacketStreamIndex(d.packet)
-		if int(streamIdx) != d.videoStreamIdx {
-			avcodec.PacketUnref(d.packet)
-			continue
-		}
-
-		// Send packet to decoder
-		if err := avcodec.SendPacket(d.videoCodecCtx, d.packet); err != nil {
-			avcodec.PacketUnref(d.packet)
-			// EAGAIN means try receive again
-			if !avutil.IsAgain(err) {
-				return Frame{}, err
-			}
-		}
-		avcodec.PacketUnref(d.packet)
-	}
+	return d.nextVideoFrameLocked(d.outputSoftwareFrame)
 }
 
 // ReadHWFrame reads and decodes the next video frame, keeping it in GPU memory.
@@ -335,35 +297,52 @@ func (d *HWDecoder) ReadHWFrame() (Frame, error) {
 		return Frame{}, errors.New("ffgo: decoder is closed")
 	}
 
-	for {
-		// Try to receive a frame first
-		ret := avcodec.ReceiveFrame(d.videoCodecCtx, d.frame)
-		if ret == nil {
-			// Successfully received a frame (stays in GPU memory)
-			return Frame{ptr: d.frame, owned: false}, nil
-		}
+	return d.nextVideoFrameLocked(false)
+}
 
-		// Need more data, read a packet
-		if err := avformat.ReadFrame(d.formatCtx, d.packet); err != nil {
+func (d *HWDecoder) nextVideoFrameLocked(outputSoftware bool) (Frame, error) {
+	for {
+		ready, err := d.decodeState.next(d.videoCodecCtx, d.frame)
+		if err != nil {
 			return Frame{}, err
 		}
-
-		// Check if this packet is for our video stream
-		streamIdx := avcodec.GetPacketStreamIndex(d.packet)
-		if int(streamIdx) != d.videoStreamIdx {
-			avcodec.PacketUnref(d.packet)
+		if ready {
+			if outputSoftware && d.swFrame != nil {
+				avutil.FrameUnref(d.swFrame)
+				if err := avutil.HWFrameTransferData(d.swFrame, d.frame, 0); err == nil {
+					avutil.SetFramePTS(d.swFrame, avutil.GetFramePTS(d.frame))
+					return Frame{ptr: d.swFrame, owned: false}, nil
+				}
+			}
+			return Frame{ptr: d.frame, owned: false}, nil
+		}
+		if d.decodeState.drained {
+			return Frame{}, nil
+		}
+		if d.demuxEOF {
+			d.decodeState.requestFlush()
 			continue
 		}
 
-		// Send packet to decoder
-		if err := avcodec.SendPacket(d.videoCodecCtx, d.packet); err != nil {
-			avcodec.PacketUnref(d.packet)
-			// EAGAIN means try receive again
-			if !avutil.IsAgain(err) {
-				return Frame{}, err
-			}
-		}
 		avcodec.PacketUnref(d.packet)
+		if err := avformat.ReadFrame(d.formatCtx, d.packet); err != nil {
+			if avutil.IsEOF(err) {
+				d.demuxEOF = true
+				continue
+			}
+			return Frame{}, err
+		}
+		if int(avcodec.GetPacketStreamIndex(d.packet)) != d.videoStreamIdx {
+			continue
+		}
+		packet, err := cloneRawPacket(d.packet)
+		if err != nil {
+			return Frame{}, err
+		}
+		if err := d.decodeState.enqueueOwned(packet); err != nil {
+			avcodec.PacketFree(&packet)
+			return Frame{}, err
+		}
 	}
 }
 
@@ -405,6 +384,7 @@ func (d *HWDecoder) Close() error {
 		return nil
 	}
 	d.closed = true
+	d.decodeState.reset()
 
 	if d.swFrame != nil {
 		avutil.FrameFree(&d.swFrame)
