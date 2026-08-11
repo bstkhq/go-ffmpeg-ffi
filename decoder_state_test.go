@@ -12,7 +12,8 @@ import (
 )
 
 func TestDecoderCodecStateRetainsInputUntilAccepted(t *testing.T) {
-	packet := avcodec.Packet(unsafe.Pointer(uintptr(1)))
+	packetStorage := byte(0)
+	packet := avcodec.Packet(unsafe.Pointer(&packetStorage))
 	receiveCalls := 0
 	sendCalls := 0
 	freeCalls := 0
@@ -97,6 +98,7 @@ func TestDecoderCodecStateFlushesOnceAndDrainsToEOF(t *testing.T) {
 }
 
 func TestDecoderCodecStateRejectsImpossibleDoubleEAGAIN(t *testing.T) {
+	packetStorage := byte(0)
 	state := decoderCodecState{
 		receiveFrame: func(avcodec.Context, avutil.Frame) error {
 			return avutil.NewError(avutil.AVERROR_EAGAIN, "receive")
@@ -106,7 +108,7 @@ func TestDecoderCodecStateRejectsImpossibleDoubleEAGAIN(t *testing.T) {
 		},
 		freePacket: func(packet *avcodec.Packet) { *packet = nil },
 	}
-	if err := state.enqueueOwned(avcodec.Packet(unsafe.Pointer(uintptr(1)))); err != nil {
+	if err := state.enqueueOwned(avcodec.Packet(unsafe.Pointer(&packetStorage))); err != nil {
 		t.Fatal(err)
 	}
 
@@ -118,14 +120,15 @@ func TestDecoderCodecStateRejectsImpossibleDoubleEAGAIN(t *testing.T) {
 
 func TestDecoderCodecStateResetReleasesPendingInput(t *testing.T) {
 	freeCalls := 0
+	packetStorage := [2]byte{}
 	state := decoderCodecState{
 		freePacket: func(packet *avcodec.Packet) {
 			freeCalls++
 			*packet = nil
 		},
 	}
-	for i := uintptr(1); i <= 2; i++ {
-		if err := state.enqueueOwned(avcodec.Packet(unsafe.Pointer(i))); err != nil {
+	for i := range packetStorage {
+		if err := state.enqueueOwned(avcodec.Packet(unsafe.Pointer(&packetStorage[i]))); err != nil {
 			t.Fatal(err)
 		}
 	}

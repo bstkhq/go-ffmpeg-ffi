@@ -5,7 +5,6 @@ package avcodec
 import (
 	"os"
 	"testing"
-	"unsafe"
 
 	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/bindings"
@@ -180,11 +179,10 @@ func TestSendPacketReturnsCodecFlowControl(t *testing.T) {
 	original := avcodecSendPacket
 	t.Cleanup(func() { avcodecSendPacket = original })
 
-	ctx := Context(unsafe.Pointer(uintptr(1)))
 	for _, code := range []int32{avutil.AVERROR_EAGAIN, avutil.AVERROR_EOF} {
 		avcodecSendPacket = func(_, _ uintptr) int32 { return code }
 
-		err := SendPacket(ctx, nil)
+		err := SendPacket(nil, nil)
 		if avutil.Code(err) != code {
 			t.Fatalf("SendPacket error code = %d, want %d", avutil.Code(err), code)
 		}
@@ -195,11 +193,10 @@ func TestSendFrameReturnsCodecFlowControl(t *testing.T) {
 	original := avcodecSendFrame
 	t.Cleanup(func() { avcodecSendFrame = original })
 
-	ctx := Context(unsafe.Pointer(uintptr(1)))
 	for _, code := range []int32{avutil.AVERROR_EAGAIN, avutil.AVERROR_EOF} {
 		avcodecSendFrame = func(_, _ uintptr) int32 { return code }
 
-		err := SendFrame(ctx, nil)
+		err := SendFrame(nil, nil)
 		if avutil.Code(err) != code {
 			t.Fatalf("SendFrame error code = %d, want %d", avutil.Code(err), code)
 		}

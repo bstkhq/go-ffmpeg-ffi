@@ -12,6 +12,7 @@ import (
 )
 
 func TestEncoderCodecStateDrainsAndRetriesInput(t *testing.T) {
+	frameStorage := byte(0)
 	sendCalls := 0
 	receiveResults := []error{
 		nil,
@@ -35,7 +36,7 @@ func TestEncoderCodecStateDrainsAndRetriesInput(t *testing.T) {
 		},
 	}
 
-	err := state.encode(nil, avutil.Frame(unsafe.Pointer(uintptr(1))), nil, func(avcodec.Packet) error {
+	err := state.encode(nil, avutil.Frame(unsafe.Pointer(&frameStorage)), nil, func(avcodec.Packet) error {
 		writes++
 		return nil
 	})
@@ -86,8 +87,9 @@ func TestEncoderCodecStateFlushesOnceToEOF(t *testing.T) {
 }
 
 func TestEncoderCodecStateRejectsInputAfterFlush(t *testing.T) {
+	frameStorage := byte(0)
 	state := encoderCodecState{flushSent: true}
-	err := state.encode(nil, avutil.Frame(unsafe.Pointer(uintptr(1))), nil, func(avcodec.Packet) error { return nil })
+	err := state.encode(nil, avutil.Frame(unsafe.Pointer(&frameStorage)), nil, func(avcodec.Packet) error { return nil })
 	if !errors.Is(err, errEncoderFlushed) {
 		t.Fatalf("encode error = %v, want %v", err, errEncoderFlushed)
 	}
@@ -95,6 +97,7 @@ func TestEncoderCodecStateRejectsInputAfterFlush(t *testing.T) {
 
 func TestEncoderCodecStatePropagatesWriteError(t *testing.T) {
 	want := errors.New("write failed")
+	frameStorage := byte(0)
 	receiveCalls := 0
 	state := encoderCodecState{
 		sendFrame: func(avcodec.Context, avutil.Frame) error { return nil },
@@ -103,7 +106,7 @@ func TestEncoderCodecStatePropagatesWriteError(t *testing.T) {
 			return nil
 		},
 	}
-	err := state.encode(nil, avutil.Frame(unsafe.Pointer(uintptr(1))), nil, func(avcodec.Packet) error {
+	err := state.encode(nil, avutil.Frame(unsafe.Pointer(&frameStorage)), nil, func(avcodec.Packet) error {
 		return want
 	})
 	if !errors.Is(err, want) || receiveCalls != 1 {
@@ -112,6 +115,7 @@ func TestEncoderCodecStatePropagatesWriteError(t *testing.T) {
 }
 
 func TestEncoderCodecStateRejectsImpossibleDoubleEAGAIN(t *testing.T) {
+	frameStorage := byte(0)
 	state := encoderCodecState{
 		sendFrame: func(avcodec.Context, avutil.Frame) error {
 			return avutil.NewError(avutil.AVERROR_EAGAIN, "send")
@@ -120,7 +124,7 @@ func TestEncoderCodecStateRejectsImpossibleDoubleEAGAIN(t *testing.T) {
 			return avutil.NewError(avutil.AVERROR_EAGAIN, "receive")
 		},
 	}
-	err := state.encode(nil, avutil.Frame(unsafe.Pointer(uintptr(1))), nil, func(avcodec.Packet) error { return nil })
+	err := state.encode(nil, avutil.Frame(unsafe.Pointer(&frameStorage)), nil, func(avcodec.Packet) error { return nil })
 	if !errors.Is(err, errEncoderProtocolStalled) {
 		t.Fatalf("encode error = %v, want %v", err, errEncoderProtocolStalled)
 	}
