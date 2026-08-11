@@ -9,7 +9,7 @@ import (
 	"unsafe"
 
 	"github.com/ebitengine/purego"
-	"github.com/obinnaokechukwu/ffgo/internal/bindings"
+	"github.com/bstkhq/go-ffmpeg-ffi/internal/bindings"
 )
 
 // Frame is an opaque FFmpeg AVFrame pointer.

@@ -9,11 +9,11 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/obinnaokechukwu/ffgo/avdevice"
-	"github.com/obinnaokechukwu/ffgo/avformat"
-	"github.com/obinnaokechukwu/ffgo/avutil"
-	"github.com/obinnaokechukwu/ffgo/internal/bindings"
-	"github.com/obinnaokechukwu/ffgo/internal/shim"
+	"github.com/bstkhq/go-ffmpeg-ffi/avdevice"
+	"github.com/bstkhq/go-ffmpeg-ffi/avformat"
+	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
+	"github.com/bstkhq/go-ffmpeg-ffi/internal/bindings"
+	"github.com/bstkhq/go-ffmpeg-ffi/internal/shim"
 )
 
 // DeviceType represents a capture device type.

@@ -1,4 +1,4 @@
-module github.com/obinnaokechukwu/ffgo
+module github.com/bstkhq/go-ffmpeg-ffi
 
 go 1.22.2
 

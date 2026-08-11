@@ -7,9 +7,9 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/obinnaokechukwu/ffgo/avformat"
-	"github.com/obinnaokechukwu/ffgo/avutil"
-	"github.com/obinnaokechukwu/ffgo/internal/shim"
+	"github.com/bstkhq/go-ffmpeg-ffi/avformat"
+	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
+	"github.com/bstkhq/go-ffmpeg-ffi/internal/shim"
 )
 
 // Chapter represents a chapter marker in a media file.

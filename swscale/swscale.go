@@ -8,8 +8,8 @@ import (
 	"unsafe"
 
 	"github.com/ebitengine/purego"
-	"github.com/obinnaokechukwu/ffgo/avutil"
-	"github.com/obinnaokechukwu/ffgo/internal/bindings"
+	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
+	"github.com/bstkhq/go-ffmpeg-ffi/internal/bindings"
 )
 
 // Context is an opaque SwsContext pointer.

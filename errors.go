@@ -5,7 +5,7 @@ package ffgo
 import (
 	"errors"
 
-	"github.com/obinnaokechukwu/ffgo/avutil"
+	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 )
 
 // FFmpegError is an error from FFmpeg operations.

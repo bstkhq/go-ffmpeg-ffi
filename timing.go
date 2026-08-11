@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/obinnaokechukwu/ffgo/avutil"
+	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 )
 
 // FrameTiming helps generate and track frame PTS/DTS values in a given time base.

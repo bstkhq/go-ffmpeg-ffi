@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/obinnaokechukwu/ffgo/avutil"
+	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 )
 
 func TestNewConcatDecoder_Errors(t *testing.T) {

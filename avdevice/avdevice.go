@@ -10,7 +10,7 @@ import (
 	"sync"
 
 	"github.com/ebitengine/purego"
-	"github.com/obinnaokechukwu/ffgo/internal/bindings"
+	"github.com/bstkhq/go-ffmpeg-ffi/internal/bindings"
 )
 
 var (

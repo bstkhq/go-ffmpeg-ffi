@@ -13,7 +13,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/obinnaokechukwu/ffgo/avutil"
+	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 )
 
 var ffmpegAvailable bool

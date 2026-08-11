@@ -9,8 +9,8 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/obinnaokechukwu/ffgo/avfilter"
-	"github.com/obinnaokechukwu/ffgo/avutil"
+	"github.com/bstkhq/go-ffmpeg-ffi/avfilter"
+	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 )
 
 // FilterGraph represents a filter processing pipeline for video or audio.

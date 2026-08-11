@@ -5,7 +5,7 @@ package ffgo
 import (
 	"fmt"
 
-	"github.com/obinnaokechukwu/ffgo/avutil"
+	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 )
 
 // ImageSequenceConfig configures image sequence reading or writing.

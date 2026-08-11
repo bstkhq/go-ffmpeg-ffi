@@ -3,8 +3,8 @@ package ffgo
 import (
 	"fmt"
 
-	"github.com/obinnaokechukwu/ffgo/avutil"
-	"github.com/obinnaokechukwu/ffgo/swresample"
+	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
+	"github.com/bstkhq/go-ffmpeg-ffi/swresample"
 )
 
 // AudioFormat describes audio characteristics for resampling

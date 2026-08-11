@@ -6,9 +6,9 @@ import (
 	"errors"
 	"unsafe"
 
-	"github.com/obinnaokechukwu/ffgo/avutil"
-	"github.com/obinnaokechukwu/ffgo/internal/bindings"
-	"github.com/obinnaokechukwu/ffgo/swscale"
+	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
+	"github.com/bstkhq/go-ffmpeg-ffi/internal/bindings"
+	"github.com/bstkhq/go-ffmpeg-ffi/swscale"
 )
 
 // ScaleFlags controls the scaling algorithm.

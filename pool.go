@@ -9,8 +9,8 @@ import (
 	"unsafe"
 
 	"github.com/ebitengine/purego"
-	"github.com/obinnaokechukwu/ffgo/avutil"
-	"github.com/obinnaokechukwu/ffgo/internal/handles"
+	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
+	"github.com/bstkhq/go-ffmpeg-ffi/internal/handles"
 )
 
 // FramePool reuses AVFrame allocations to reduce GC/FFmpeg allocation churn.

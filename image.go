@@ -11,9 +11,9 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/obinnaokechukwu/ffgo/avcodec"
-	"github.com/obinnaokechukwu/ffgo/avformat"
-	"github.com/obinnaokechukwu/ffgo/avutil"
+	"github.com/bstkhq/go-ffmpeg-ffi/avcodec"
+	"github.com/bstkhq/go-ffmpeg-ffi/avformat"
+	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 )
 
 // SaveFrame saves a frame to an image file.

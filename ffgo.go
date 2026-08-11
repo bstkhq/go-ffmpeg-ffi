@@ -14,11 +14,11 @@ import (
 	"fmt"
 	"runtime"
 
-	"github.com/obinnaokechukwu/ffgo/avcodec"
-	"github.com/obinnaokechukwu/ffgo/avformat"
-	"github.com/obinnaokechukwu/ffgo/avutil"
-	"github.com/obinnaokechukwu/ffgo/internal/bindings"
-	"github.com/obinnaokechukwu/ffgo/internal/shim"
+	"github.com/bstkhq/go-ffmpeg-ffi/avcodec"
+	"github.com/bstkhq/go-ffmpeg-ffi/avformat"
+	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
+	"github.com/bstkhq/go-ffmpeg-ffi/internal/bindings"
+	"github.com/bstkhq/go-ffmpeg-ffi/internal/shim"
 )
 
 // Init initializes FFmpeg libraries. This is called automatically when using

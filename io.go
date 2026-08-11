@@ -9,11 +9,11 @@ import (
 	"unsafe"
 
 	"github.com/ebitengine/purego"
-	"github.com/obinnaokechukwu/ffgo/avcodec"
-	"github.com/obinnaokechukwu/ffgo/avformat"
-	"github.com/obinnaokechukwu/ffgo/avutil"
-	"github.com/obinnaokechukwu/ffgo/internal/bindings"
-	"github.com/obinnaokechukwu/ffgo/internal/handles"
+	"github.com/bstkhq/go-ffmpeg-ffi/avcodec"
+	"github.com/bstkhq/go-ffmpeg-ffi/avformat"
+	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
+	"github.com/bstkhq/go-ffmpeg-ffi/internal/bindings"
+	"github.com/bstkhq/go-ffmpeg-ffi/internal/handles"
 )
 
 // IOCallbacks provides custom I/O operations for reading and writing media.

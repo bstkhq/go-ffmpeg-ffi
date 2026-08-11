@@ -6,9 +6,9 @@ import (
 	"errors"
 	"time"
 
-	"github.com/obinnaokechukwu/ffgo/avcodec"
-	"github.com/obinnaokechukwu/ffgo/avformat"
-	"github.com/obinnaokechukwu/ffgo/avutil"
+	"github.com/bstkhq/go-ffmpeg-ffi/avcodec"
+	"github.com/bstkhq/go-ffmpeg-ffi/avformat"
+	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 )
 
 // SeekPrecise performs frame-accurate seeking to the specified timestamp.

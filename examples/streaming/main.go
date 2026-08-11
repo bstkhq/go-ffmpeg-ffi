@@ -14,7 +14,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/obinnaokechukwu/ffgo"
+	"github.com/bstkhq/go-ffmpeg-ffi"
 )
 
 func main() {

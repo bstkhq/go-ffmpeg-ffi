@@ -13,8 +13,8 @@ import (
 	"sync"
 
 	"github.com/ebitengine/purego"
-	"github.com/obinnaokechukwu/ffgo/internal/abi"
-	"github.com/obinnaokechukwu/ffgo/internal/platform"
+	"github.com/bstkhq/go-ffmpeg-ffi/internal/abi"
+	"github.com/bstkhq/go-ffmpeg-ffi/internal/platform"
 )
 
 // ErrNotLoaded is returned when FFmpeg functions are called before Load().

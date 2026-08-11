@@ -5,8 +5,8 @@ package ffgo
 import (
 	"errors"
 
-	"github.com/obinnaokechukwu/ffgo/avformat"
-	"github.com/obinnaokechukwu/ffgo/avutil"
+	"github.com/bstkhq/go-ffmpeg-ffi/avformat"
+	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 )
 
 // ProgramInfo describes a program in a multi-program input (e.g. MPEG-TS).
