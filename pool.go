@@ -176,12 +176,14 @@ func wrappedBufferFreeCallback(_ purego.CDecl, opaque uintptr, _ *byte) {
 	}
 	wrapPinnedBytes.Add(-ent.size)
 	wrapPinnedCount.Add(-1)
+	ent.pinner.Unpin()
 	runtime.KeepAlive(ent.data)
 }
 
 type wrappedBufferHold struct {
-	data []byte
-	size int64
+	data   []byte
+	size   int64
+	pinner *runtime.Pinner
 }
 
 // WrapBuffer wraps an existing buffer as a video frame without copying.
@@ -240,13 +242,17 @@ func (f *Frame) WrapBuffer(data []byte, width, height int, format PixelFormat) e
 	avutil.FrameUnref(f.ptr)
 
 	// Keep the backing []byte alive until FFmpeg releases the AVBufferRef.
-	h := handles.Register(wrappedBufferHold{data: data[:need], size: int64(need)})
+	pinner := new(runtime.Pinner)
+	pinner.Pin(&data[0])
+	h := handles.Register(wrappedBufferHold{data: data[:need], size: int64(need), pinner: pinner})
 	wrapPinnedBytes.Add(int64(need))
 	wrapPinnedCount.Add(1)
 
 	bufRef := avutil.BufferCreate(unsafe.Pointer(&data[0]), need, wrapFreeCBPtr, h, 0)
 	if bufRef == nil {
-		handles.Unregister(h)
+		if hold, ok := handles.Take(h).(wrappedBufferHold); ok {
+			hold.pinner.Unpin()
+		}
 		wrapPinnedBytes.Add(-int64(need))
 		wrapPinnedCount.Add(-1)
 		return errors.New("ffgo: av_buffer_create failed")
