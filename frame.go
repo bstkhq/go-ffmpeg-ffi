@@ -3,6 +3,7 @@
 package ffgo
 
 import (
+	"math"
 	"unsafe"
 
 	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
@@ -81,49 +82,102 @@ func (f *FrameWrapper) SampleFormat() SampleFormat {
 	return SampleFormat(f.Format())
 }
 
-// Data returns a slice to the frame data for the specified plane.
+// Data returns a borrowed slice to the frame data for the specified plane.
 // For video: plane 0 = Y, plane 1 = U/Cb, plane 2 = V/Cr for YUV formats.
 // For audio: plane 0 contains interleaved samples (packed) or plane N for channel N (planar).
-// Returns nil if the plane is not valid.
+// The slice is invalidated with the underlying frame, normally by the next
+// decoder operation or by Free. Copy it if it must outlive the frame.
+// Returns nil if the plane is not valid or not CPU-addressable.
 func (f *FrameWrapper) Data(plane int) []byte {
-	if f == nil || f.frame.IsNil() || plane < 0 || plane >= 8 {
+	if f == nil || f.frame.IsNil() || plane < 0 {
 		return nil
 	}
 
-	data := avutil.GetFrameData(f.frame.ptr)
-	linesize := avutil.GetFrameLinesize(f.frame.ptr)
-
-	if data[plane] == nil {
-		return nil
-	}
-
-	// Calculate the size based on frame type
-	var size int
-	if f.mediaType == MediaTypeVideo {
-		height := f.Height()
-		// For chroma planes in YUV420P, height is halved
-		if plane > 0 && f.PixelFormat() == PixelFormatYUV420P {
-			height /= 2
+	var data unsafe.Pointer
+	var size uintptr
+	switch f.mediaType {
+	case MediaTypeVideo:
+		if plane >= 4 {
+			return nil
 		}
-		size = int(linesize[plane]) * height
-	} else {
-		// For audio, use linesize[0] which is the size of the plane
-		size = int(linesize[plane])
-	}
-
-	if size <= 0 {
+		data = avutil.GetFrameDataPlane(f.frame.ptr, plane)
+		if data == nil {
+			return nil
+		}
+		linesizes := avutil.GetFrameLinesize(f.frame.ptr)
+		planeSizes, err := avutil.ImagePlaneSizes(
+			f.PixelFormat(),
+			f.Height(),
+			[4]int32{linesizes[0], linesizes[1], linesizes[2], linesizes[3]},
+		)
+		if err != nil {
+			return nil
+		}
+		size = planeSizes[plane]
+		if linesizes[plane] < 0 && size > 0 {
+			stride := uintptr(-int64(linesizes[plane]))
+			rows := size / stride
+			if rows > 0 {
+				data = unsafe.Add(data, -int(stride*(rows-1)))
+			}
+		}
+	case MediaTypeAudio:
+		format := f.SampleFormat()
+		channels := int(avutil.GetFrameChannels(f.frame.ptr))
+		if channels <= 0 {
+			return nil
+		}
+		if avutil.SampleFormatIsPlanar(format) {
+			if plane >= channels {
+				return nil
+			}
+		} else if plane != 0 {
+			return nil
+		}
+		bytesPerSample := avutil.BytesPerSample(format)
+		samples := f.NumSamples()
+		if bytesPerSample <= 0 || samples <= 0 {
+			return nil
+		}
+		size64 := uint64(bytesPerSample) * uint64(samples)
+		if !avutil.SampleFormatIsPlanar(format) {
+			if size64 > uint64(math.MaxInt)/uint64(channels) {
+				return nil
+			}
+			size64 *= uint64(channels)
+		}
+		if size64 > uint64(math.MaxInt) {
+			return nil
+		}
+		size = uintptr(size64)
+		data = avutil.GetFrameExtendedDataPlane(f.frame.ptr, plane)
+	default:
 		return nil
 	}
 
-	return unsafe.Slice((*byte)(data[plane]), size)
+	if data == nil || size == 0 || size > uintptr(math.MaxInt) {
+		return nil
+	}
+	return unsafe.Slice((*byte)(data), int(size))
 }
 
 // Linesize returns the line size (stride) for the specified plane.
 func (f *FrameWrapper) Linesize(plane int) int {
-	if f == nil || f.frame.IsNil() || plane < 0 || plane >= 8 {
+	if f == nil || f.frame.IsNil() || plane < 0 {
 		return 0
 	}
 	linesize := avutil.GetFrameLinesize(f.frame.ptr)
+	if f.mediaType == MediaTypeAudio {
+		format := f.SampleFormat()
+		channels := int(avutil.GetFrameChannels(f.frame.ptr))
+		if channels <= 0 || (!avutil.SampleFormatIsPlanar(format) && plane != 0) || plane >= channels {
+			return 0
+		}
+		return int(linesize[0])
+	}
+	if plane >= len(linesize) {
+		return 0
+	}
 	return int(linesize[plane])
 }
 

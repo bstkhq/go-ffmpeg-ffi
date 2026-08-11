@@ -29,12 +29,15 @@ type HWFramesContext = unsafe.Pointer
 
 // Function bindings - registered when init() is called
 var (
-	avFrameAlloc        func() uintptr
-	avFrameFree         func(frame *unsafe.Pointer)
-	avFrameRef          func(dst, src uintptr) int32
-	avFrameUnref        func(frame uintptr)
-	avFrameGetBuffer    func(frame uintptr, align int32) int32
-	avFrameMakeWritable func(frame uintptr) int32
+	avFrameAlloc          func() uintptr
+	avFrameFree           func(frame *unsafe.Pointer)
+	avFrameRef            func(dst, src uintptr) int32
+	avFrameUnref          func(frame uintptr)
+	avFrameGetBuffer      func(frame uintptr, align int32) int32
+	avFrameMakeWritable   func(frame uintptr) int32
+	avImageFillPlaneSizes func(sizes *uintptr, pixFmt int32, height int32, linesizes *int64) int32
+	avSampleFmtIsPlanar   func(sampleFmt int32) int32
+	avGetBytesPerSample   func(sampleFmt int32) int32
 
 	avMalloc func(size uintptr) uintptr
 	avFree   func(ptr uintptr)
@@ -97,6 +100,9 @@ func registerBindings() {
 	purego.RegisterLibFunc(&avFrameUnref, lib, "av_frame_unref")
 	purego.RegisterLibFunc(&avFrameGetBuffer, lib, "av_frame_get_buffer")
 	purego.RegisterLibFunc(&avFrameMakeWritable, lib, "av_frame_make_writable")
+	purego.RegisterLibFunc(&avImageFillPlaneSizes, lib, "av_image_fill_plane_sizes")
+	purego.RegisterLibFunc(&avSampleFmtIsPlanar, lib, "av_sample_fmt_is_planar")
+	purego.RegisterLibFunc(&avGetBytesPerSample, lib, "av_get_bytes_per_sample")
 
 	purego.RegisterLibFunc(&avMalloc, lib, "av_malloc")
 	purego.RegisterLibFunc(&avFree, lib, "av_free")
@@ -403,6 +409,20 @@ func GetFrameDataPlane(frame Frame, plane int) unsafe.Pointer {
 	return dataArray[plane]
 }
 
+// GetFrameExtendedDataPlane returns a data-plane pointer through
+// AVFrame.extended_data. Audio frames with more than eight planar channels can
+// only expose every channel through this array.
+func GetFrameExtendedDataPlane(frame Frame, plane int) unsafe.Pointer {
+	if frame == nil || plane < 0 {
+		return nil
+	}
+	extendedData := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(frame) + offsetExtendedData))
+	if extendedData == nil {
+		return GetFrameDataPlane(frame, plane)
+	}
+	return *(*unsafe.Pointer)(unsafe.Add(extendedData, uintptr(plane)*unsafe.Sizeof(uintptr(0))))
+}
+
 // GetFrameData returns pointers to all data planes.
 func GetFrameData(frame Frame) [8]unsafe.Pointer {
 	if frame == nil {
@@ -418,6 +438,45 @@ func GetFrameLinesize(frame Frame) [8]int32 {
 	}
 	linesizeArray := (*[8]int32)(unsafe.Pointer(uintptr(frame) + offsetLinesize))
 	return *linesizeArray
+}
+
+// ImagePlaneSizes calculates the byte size of each video plane from the
+// frame's actual strides. Negative strides are normalized before calling
+// FFmpeg because av_image_fill_plane_sizes expects non-negative values.
+func ImagePlaneSizes(format PixelFormat, height int, linesizes [4]int32) ([4]uintptr, error) {
+	var sizes [4]uintptr
+	if avImageFillPlaneSizes == nil {
+		return sizes, bindings.ErrNotLoaded
+	}
+	if height <= 0 {
+		return sizes, NewError(AVERROR_EINVAL, "av_image_fill_plane_sizes")
+	}
+	var strides [4]int64
+	for i, linesize := range linesizes {
+		stride := int64(linesize)
+		if stride < 0 {
+			stride = -stride
+		}
+		strides[i] = stride
+	}
+	ret := avImageFillPlaneSizes(&sizes[0], int32(format), int32(height), &strides[0])
+	if ret < 0 {
+		return [4]uintptr{}, NewError(ret, "av_image_fill_plane_sizes")
+	}
+	return sizes, nil
+}
+
+// SampleFormatIsPlanar reports whether each audio channel has its own plane.
+func SampleFormatIsPlanar(format SampleFormat) bool {
+	return avSampleFmtIsPlanar != nil && avSampleFmtIsPlanar(int32(format)) != 0
+}
+
+// BytesPerSample returns the byte width of one sample in one channel.
+func BytesPerSample(format SampleFormat) int {
+	if avGetBytesPerSample == nil {
+		return 0
+	}
+	return int(avGetBytesPerSample(int32(format)))
 }
 
 // ConfigureFrameBuffer installs a single AVBufferRef and resets the AVFrame
