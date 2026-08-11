@@ -45,15 +45,17 @@ type DiagnosticInfo struct {
 	GOARCH string
 
 	// FFmpeg library status
-	FFmpegLoaded  bool
-	AVUtilVersion uint32
-	AVCodecVersion uint32
+	FFmpegLoaded    bool
+	AVUtilVersion   uint32
+	AVCodecVersion  uint32
 	AVFormatVersion uint32
 
 	// Shim library status
-	ShimLoaded      bool
-	ShimPath        string
-	ShimError       string
+	ShimLoaded       bool
+	ShimPath         string
+	ShimError        string
+	ShimAPIVersion   uint32
+	ShimFFmpegMajor  int
 	LoggingAvailable bool
 
 	// Feature availability
@@ -75,7 +77,10 @@ func (d DiagnosticInfo) String() string {
 
 	shimStatus := "not loaded"
 	if d.ShimLoaded {
-		shimStatus = fmt.Sprintf("loaded from %s", d.ShimPath)
+		shimStatus = fmt.Sprintf(
+			"loaded from %s (shim API %d, FFmpeg %d)",
+			d.ShimPath, d.ShimAPIVersion, d.ShimFFmpegMajor,
+		)
 	} else if d.ShimError != "" {
 		shimStatus = fmt.Sprintf("not loaded: %s", d.ShimError)
 	}
@@ -122,6 +127,9 @@ func Diagnose() DiagnosticInfo {
 	info.ShimLoaded = shim.IsLoaded()
 	if info.ShimLoaded {
 		info.ShimPath = shim.Path()
+		shimInfo := shim.Info()
+		info.ShimAPIVersion = shimInfo.API
+		info.ShimFFmpegMajor = shimInfo.FFmpegMajor
 	} else {
 		info.ShimError = shim.SearchError()
 	}
