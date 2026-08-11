@@ -8,8 +8,8 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/ebitengine/purego"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/bindings"
+	"github.com/ebitengine/purego"
 )
 
 // Opaque types
@@ -30,29 +30,29 @@ var (
 	initErr     error
 )
 
-	// Function bindings
-	var (
-		// Graph management
-		avfilter_graph_alloc         func() uintptr
-		avfilter_graph_free          func(graph *Graph)
-		avfilter_graph_config        func(graphctx, log_ctx uintptr) int32
-		avfilter_graph_parse2        func(graph uintptr, filters *byte, inputs, outputs *InOut) int32
-		avfilter_graph_create_filter func(filt_ctx *Context, filt, namePtr, argsPtr, opaque, graphCtx uintptr) int32
+// Function bindings
+var (
+	// Graph management
+	avfilter_graph_alloc         func() uintptr
+	avfilter_graph_free          func(graph *Graph)
+	avfilter_graph_config        func(graphctx, log_ctx uintptr) int32
+	avfilter_graph_parse2        func(graph uintptr, filters *byte, inputs, outputs *InOut) int32
+	avfilter_graph_create_filter func(filt_ctx *Context, filt, namePtr, argsPtr, opaque, graphCtx uintptr) int32
 
-		// Filter lookup
-		avfilter_get_by_name func(name *byte) uintptr
+	// Filter lookup
+	avfilter_get_by_name func(name *byte) uintptr
 
-		// Filter linking
-		avfilter_link func(src uintptr, srcpad uint32, dst uintptr, dstpad uint32) int32
+	// Filter linking
+	avfilter_link func(src uintptr, srcpad uint32, dst uintptr, dstpad uint32) int32
 
-		// Buffer source/sink
-		av_buffersrc_add_frame_flags  func(ctx, frame uintptr, flags int32) int32
-		av_buffersink_get_frame_flags func(ctx, frame uintptr, flags int32) int32
-		av_buffersink_get_frame       func(ctx, frame uintptr) int32
+	// Buffer source/sink
+	av_buffersrc_add_frame_flags  func(ctx, frame uintptr, flags int32) int32
+	av_buffersink_get_frame_flags func(ctx, frame uintptr, flags int32) int32
+	av_buffersink_get_frame       func(ctx, frame uintptr) int32
 
-		// InOut management
-		avfilter_inout_alloc func() uintptr
-		avfilter_inout_free  func(inout *InOut)
+	// InOut management
+	avfilter_inout_alloc func() uintptr
+	avfilter_inout_free  func(inout *InOut)
 
 	// Version
 	avfilter_version func() uint32
@@ -84,8 +84,8 @@ func Init() error {
 
 func initLibrary() error {
 	var err error
-	// libavfilter versions: 9.x (FFmpeg 6.x), 8.x (FFmpeg 5.x), 7.x (FFmpeg 4.x)
-	libAVFilter, err = bindings.LoadLibrary("avfilter", []int{10, 9, 8, 7})
+	// libavfilter versions: 9.x (FFmpeg 6), 10.x (FFmpeg 7), 11.x (FFmpeg 8).
+	libAVFilter, err = bindings.LoadOptionalLibrary("avfilter")
 	if err != nil {
 		return fmt.Errorf("avfilter: failed to load library: %w", err)
 	}
@@ -93,6 +93,10 @@ func initLibrary() error {
 	if err := bindings.ValidateLibraryVersion("avfilter", avfilter_version()); err != nil {
 		return err
 	}
+	inOut := bindings.ABI().FilterInOut
+	offsetInOutFilterCtx = inOut.FilterContext
+	offsetInOutPadIdx = inOut.PadIndex
+	offsetInOutNext = inOut.Next
 
 	// Bind core functions
 	purego.RegisterLibFunc(&avfilter_graph_alloc, libAVFilter, "avfilter_graph_alloc")
@@ -300,18 +304,11 @@ func InOutFree(inout *InOut) {
 	avfilter_inout_free(inout)
 }
 
-// AVFilterInOut struct offsets (for FFmpeg 6.x)
-// struct AVFilterInOut {
-//     char *name;            // offset 0
-//     AVFilterContext *filter_ctx;  // offset 8
-//     int pad_idx;           // offset 16
-//     struct AVFilterInOut *next;   // offset 24
-// }
-const (
-	offsetInOutName      = 0
-	offsetInOutFilterCtx = 8
-	offsetInOutPadIdx    = 16
-	offsetInOutNext      = 24
+// AVFilterInOut field offsets selected from the runtime FFmpeg ABI.
+var (
+	offsetInOutFilterCtx uintptr
+	offsetInOutPadIdx    uintptr
+	offsetInOutNext      uintptr
 )
 
 // InOutSetName sets the name field of an AVFilterInOut.
