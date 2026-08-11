@@ -713,12 +713,12 @@ func HWFrameTransferData(dst, src Frame, flags int32) error {
 // BufferCreate wraps av_buffer_create.
 //
 // freeCb is a purego callback pointer for: void free(void *opaque, uint8_t *data).
-// opaque is passed through to the callback when the buffer is released.
-func BufferCreate(data unsafe.Pointer, size int, freeCb uintptr, opaque unsafe.Pointer, flags int32) AVBufferRef {
+// opaque is an integer token passed unchanged to the callback when the buffer is released.
+func BufferCreate(data unsafe.Pointer, size int, freeCb uintptr, opaque uintptr, flags int32) AVBufferRef {
 	if avBufferCreate == nil || data == nil || size <= 0 {
 		return nil
 	}
-	return unsafe.Pointer(avBufferCreate(uintptr(data), int32(size), freeCb, uintptr(opaque), flags))
+	return unsafe.Pointer(avBufferCreate(uintptr(data), int32(size), freeCb, opaque, flags))
 }
 
 // NewBufferRef creates a new reference to a buffer.

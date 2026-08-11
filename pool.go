@@ -4,6 +4,7 @@ package ffgo
 
 import (
 	"errors"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"unsafe"
@@ -160,18 +161,22 @@ func WrappedBufferMemoryUsage() WrappedBufferUsage {
 
 func initWrapCallback() {
 	wrapOnce.Do(func() {
-		wrapFreeCBPtr = purego.NewCallback(func(_ purego.CDecl, opaque uintptr, _ *byte) {
-			h := opaque
-			v := handles.Lookup(h)
-			if v == nil {
-				return
-			}
-			ent := v.(wrappedBufferHold)
-			handles.Unregister(h)
-			wrapPinnedBytes.Add(-ent.size)
-			wrapPinnedCount.Add(-1)
-		})
+		wrapFreeCBPtr = purego.NewCallback(wrappedBufferFreeCallback)
 	})
+}
+
+func wrappedBufferFreeCallback(_ purego.CDecl, opaque uintptr, _ *byte) {
+	// A panic must never unwind through FFmpeg's native stack.
+	defer func() { _ = recover() }()
+
+	v := handles.Take(opaque)
+	ent, ok := v.(wrappedBufferHold)
+	if !ok {
+		return
+	}
+	wrapPinnedBytes.Add(-ent.size)
+	wrapPinnedCount.Add(-1)
+	runtime.KeepAlive(ent.data)
 }
 
 type wrappedBufferHold struct {
@@ -239,7 +244,7 @@ func (f *Frame) WrapBuffer(data []byte, width, height int, format PixelFormat) e
 	wrapPinnedBytes.Add(int64(need))
 	wrapPinnedCount.Add(1)
 
-	bufRef := avutil.BufferCreate(unsafe.Pointer(&data[0]), need, wrapFreeCBPtr, unsafe.Pointer(h), 0)
+	bufRef := avutil.BufferCreate(unsafe.Pointer(&data[0]), need, wrapFreeCBPtr, h, 0)
 	if bufRef == nil {
 		handles.Unregister(h)
 		wrapPinnedBytes.Add(-int64(need))

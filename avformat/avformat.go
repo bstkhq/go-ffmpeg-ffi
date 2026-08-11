@@ -961,9 +961,9 @@ func GetStreamTimeBase(stream Stream) (num, den int32) {
 // buffer should be allocated with av_malloc and will be freed by avio_context_free.
 // bufferSize is the size of buffer.
 // writeFlag is 1 if the buffer should be writable, 0 if readable.
-// opaque is passed to all callbacks.
+// opaque is an integer token passed unchanged to all callbacks.
 // readPacket, writePacket, seek are callback function pointers (use purego.NewCallback).
-func IOAllocContext(buffer unsafe.Pointer, bufferSize int, writeFlag bool, opaque unsafe.Pointer, readPacket, writePacket, seek uintptr) IOContext {
+func IOAllocContext(buffer unsafe.Pointer, bufferSize int, writeFlag bool, opaque uintptr, readPacket, writePacket, seek uintptr) IOContext {
 	if avioAllocContext == nil {
 		return nil
 	}
@@ -971,7 +971,7 @@ func IOAllocContext(buffer unsafe.Pointer, bufferSize int, writeFlag bool, opaqu
 	if writeFlag {
 		wf = 1
 	}
-	return unsafe.Pointer(avioAllocContext(uintptr(buffer), int32(bufferSize), wf, uintptr(opaque), readPacket, writePacket, seek))
+	return unsafe.Pointer(avioAllocContext(uintptr(buffer), int32(bufferSize), wf, opaque, readPacket, writePacket, seek))
 }
 
 // IOContextFree frees an AVIOContext allocated with IOAllocContext.

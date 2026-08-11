@@ -8,12 +8,12 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/ebitengine/purego"
 	"github.com/bstkhq/go-ffmpeg-ffi/avcodec"
 	"github.com/bstkhq/go-ffmpeg-ffi/avformat"
 	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/bindings"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/handles"
+	"github.com/ebitengine/purego"
 )
 
 // IOCallbacks provides custom I/O operations for reading and writing media.
@@ -216,7 +216,7 @@ func NewCustomIOContextWithSize(callbacks *IOCallbacks, writable bool, bufferSiz
 		buffer,
 		bufferSize,
 		writable,
-		unsafe.Pointer(ctx.handle),
+		ctx.handle,
 		readCb,
 		writeCb,
 		seekCb,

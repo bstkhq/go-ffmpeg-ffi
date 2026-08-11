@@ -14,7 +14,7 @@ import (
 
 var (
 	mu      sync.RWMutex
-	handles = make(map[uintptr]any)
+	handles         = make(map[uintptr]any)
 	nextID  uintptr = 1
 )
 
@@ -50,6 +50,18 @@ func Unregister(id uintptr) {
 	mu.Lock()
 	defer mu.Unlock()
 	delete(handles, id)
+}
+
+// Take retrieves and unregisters an object in one atomic operation.
+// It returns nil if the handle is not registered.
+//
+// Thread-safe.
+func Take(id uintptr) any {
+	mu.Lock()
+	defer mu.Unlock()
+	v := handles[id]
+	delete(handles, id)
+	return v
 }
 
 // Count returns the number of currently registered handles.
