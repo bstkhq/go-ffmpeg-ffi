@@ -3,6 +3,7 @@
 package ffgo
 
 import (
+	"errors"
 	"testing"
 	"unsafe"
 
@@ -91,6 +92,44 @@ func TestFramePoolAccountsForReturnAfterClose(t *testing.T) {
 	}
 	if pool.inUse != 0 {
 		t.Fatalf("in-use frames = %d, want 0", pool.inUse)
+	}
+}
+
+func TestFramePoolCopiedLeaseCannotMutateReusedFrame(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+
+	pool := NewFramePool(1)
+	defer pool.Close()
+	leased, err := pool.Get()
+	if err != nil {
+		t.Fatal(err)
+	}
+	copyOfLease := leased
+	if err := pool.Put(&leased); err != nil {
+		t.Fatal(err)
+	}
+	reused, err := pool.Get()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = pool.Put(&reused) }()
+
+	AVUtil.SetFrameWidth(reused, 123)
+	FrameUnref(copyOfLease)
+	AVUtil.SetFrameWidth(copyOfLease, 456)
+	if got := AVUtil.GetFrameWidth(copyOfLease); got != 0 {
+		t.Fatalf("stale lease width = %d, want 0", got)
+	}
+	if got := AVUtil.GetFrameWidth(reused); got != 123 {
+		t.Fatalf("reused frame width = %d, want 123", got)
+	}
+	if err := copyOfLease.useError(); !errors.Is(err, ErrFrameLeaseReturned) {
+		t.Fatalf("stale lease error = %v, want ErrFrameLeaseReturned", err)
+	}
+	if err := (&Encoder{}).WriteFrame(copyOfLease); !errors.Is(err, ErrFrameLeaseReturned) {
+		t.Fatalf("encoder stale lease error = %v, want ErrFrameLeaseReturned", err)
 	}
 }
 

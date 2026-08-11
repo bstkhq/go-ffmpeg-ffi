@@ -77,6 +77,9 @@ func ValidateTimestamps(frames []*Frame) error {
 		if f == nil || f.ptr == nil {
 			continue
 		}
+		if err := f.poolLeaseError(); err != nil {
+			return fmt.Errorf("ffgo: frame at index %d: %w", i, err)
+		}
 		pts := avutil.GetFramePTS(f.ptr)
 		if pts == avutil.NoPTSValue {
 			continue

@@ -1103,6 +1103,9 @@ func (e *Encoder) WriteFrame(frame Frame) error {
 	if e.closed {
 		return errors.New("ffgo: encoder is closed")
 	}
+	if err := frame.poolLeaseError(); err != nil {
+		return err
+	}
 
 	// Auto-write header if not done
 	if !e.headerWritten {
@@ -1130,6 +1133,9 @@ func (e *Encoder) WriteAudioFrame(frame Frame) error {
 
 	if e.closed {
 		return errors.New("ffgo: encoder is closed")
+	}
+	if err := frame.poolLeaseError(); err != nil {
+		return err
 	}
 	if !e.hasAudio {
 		return errors.New("ffgo: encoder was not configured with audio")

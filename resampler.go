@@ -134,6 +134,9 @@ func (r *Resampler) Resample(frame Frame) (Frame, error) {
 	if r.closed {
 		return Frame{}, fmt.Errorf("resampler is closed")
 	}
+	if err := frame.poolLeaseError(); err != nil {
+		return Frame{}, err
+	}
 	if frame.IsNil() {
 		return Frame{}, nil
 	}

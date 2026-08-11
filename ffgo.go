@@ -305,6 +305,23 @@ func (f Frame) IsNil() bool {
 	return f.ptr == nil || (f.poolLease != nil && f.poolLease.returned.Load())
 }
 
+func (f Frame) poolLeaseError() error {
+	if f.poolLease != nil && f.poolLease.returned.Load() {
+		return ErrFrameLeaseReturned
+	}
+	return nil
+}
+
+func (f Frame) useError() error {
+	if err := f.poolLeaseError(); err != nil {
+		return err
+	}
+	if f.ptr == nil {
+		return errors.New("ffgo: frame is nil")
+	}
+	return nil
+}
+
 // Clone returns an owned frame that references the same underlying buffers as f.
 // The returned frame MUST be freed by the caller (via Frame.Free / FrameFree).
 func (f Frame) Clone() (Frame, error) { return FrameClone(f) }
@@ -322,7 +339,7 @@ func (f *Frame) Free() error {
 	}
 	if f.poolLease != nil {
 		if f.poolLease.returned.Load() {
-			return errors.New("ffgo: frame pool lease has already been returned")
+			return ErrFrameLeaseReturned
 		}
 		return errors.New("ffgo: pooled frame must be returned with FramePool.Put")
 	}
@@ -433,6 +450,9 @@ type FrameInfo struct {
 
 // GetFrameInfo returns information about a frame.
 func GetFrameInfo(frame Frame) FrameInfo {
+	if frame.IsNil() {
+		return FrameInfo{}
+	}
 	return FrameInfo{
 		Width:  int(avutil.GetFrameWidth(frame.ptr)),
 		Height: int(avutil.GetFrameHeight(frame.ptr)),
@@ -497,6 +517,9 @@ func FrameClone(src Frame) (Frame, error) {
 
 // FrameUnref unreferences a frame's buffers.
 func FrameUnref(frame Frame) {
+	if frame.IsNil() {
+		return
+	}
 	avutil.FrameUnref(frame.ptr)
 }
 
@@ -534,19 +557,50 @@ var (
 		FrameRef:   FrameRef,
 		FrameUnref: FrameUnref,
 		FrameGetBuffer: func(frame Frame, align int32) error {
+			if err := frame.useError(); err != nil {
+				return err
+			}
 			return avutil.FrameGetBufferErr(frame.ptr, align)
 		},
 		FrameMakeWritable: func(frame Frame) error {
+			if err := frame.useError(); err != nil {
+				return err
+			}
 			return avutil.FrameMakeWritable(frame.ptr)
 		},
-		GetFrameWidth: func(frame Frame) int32 { return avutil.GetFrameWidth(frame.ptr) },
+		GetFrameWidth: func(frame Frame) int32 {
+			if frame.IsNil() {
+				return 0
+			}
+			return avutil.GetFrameWidth(frame.ptr)
+		},
 		GetFrameHeight: func(frame Frame) int32 {
+			if frame.IsNil() {
+				return 0
+			}
 			return avutil.GetFrameHeight(frame.ptr)
 		},
-		GetFrameFormat: func(frame Frame) int32 { return avutil.GetFrameFormat(frame.ptr) },
-		SetFrameWidth:  func(frame Frame, width int32) { avutil.SetFrameWidth(frame.ptr, width) },
-		SetFrameHeight: func(frame Frame, height int32) { avutil.SetFrameHeight(frame.ptr, height) },
-		SetFrameFormat: func(frame Frame, format int32) { avutil.SetFrameFormat(frame.ptr, format) },
+		GetFrameFormat: func(frame Frame) int32 {
+			if frame.IsNil() {
+				return -1
+			}
+			return avutil.GetFrameFormat(frame.ptr)
+		},
+		SetFrameWidth: func(frame Frame, width int32) {
+			if !frame.IsNil() {
+				avutil.SetFrameWidth(frame.ptr, width)
+			}
+		},
+		SetFrameHeight: func(frame Frame, height int32) {
+			if !frame.IsNil() {
+				avutil.SetFrameHeight(frame.ptr, height)
+			}
+		},
+		SetFrameFormat: func(frame Frame, format int32) {
+			if !frame.IsNil() {
+				avutil.SetFrameFormat(frame.ptr, format)
+			}
+		},
 	}
 
 	// AVFormat provides access to avformat package functions.

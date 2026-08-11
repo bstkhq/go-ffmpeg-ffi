@@ -147,6 +147,9 @@ func (s *Scaler) Scale(src Frame) (Frame, error) {
 	if s.ctx == nil {
 		return Frame{}, errors.New("ffgo: scaler is closed")
 	}
+	if err := src.useError(); err != nil {
+		return Frame{}, err
+	}
 
 	// Make destination writable
 	if err := avutil.FrameMakeWritable(s.dstFrame); err != nil {
@@ -169,6 +172,12 @@ func (s *Scaler) Scale(src Frame) (Frame, error) {
 func (s *Scaler) ScaleTo(dst, src Frame) error {
 	if s.ctx == nil {
 		return errors.New("ffgo: scaler is closed")
+	}
+	if err := dst.useError(); err != nil {
+		return err
+	}
+	if err := src.useError(); err != nil {
+		return err
 	}
 
 	ret := swscale.ScaleFrame(s.ctx, dst.ptr, src.ptr)

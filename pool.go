@@ -83,7 +83,7 @@ func (p *FramePool) Put(f *Frame) error {
 		return errors.New("ffgo: frame was not leased by this pool")
 	}
 	if !f.poolLease.returned.CompareAndSwap(false, true) {
-		return errors.New("ffgo: frame pool lease has already been returned")
+		return ErrFrameLeaseReturned
 	}
 
 	p.mu.Lock()
@@ -201,6 +201,9 @@ type wrappedBufferHold struct {
 func (f *Frame) WrapBuffer(data []byte, width, height int, format PixelFormat) error {
 	if f == nil {
 		return errors.New("ffgo: frame is nil")
+	}
+	if err := f.poolLeaseError(); err != nil {
+		return err
 	}
 	if f.ptr != nil && !f.owned {
 		return errors.New("ffgo: cannot WrapBuffer into a borrowed frame")
