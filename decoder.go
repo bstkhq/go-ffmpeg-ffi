@@ -3,6 +3,7 @@
 package ffgo
 
 import (
+	"context"
 	"errors"
 	"strconv"
 	"strings"
@@ -17,7 +18,8 @@ import (
 
 // Decoder decodes media files.
 type Decoder struct {
-	mu sync.Mutex
+	mu          sync.Mutex
+	closeSignal sync.Once
 
 	formatCtx     avformat.FormatContext
 	videoCodecCtx avcodec.Context
@@ -42,6 +44,7 @@ type Decoder struct {
 	prefetchedFrame  avutil.Frame
 	prefetchedMedia  MediaType
 	customIO         *CustomIOContext
+	interrupt        *decoderInterrupt
 	cleanup          func()
 	closed           bool
 }
@@ -214,34 +217,58 @@ func buildDecoderAVOptions(opts *DecoderOptions) map[string]string {
 // NewDecoder opens a media file for decoding.
 // Optional functional options can be passed to configure the decoder.
 func NewDecoder(path string, options ...DecoderOption) (*Decoder, error) {
+	return NewDecoderContext(context.Background(), path, options...)
+}
+
+// NewDecoderContext opens a media file and allows FFmpeg probing and I/O to be canceled.
+func NewDecoderContext(ctx context.Context, path string, options ...DecoderOption) (*Decoder, error) {
 	opts := &DecoderOptions{}
 	for _, opt := range options {
 		opt(opts)
 	}
-	return NewDecoderWithOptions(path, opts)
+	return NewDecoderWithOptionsContext(ctx, path, opts)
 }
 
 // NewDecoderWithOptions opens a media file with custom options.
 func NewDecoderWithOptions(path string, opts *DecoderOptions) (*Decoder, error) {
+	return NewDecoderWithOptionsContext(context.Background(), path, opts)
+}
+
+// NewDecoderWithOptionsContext opens a media file with custom options and cancellation.
+func NewDecoderWithOptionsContext(ctx context.Context, path string, opts *DecoderOptions) (*Decoder, error) {
+	if ctx == nil {
+		return nil, errors.New("ffgo: context cannot be nil")
+	}
 	// Ensure FFmpeg is loaded
 	if err := bindings.Load(); err != nil {
 		return nil, err
+	}
+	if opts == nil {
+		opts = &DecoderOptions{}
 	}
 
 	d := &Decoder{
 		videoStreamIdx: -1,
 		audioStreamIdx: -1,
+		interrupt:      newDecoderInterrupt(),
 	}
+	if err := d.beginInterrupt(ctx); err != nil {
+		d.interrupt.release(nil)
+		return nil, err
+	}
+	defer d.clearInterrupt()
 
 	// Open input file (with optional retry logic for ambiguous probing).
 	var err error
-	d.formatCtx, err = openInputWithRetries(path, opts)
+	d.formatCtx, err = openInputWithRetries(path, opts, d.interrupt)
 	if err != nil {
+		d.interrupt.release(d.formatCtx)
 		return nil, err
 	}
 
 	// Find stream info
-	if err := avformat.FindStreamInfo(d.formatCtx, nil); err != nil {
+	if err := d.interrupt.finish(avformat.FindStreamInfo(d.formatCtx, nil)); err != nil {
+		d.interrupt.release(d.formatCtx)
 		avformat.CloseInput(&d.formatCtx)
 		return nil, err
 	}
@@ -262,7 +289,7 @@ func NewDecoderWithOptions(path string, opts *DecoderOptions) (*Decoder, error) 
 
 	if opts != nil && opts.ProgramID > 0 {
 		if err := d.selectProgramStreams(opts.ProgramID, wantVideo, wantAudio); err != nil {
-			avformat.CloseInput(&d.formatCtx)
+			d.Close()
 			return nil, err
 		}
 	} else {
@@ -413,14 +440,24 @@ func (d *Decoder) BitRate() int64 {
 // The returned packet is BORROWED (decoder-owned and internally reused).
 // Do not free it; if you need to keep it, call PacketClone().
 func (d *Decoder) ReadPacket() (*Packet, error) {
+	return d.ReadPacketContext(context.Background())
+}
+
+// ReadPacketContext reads the next packet and interrupts blocking FFmpeg I/O when ctx is canceled.
+func (d *Decoder) ReadPacketContext(ctx context.Context) (*Packet, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	if d.closed {
-		return nil, errors.New("ffgo: decoder is closed")
+		return nil, errDecoderClosed
 	}
+	if err := d.beginInterrupt(ctx); err != nil {
+		return nil, err
+	}
+	defer d.clearInterrupt()
 
-	return d.readPacketLocked()
+	packet, err := d.readPacketLocked()
+	return packet, d.finishInterrupt(err)
 }
 
 // OpenVideoDecoder opens a codec context for video decoding.
@@ -610,15 +647,25 @@ func (d *Decoder) DecodeAudioPacketCopy(pkt *Packet) (Frame, error) {
 // If you need to keep the frame beyond the next decode call, make a copy.
 // Returns nil frame on EOF.
 func (d *Decoder) DecodeVideo() (Frame, error) {
+	return d.DecodeVideoContext(context.Background())
+}
+
+// DecodeVideoContext decodes the next video frame with cancellation.
+func (d *Decoder) DecodeVideoContext(ctx context.Context) (Frame, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if err := d.beginInterrupt(ctx); err != nil {
+		return Frame{}, err
+	}
+	defer d.clearInterrupt()
 
 	if !d.videoDecoderOpen {
 		if err := d.openVideoDecoderLocked(); err != nil {
 			return Frame{}, err
 		}
 	}
-	return d.nextFrameLocked(MediaTypeVideo)
+	frame, err := d.nextFrameLocked(MediaTypeVideo)
+	return frame, d.finishInterrupt(err)
 }
 
 // DecodeVideoCopy reads and decodes the next video frame and returns an owned frame.
@@ -626,7 +673,12 @@ func (d *Decoder) DecodeVideo() (Frame, error) {
 // The caller MUST free the returned frame with FrameFree.
 // Returns nil frame on EOF.
 func (d *Decoder) DecodeVideoCopy() (Frame, error) {
-	frame, err := d.DecodeVideo()
+	return d.DecodeVideoCopyContext(context.Background())
+}
+
+// DecodeVideoCopyContext decodes the next video frame as an owned frame with cancellation.
+func (d *Decoder) DecodeVideoCopyContext(ctx context.Context) (Frame, error) {
+	frame, err := d.DecodeVideoContext(ctx)
 	if err != nil || frame.IsNil() {
 		return Frame{}, err
 	}
@@ -640,15 +692,25 @@ func (d *Decoder) DecodeVideoCopy() (Frame, error) {
 // If you need to keep the frame beyond the next decode call, make a copy.
 // Returns nil frame on EOF.
 func (d *Decoder) DecodeAudio() (Frame, error) {
+	return d.DecodeAudioContext(context.Background())
+}
+
+// DecodeAudioContext decodes the next audio frame with cancellation.
+func (d *Decoder) DecodeAudioContext(ctx context.Context) (Frame, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if err := d.beginInterrupt(ctx); err != nil {
+		return Frame{}, err
+	}
+	defer d.clearInterrupt()
 
 	if !d.audioDecoderOpen {
 		if err := d.openAudioDecoderLocked(); err != nil {
 			return Frame{}, err
 		}
 	}
-	return d.nextFrameLocked(MediaTypeAudio)
+	frame, err := d.nextFrameLocked(MediaTypeAudio)
+	return frame, d.finishInterrupt(err)
 }
 
 // ReadFrame reads and decodes the next frame (video or audio).
@@ -656,12 +718,21 @@ func (d *Decoder) DecodeAudio() (Frame, error) {
 // The frame is owned by the decoder; call Copy() if you need to keep it.
 // Returns nil, nil on EOF.
 func (d *Decoder) ReadFrame() (*FrameWrapper, error) {
+	return d.ReadFrameContext(context.Background())
+}
+
+// ReadFrameContext reads and decodes the next frame with cancellation.
+func (d *Decoder) ReadFrameContext(ctx context.Context) (*FrameWrapper, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	if d.closed {
-		return nil, errors.New("ffgo: decoder is closed")
+		return nil, errDecoderClosed
 	}
+	if err := d.beginInterrupt(ctx); err != nil {
+		return nil, err
+	}
+	defer d.clearInterrupt()
 	// Open decoders if needed
 	if d.HasVideo() && !d.videoDecoderOpen {
 		if err := d.openVideoDecoderLocked(); err != nil {
@@ -673,7 +744,8 @@ func (d *Decoder) ReadFrame() (*FrameWrapper, error) {
 			return nil, err
 		}
 	}
-	return d.readFrameLocked()
+	frame, err := d.readFrameLocked()
+	return frame, d.finishInterrupt(err)
 }
 
 // ReadFrameCopy reads and decodes the next frame (video or audio) and returns an owned frame wrapper.
@@ -681,7 +753,12 @@ func (d *Decoder) ReadFrame() (*FrameWrapper, error) {
 // The returned wrapper owns its underlying frame; the caller MUST call Free() when done.
 // Returns (nil, nil) on EOF.
 func (d *Decoder) ReadFrameCopy() (*FrameWrapper, error) {
-	fw, err := d.ReadFrame()
+	return d.ReadFrameCopyContext(context.Background())
+}
+
+// ReadFrameCopyContext reads an owned frame wrapper with cancellation.
+func (d *Decoder) ReadFrameCopyContext(ctx context.Context) (*FrameWrapper, error) {
+	fw, err := d.ReadFrameContext(ctx)
 	if err != nil || fw == nil {
 		return nil, err
 	}
@@ -705,22 +782,36 @@ func (d *Decoder) FlushDecoder() {
 // Seek seeks to a position in the file.
 // The timestamp is specified as time.Duration from the start.
 func (d *Decoder) Seek(ts time.Duration) error {
-	return d.SeekTimestamp(ts.Microseconds())
+	return d.SeekContext(context.Background(), ts)
+}
+
+// SeekContext seeks to a position and interrupts blocking FFmpeg I/O when ctx is canceled.
+func (d *Decoder) SeekContext(ctx context.Context, ts time.Duration) error {
+	return d.SeekTimestampContext(ctx, ts.Microseconds())
 }
 
 // SeekTimestamp seeks to a position in the file.
 // timestamp is in AV_TIME_BASE (microseconds).
 func (d *Decoder) SeekTimestamp(timestamp int64) error {
+	return d.SeekTimestampContext(context.Background(), timestamp)
+}
+
+// SeekTimestampContext seeks to a timestamp with cancellation.
+func (d *Decoder) SeekTimestampContext(ctx context.Context, timestamp int64) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	if d.closed {
-		return errors.New("ffgo: decoder is closed")
+		return errDecoderClosed
 	}
+	if err := d.beginInterrupt(ctx); err != nil {
+		return err
+	}
+	defer d.clearInterrupt()
 
 	// Seek to keyframe before target
 	if err := d.seekInputLocked(-1, timestamp, avformat.SeekFlagBackward); err != nil {
-		return err
+		return d.finishInterrupt(err)
 	}
 
 	// Flush decoder buffers
@@ -743,6 +834,11 @@ func (d *Decoder) SeekTime(dur time.Duration) error {
 
 // Close releases all resources.
 func (d *Decoder) Close() error {
+	d.closeSignal.Do(func() {
+		if d.interrupt != nil {
+			d.interrupt.stop()
+		}
+	})
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -776,6 +872,9 @@ func (d *Decoder) Close() error {
 	d.codecCtx = nil
 
 	// Close input
+	if d.interrupt != nil {
+		d.interrupt.release(d.formatCtx)
+	}
 	if d.formatCtx != nil {
 		avformat.CloseInput(&d.formatCtx)
 	}
