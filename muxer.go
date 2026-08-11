@@ -4,6 +4,7 @@ package ffgo
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 
 	"github.com/bstkhq/go-ffmpeg-ffi/avcodec"
@@ -16,13 +17,14 @@ import (
 // It provides low-level control over muxing, allowing stream copy mode
 // or encoding with multiple audio/subtitle tracks.
 type Muxer struct {
-	mu            sync.Mutex
-	formatCtx     avformat.FormatContext
-	ioCtx         avformat.IOContext
-	streams       []*MuxerStream
-	headerWritten bool
-	path          string
-	closed        bool
+	mu             sync.Mutex
+	formatCtx      avformat.FormatContext
+	ioCtx          avformat.IOContext
+	streams        []*MuxerStream
+	headerWritten  bool
+	trailerWritten bool
+	path           string
+	closed         bool
 }
 
 // MuxerStream represents a stream being muxed.
@@ -42,6 +44,7 @@ type streamEncoder struct {
 	codecCtx avcodec.Context
 	packet   avcodec.Packet
 	frame    Frame // reusable frame for format conversion if needed
+	state    encoderCodecState
 }
 
 // NewMuxer creates a muxer for the given output path and format.
@@ -86,6 +89,7 @@ type VideoStreamConfig struct {
 	FrameRate   int         // Frame rate in fps
 	BitRate     int64       // Bitrate in bits/second
 	GOPSize     int         // GOP size (keyframe interval)
+	MaxBFrames  int         // Maximum number of B-frames
 }
 
 // AddVideoStream adds a video stream to the muxer with encoding.
@@ -146,6 +150,7 @@ func (m *Muxer) AddVideoStream(config *VideoStreamConfig) (*MuxerStream, error) 
 	avcodec.SetCtxFramerate(codecCtx, int32(config.FrameRate), 1)
 	avcodec.SetCtxBitRate(codecCtx, config.BitRate)
 	avcodec.SetCtxGopSize(codecCtx, int32(config.GOPSize))
+	avcodec.SetCtxMaxBFrames(codecCtx, int32(config.MaxBFrames))
 
 	// Set global header flag (commonly needed for containers like MP4)
 	flags := avcodec.GetCtxFlags(codecCtx)
@@ -417,6 +422,9 @@ func (m *Muxer) WriteFrame(ms *MuxerStream, frame Frame) error {
 	if !m.headerWritten {
 		return errors.New("ffgo: header not written")
 	}
+	if m.trailerWritten {
+		return errors.New("ffgo: trailer already written")
+	}
 	if ms == nil || ms.muxer != m {
 		return errors.New("ffgo: invalid stream")
 	}
@@ -427,35 +435,7 @@ func (m *Muxer) WriteFrame(ms *MuxerStream, frame Frame) error {
 		return errors.New("ffgo: stream has no encoder")
 	}
 
-	// Send frame to encoder
-	if err := avcodec.SendFrame(ms.codecCtx, frame.ptr); err != nil {
-		return err
-	}
-
-	// Receive and write packets
-	for {
-		avcodec.PacketUnref(ms.encoder.packet)
-		err := avcodec.ReceivePacket(ms.codecCtx, ms.encoder.packet)
-		if err != nil {
-			if avutil.IsAgain(err) || avutil.IsEOF(err) {
-				break
-			}
-			return err
-		}
-
-		// Set stream index and rescale timestamps
-		avcodec.SetPacketStreamIndex(ms.encoder.packet, int32(ms.index))
-		streamTbNum, streamTbDen := avformat.GetStreamTimeBase(ms.stream)
-		streamTb := NewRational(streamTbNum, streamTbDen)
-		avcodec.RescalePacketTS(ms.encoder.packet, ms.timeBase, streamTb)
-
-		// Write packet
-		if err := avformat.InterleavedWriteFrame(m.formatCtx, ms.encoder.packet); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return ms.encoder.state.encode(ms.codecCtx, frame.ptr, ms.encoder.packet, m.packetWriter(ms))
 }
 
 // WritePacket writes a packet directly to a stream.
@@ -469,6 +449,9 @@ func (m *Muxer) WritePacket(ms *MuxerStream, packet *Packet) error {
 	}
 	if !m.headerWritten {
 		return errors.New("ffgo: header not written")
+	}
+	if m.trailerWritten {
+		return errors.New("ffgo: trailer already written")
 	}
 	if ms == nil || ms.muxer != m {
 		return errors.New("ffgo: invalid stream")
@@ -503,35 +486,39 @@ func (m *Muxer) WriteTrailer() error {
 	if !m.headerWritten {
 		return errors.New("ffgo: header not written")
 	}
+	if m.trailerWritten {
+		return errors.New("ffgo: trailer already written")
+	}
 
-	// Flush encoders
+	var trailerErrors []error
 	for _, ms := range m.streams {
 		if ms.encoder != nil && ms.codecCtx != nil {
-			m.flushEncoder(ms)
+			if err := m.flushEncoder(ms); err != nil {
+				trailerErrors = append(trailerErrors, fmt.Errorf("ffgo: flush stream %d: %w", ms.index, err))
+			}
 		}
 	}
 
-	return avformat.WriteTrailer(m.formatCtx)
+	if err := avformat.WriteTrailer(m.formatCtx); err != nil {
+		trailerErrors = append(trailerErrors, err)
+	} else {
+		m.trailerWritten = true
+	}
+	return errors.Join(trailerErrors...)
 }
 
 // flushEncoder flushes remaining packets from an encoder.
-func (m *Muxer) flushEncoder(ms *MuxerStream) {
-	// Send flush signal (errors during flush are non-fatal)
-	_ = avcodec.SendFrame(ms.codecCtx, nil)
+func (m *Muxer) flushEncoder(ms *MuxerStream) error {
+	return ms.encoder.state.encode(ms.codecCtx, nil, ms.encoder.packet, m.packetWriter(ms))
+}
 
-	// Receive and write remaining packets
-	for {
-		avcodec.PacketUnref(ms.encoder.packet)
-		err := avcodec.ReceivePacket(ms.codecCtx, ms.encoder.packet)
-		if err != nil {
-			break
-		}
-
-		avcodec.SetPacketStreamIndex(ms.encoder.packet, int32(ms.index))
+func (m *Muxer) packetWriter(ms *MuxerStream) func(avcodec.Packet) error {
+	return func(packet avcodec.Packet) error {
+		avcodec.SetPacketStreamIndex(packet, int32(ms.index))
 		streamTbNum, streamTbDen := avformat.GetStreamTimeBase(ms.stream)
 		streamTb := NewRational(streamTbNum, streamTbDen)
-		avcodec.RescalePacketTS(ms.encoder.packet, ms.timeBase, streamTb)
-		_ = avformat.InterleavedWriteFrame(m.formatCtx, ms.encoder.packet)
+		avcodec.RescalePacketTS(packet, ms.timeBase, streamTb)
+		return avformat.InterleavedWriteFrame(m.formatCtx, packet)
 	}
 }
 
