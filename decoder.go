@@ -34,6 +34,11 @@ type Decoder struct {
 
 	videoDecoderOpen bool
 	audioDecoderOpen bool
+	videoState       decoderCodecState
+	audioState       decoderCodecState
+	packetQueue      []decoderQueuedPacket
+	demuxEOF         bool
+	activeMedia      MediaType
 	customIO         *CustomIOContext
 	cleanup          func()
 	closed           bool
