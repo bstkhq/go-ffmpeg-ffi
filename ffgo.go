@@ -453,11 +453,22 @@ func GetFrameInfo(frame Frame) FrameInfo {
 	if frame.IsNil() {
 		return FrameInfo{}
 	}
+	width := int(avutil.GetFrameWidth(frame.ptr))
+	height := int(avutil.GetFrameHeight(frame.ptr))
+	mediaType := MediaTypeUnknown
+	switch {
+	case width > 0 && height > 0:
+		mediaType = MediaTypeVideo
+	case avutil.GetFrameNbSamples(frame.ptr) > 0 || avutil.GetFrameSampleRate(frame.ptr) > 0:
+		mediaType = MediaTypeAudio
+	}
 	return FrameInfo{
-		Width:  int(avutil.GetFrameWidth(frame.ptr)),
-		Height: int(avutil.GetFrameHeight(frame.ptr)),
-		Format: avutil.GetFrameFormat(frame.ptr),
-		PTS:    avutil.GetFramePTS(frame.ptr),
+		Width:     width,
+		Height:    height,
+		Format:    avutil.GetFrameFormat(frame.ptr),
+		PTS:       avutil.GetFramePTS(frame.ptr),
+		KeyFrame:  avutil.GetFrameKeyFrame(frame.ptr) != 0,
+		MediaType: mediaType,
 	}
 }
 

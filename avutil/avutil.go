@@ -221,6 +221,7 @@ var (
 	offsetData, offsetLinesize, offsetExtendedData uintptr
 	offsetWidth, offsetHeight, offsetNbSamples     uintptr
 	offsetFormat, offsetFrameFlags, offsetPts      uintptr
+	offsetLegacyKeyFrame                           uintptr
 	offsetSampleRate, offsetBuffer                 uintptr
 	offsetExtendedBuffer, offsetNbExtendedBuffer   uintptr
 	offsetChLayout, offsetChLayoutChannels         uintptr
@@ -236,6 +237,7 @@ func setFrameOffsets() {
 	offsetNbSamples = layout.NbSamples
 	offsetFormat = layout.Format
 	offsetFrameFlags = layout.Flags
+	offsetLegacyKeyFrame = layout.LegacyKeyFrame
 	offsetPts = layout.PTS
 	offsetSampleRate = layout.SampleRate
 	offsetBuffer = layout.Buffer
@@ -382,11 +384,16 @@ func FrameGetBuffer(frame Frame, align int32) int32 {
 	return avFrameGetBuffer(uintptr(frame), align)
 }
 
-// GetFrameKeyFrame returns 1 if this is a key frame, 0 otherwise. FFmpeg 8
-// removed AVFrame.key_frame, so all supported families use AV_FRAME_FLAG_KEY.
+// GetFrameKeyFrame returns 1 if this is a key frame, 0 otherwise.
 func GetFrameKeyFrame(frame Frame) int32 {
 	if frame == nil {
 		return 0
+	}
+	// AV_FRAME_FLAG_KEY was introduced in libavutil 58.7.100. FFmpeg 6.0
+	// only exposes and populates the legacy AVFrame.key_frame field.
+	const frameKeyFlagVersion = uint32(58<<16 | 7<<8 | 100)
+	if bindings.AVUtilVersion() < frameKeyFlagVersion && offsetLegacyKeyFrame != 0 {
+		return *(*int32)(unsafe.Pointer(uintptr(frame) + offsetLegacyKeyFrame))
 	}
 	if *(*int32)(unsafe.Pointer(uintptr(frame) + offsetFrameFlags))&(1<<1) != 0 {
 		return 1

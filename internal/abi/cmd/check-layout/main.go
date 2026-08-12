@@ -49,6 +49,10 @@ func run() error {
 	}
 
 	expected := expectedOffsets(layout)
+	const frameKeyFlagVersion = uintptr(58<<16 | 7<<8 | 100)
+	if actual["libavutil_version"] >= frameKeyFlagVersion {
+		delete(expected, "AVFrame.key_frame")
+	}
 	keys := make([]string, 0, len(expected))
 	for key := range expected {
 		keys = append(keys, key)
@@ -86,7 +90,7 @@ func readProbeOutput() (map[string]uintptr, error) {
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("read probe output: %w", err)
 	}
-	for _, key := range []string{"libavutil", "libavcodec", "libavformat"} {
+	for _, key := range []string{"libavutil", "libavutil_version", "libavcodec", "libavformat"} {
 		if _, ok := values[key]; !ok {
 			return nil, fmt.Errorf("probe output is missing %s", key)
 		}
@@ -207,6 +211,9 @@ func expectedOffsets(layout abi.Layout) map[string]uintptr {
 		"AVSubtitleRect.type":              layout.SubtitleRect.Type,
 		"AVSubtitleRect.text":              layout.SubtitleRect.Text,
 		"AVSubtitleRect.ass":               layout.SubtitleRect.ASS,
+	}
+	if layout.Frame.LegacyKeyFrame != 0 {
+		offsets["AVFrame.key_frame"] = layout.Frame.LegacyKeyFrame
 	}
 	offsets["AVFormatContext.interrupt_callback"] = layout.FormatContext.InterruptCallback
 	return offsets

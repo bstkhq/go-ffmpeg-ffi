@@ -16,13 +16,15 @@ func TestDetectSupportedLayouts(t *testing.T) {
 		name                                                             string
 		versions                                                         [3]uint32
 		ffmpeg, duration, interruptCallback, frameSampleRate, frameFlags uintptr
+		frameLegacyKeyFrame                                              uintptr
 		codecParFormat, codecParSampleRate, channelLayout                uintptr
 		codecWidth, codecPixelFormat, subtitleType, subtitleFlags        uintptr
 	}{
 		{
 			name: "FFmpeg 6", versions: [3]uint32{version(58, 29, 100), version(60, 31, 102), version(60, 16, 100)},
 			ffmpeg: 6, duration: 72, interruptCallback: 200, frameSampleRate: 208, frameFlags: 316,
-			codecParFormat: 28, codecParSampleRate: 116, channelLayout: 912,
+			frameLegacyKeyFrame: 120,
+			codecParFormat:      28, codecParSampleRate: 116, channelLayout: 912,
 			codecWidth: 116, codecPixelFormat: 136, subtitleType: 72, subtitleFlags: 96,
 		},
 		{
@@ -62,6 +64,9 @@ func TestDetectSupportedLayouts(t *testing.T) {
 			}
 			if layout.Frame.Flags != tt.frameFlags {
 				t.Fatalf("frame flags offset = %d, want %d", layout.Frame.Flags, tt.frameFlags)
+			}
+			if layout.Frame.LegacyKeyFrame != tt.frameLegacyKeyFrame {
+				t.Fatalf("frame key_frame offset = %d, want %d", layout.Frame.LegacyKeyFrame, tt.frameLegacyKeyFrame)
 			}
 			if layout.CodecParameters.Format != tt.codecParFormat {
 				t.Fatalf("codecpar format offset = %d, want %d", layout.CodecParameters.Format, tt.codecParFormat)

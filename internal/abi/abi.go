@@ -52,6 +52,7 @@ type Layout struct {
 type FrameLayout struct {
 	Data, Linesize, ExtendedData                 uintptr
 	Width, Height, NbSamples, Format, Flags, PTS uintptr
+	LegacyKeyFrame                               uintptr
 	SampleRate, Buffer, ExtendedBuffer           uintptr
 	NbExtendedBuffer, ChannelLayout              uintptr
 }
@@ -214,7 +215,7 @@ func makeFFmpeg6Layout() Layout {
 	layout.Frame = FrameLayout{
 		Data: 0, Linesize: 64, ExtendedData: 96,
 		Width: 104, Height: 108, NbSamples: 112, Format: 116,
-		Flags: 316, PTS: 136, SampleRate: 208,
+		Flags: 316, PTS: 136, LegacyKeyFrame: 120, SampleRate: 208,
 		Buffer: 224, ExtendedBuffer: 288, NbExtendedBuffer: 296,
 		ChannelLayout: 448,
 	}
