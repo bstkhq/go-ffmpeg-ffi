@@ -6,7 +6,7 @@ authors' attribution when moving or modifying inherited work.
 
 The source tree remains transitional until the first release. See the
 [architecture](docs/architecture.md) for technical decisions and the
-[roadmap](docs/roadmap.md) for the six bootstrap PRs.
+[roadmap](docs/roadmap.md) for the six bootstrap PRs and platform rollout.
 
 ## Before opening a change
 
