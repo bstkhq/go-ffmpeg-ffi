@@ -804,6 +804,11 @@ func NewDecoderFromReaderWithOptionsContext(ctx context.Context, r io.Reader, op
 // If w implements io.Seeker, seeking will be supported.
 // format is the output format (e.g., "mp4", "mkv", "avi").
 func NewEncoderToWriter(w io.Writer, format string, config EncoderConfig) (*Encoder, error) {
+	frameRate := normalizeVideoFrameRate(NewRational(int32(config.FrameRate), 1))
+	return newEncoderToWriter(w, format, config, frameRate)
+}
+
+func newEncoderToWriter(w io.Writer, format string, config EncoderConfig, frameRate Rational) (*Encoder, error) {
 	if w == nil {
 		return nil, errors.New("ffgo: writer cannot be nil")
 	}
@@ -821,7 +826,7 @@ func NewEncoderToWriter(w io.Writer, format string, config EncoderConfig) (*Enco
 		}
 	}
 
-	return NewEncoderFromIO(callbacks, format, config)
+	return newEncoderFromIO(callbacks, format, config, frameRate)
 }
 
 // NewEncoderToWriterWithOptions creates an encoder that writes to an io.Writer
@@ -846,14 +851,6 @@ func NewEncoderToWriterWithOptions(w io.Writer, format string, opts *EncoderOpti
 		MaxBFrames:  video.MaxBFrames,
 	}
 
-	// Handle frame rate
-	if video.FrameRate.Den > 0 {
-		cfg.FrameRate = int(video.FrameRate.Num / video.FrameRate.Den)
-	}
-	if cfg.FrameRate <= 0 {
-		cfg.FrameRate = 30
-	}
-
 	// Apply defaults
 	if cfg.CodecID == CodecIDNone {
 		cfg.CodecID = CodecIDH264
@@ -865,12 +862,17 @@ func NewEncoderToWriterWithOptions(w io.Writer, format string, opts *EncoderOpti
 		cfg.PixelFormat = PixelFormatYUV420P
 	}
 
-	return NewEncoderToWriter(w, format, cfg)
+	return newEncoderToWriter(w, format, cfg, normalizeVideoFrameRate(video.FrameRate))
 }
 
 // NewEncoderFromIO creates an encoder with custom I/O.
 // format is the output format (e.g., "mp4", "mkv", "avi").
 func NewEncoderFromIO(callbacks *IOCallbacks, format string, config EncoderConfig) (*Encoder, error) {
+	frameRate := normalizeVideoFrameRate(NewRational(int32(config.FrameRate), 1))
+	return newEncoderFromIO(callbacks, format, config, frameRate)
+}
+
+func newEncoderFromIO(callbacks *IOCallbacks, format string, config EncoderConfig, frameRate Rational) (*Encoder, error) {
 	// Ensure FFmpeg is loaded
 	if err := bindings.Load(); err != nil {
 		return nil, err
@@ -906,12 +908,9 @@ func NewEncoderFromIO(callbacks *IOCallbacks, format string, config EncoderConfi
 		return nil, errors.New("ffgo: failed to create output stream")
 	}
 
-	// Set stream time base
-	if config.FrameRate > 0 {
-		avformat.SetStreamTimeBase(stream, 1, int32(config.FrameRate))
-	} else {
-		avformat.SetStreamTimeBase(stream, 1, 30) // Default to 30 fps
-	}
+	frameRate = normalizeVideoFrameRate(frameRate)
+	timeBase := frameRate.Invert()
+	avformat.SetStreamTimeBase(stream, timeBase.Num, timeBase.Den)
 
 	// Find encoder
 	codec := avcodec.FindEncoder(config.CodecID)
@@ -943,13 +942,8 @@ func NewEncoderFromIO(callbacks *IOCallbacks, format string, config EncoderConfi
 
 	avcodec.SetCtxMaxBFrames(codecCtx, int32(config.MaxBFrames))
 
-	if config.FrameRate > 0 {
-		avcodec.SetCtxFramerate(codecCtx, int32(config.FrameRate), 1)
-		avcodec.SetCtxTimeBase(codecCtx, 1, int32(config.FrameRate))
-	} else {
-		avcodec.SetCtxFramerate(codecCtx, 30, 1)
-		avcodec.SetCtxTimeBase(codecCtx, 1, 30)
-	}
+	avcodec.SetCtxFramerate(codecCtx, frameRate.Num, frameRate.Den)
+	avcodec.SetCtxTimeBase(codecCtx, timeBase.Num, timeBase.Den)
 
 	// Check if global header is needed
 	if avformat.NeedsGlobalHeader(formatCtx) {
@@ -992,12 +986,6 @@ func NewEncoderFromIO(callbacks *IOCallbacks, format string, config EncoderConfi
 		return nil, errors.New("ffgo: failed to allocate packet")
 	}
 
-	// Determine frame rate for time base
-	frameRate := config.FrameRate
-	if frameRate <= 0 {
-		frameRate = 30
-	}
-
 	return &Encoder{
 		formatCtx:     formatCtx,
 		ioCtx:         ioCtx.AVIOContext(),
@@ -1012,8 +1000,8 @@ func NewEncoderFromIO(callbacks *IOCallbacks, format string, config EncoderConfi
 		height:        config.Height,
 		pixFmt:        config.PixelFormat,
 		frameCount:    0,
-		timeBaseNum:   1,
-		timeBaseDen:   int32(frameRate),
+		timeBaseNum:   timeBase.Num,
+		timeBaseDen:   timeBase.Den,
 		headerWritten: true, // Header was already written above
 		hasVideo:      true,
 	}, nil

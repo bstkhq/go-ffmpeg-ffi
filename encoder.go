@@ -266,6 +266,13 @@ type EncoderOptions struct {
 	PassOutput string
 }
 
+func normalizeVideoFrameRate(frameRate Rational) Rational {
+	if frameRate.Num <= 0 || frameRate.Den <= 0 {
+		return NewRational(30, 1)
+	}
+	return frameRate
+}
+
 // NewEncoder creates a new video encoder.
 func NewEncoder(path string, cfg EncoderConfig) (*Encoder, error) {
 	// Ensure FFmpeg is loaded
@@ -292,13 +299,15 @@ func NewEncoder(path string, cfg EncoderConfig) (*Encoder, error) {
 	if cfg.GOPSize <= 0 {
 		cfg.GOPSize = 12
 	}
+	frameRate := normalizeVideoFrameRate(NewRational(int32(cfg.FrameRate), 1))
+	timeBase := frameRate.Invert()
 
 	e := &Encoder{
 		width:       cfg.Width,
 		height:      cfg.Height,
 		pixFmt:      cfg.PixelFormat,
-		timeBaseNum: 1,
-		timeBaseDen: int32(cfg.FrameRate),
+		timeBaseNum: timeBase.Num,
+		timeBaseDen: timeBase.Den,
 		hasVideo:    true,
 		path:        path,
 	}
@@ -341,8 +350,8 @@ func NewEncoder(path string, cfg EncoderConfig) (*Encoder, error) {
 	avcodec.SetCtxWidth(e.codecCtx, int32(cfg.Width))
 	avcodec.SetCtxHeight(e.codecCtx, int32(cfg.Height))
 	avcodec.SetCtxPixFmt(e.codecCtx, int32(cfg.PixelFormat))
-	avcodec.SetCtxTimeBase(e.codecCtx, 1, int32(cfg.FrameRate))
-	avcodec.SetCtxFramerate(e.codecCtx, int32(cfg.FrameRate), 1)
+	avcodec.SetCtxTimeBase(e.codecCtx, timeBase.Num, timeBase.Den)
+	avcodec.SetCtxFramerate(e.codecCtx, frameRate.Num, frameRate.Den)
 	avcodec.SetCtxBitRate(e.codecCtx, cfg.BitRate)
 	avcodec.SetCtxGopSize(e.codecCtx, int32(cfg.GOPSize))
 	avcodec.SetCtxMaxBFrames(e.codecCtx, int32(cfg.MaxBFrames))
@@ -367,7 +376,7 @@ func NewEncoder(path string, cfg EncoderConfig) (*Encoder, error) {
 	}
 
 	// Set stream time base
-	avformat.SetStreamTimeBase(e.stream, 1, int32(cfg.FrameRate))
+	avformat.SetStreamTimeBase(e.stream, timeBase.Num, timeBase.Den)
 
 	// Open output file if needed
 	if !avformat.HasNoFile(e.formatCtx) {
@@ -453,19 +462,15 @@ func NewEncoderWithOptions(path string, opts *EncoderOptions) (*Encoder, error) 
 	}
 
 	// Handle frame rate
-	frameRateNum := video.FrameRate.Num
-	frameRateDen := video.FrameRate.Den
-	if frameRateDen <= 0 {
-		frameRateNum = 30
-		frameRateDen = 1
-	}
+	frameRate := normalizeVideoFrameRate(video.FrameRate)
+	timeBase := frameRate.Invert()
 
 	e := &Encoder{
 		width:         video.Width,
 		height:        video.Height,
 		pixFmt:        pixFmt,
-		timeBaseNum:   1,
-		timeBaseDen:   int32(frameRateNum / frameRateDen),
+		timeBaseNum:   timeBase.Num,
+		timeBaseDen:   timeBase.Den,
 		hasVideo:      true,
 		path:          path,
 		ioOptions:     opts.IOOptions,
@@ -530,8 +535,8 @@ func NewEncoderWithOptions(path string, opts *EncoderOptions) (*Encoder, error) 
 	avcodec.SetCtxWidth(e.codecCtx, int32(video.Width))
 	avcodec.SetCtxHeight(e.codecCtx, int32(video.Height))
 	avcodec.SetCtxPixFmt(e.codecCtx, int32(pixFmt))
-	avcodec.SetCtxTimeBase(e.codecCtx, 1, int32(frameRateNum/frameRateDen))
-	avcodec.SetCtxFramerate(e.codecCtx, int32(frameRateNum), int32(frameRateDen))
+	avcodec.SetCtxTimeBase(e.codecCtx, timeBase.Num, timeBase.Den)
+	avcodec.SetCtxFramerate(e.codecCtx, frameRate.Num, frameRate.Den)
 	avcodec.SetCtxGopSize(e.codecCtx, int32(gopSize))
 	avcodec.SetCtxMaxBFrames(e.codecCtx, int32(video.MaxBFrames))
 
@@ -607,7 +612,7 @@ func NewEncoderWithOptions(path string, opts *EncoderOptions) (*Encoder, error) 
 	}
 
 	// Set stream time base
-	avformat.SetStreamTimeBase(e.stream, 1, int32(frameRateNum/frameRateDen))
+	avformat.SetStreamTimeBase(e.stream, timeBase.Num, timeBase.Den)
 
 	// Open output file if needed
 	if !avformat.HasNoFile(e.formatCtx) {
