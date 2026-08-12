@@ -321,14 +321,16 @@ func (c *CustomIOContext) beginOperation() {
 
 func (c *CustomIOContext) beginOperationContext(ctx context.Context) {
 	c.endOperation()
-	c.ensureLifetimeContext()
 	c.errorMu.Lock()
 	c.callbackErr = nil
 	c.errorMu.Unlock()
 
 	operationCtx, operationEnd := context.WithCancel(ctx)
-	stopLifetime := context.AfterFunc(c.lifetimeCtx, operationEnd)
 	c.contextMu.Lock()
+	if c.lifetimeCtx == nil {
+		c.lifetimeCtx, c.lifetimeCancel = context.WithCancel(context.Background())
+	}
+	stopLifetime := context.AfterFunc(c.lifetimeCtx, operationEnd)
 	c.operationCtx = operationCtx
 	c.operationEnd = operationEnd
 	c.stopLifetime = stopLifetime
@@ -347,22 +349,14 @@ func (c *CustomIOContext) finishOperation(nativeErr error) error {
 func (c *CustomIOContext) callbackContext() context.Context {
 	c.contextMu.RLock()
 	ctx := c.operationCtx
+	if ctx == nil {
+		ctx = c.lifetimeCtx
+	}
 	c.contextMu.RUnlock()
 	if ctx != nil {
 		return ctx
 	}
-	if c.lifetimeCtx == nil {
-		return context.Background()
-	}
-	return c.lifetimeCtx
-}
-
-func (c *CustomIOContext) ensureLifetimeContext() {
-	c.contextMu.Lock()
-	defer c.contextMu.Unlock()
-	if c.lifetimeCtx == nil {
-		c.lifetimeCtx, c.lifetimeCancel = context.WithCancel(context.Background())
-	}
+	return context.Background()
 }
 
 func (c *CustomIOContext) endOperation() {
@@ -382,18 +376,27 @@ func (c *CustomIOContext) endOperation() {
 }
 
 func (c *CustomIOContext) cancelPending() {
-	if c != nil && c.lifetimeCancel != nil {
-		c.lifetimeCancel()
+	if c == nil {
+		return
+	}
+	c.contextMu.RLock()
+	cancel := c.lifetimeCancel
+	c.contextMu.RUnlock()
+	if cancel != nil {
+		cancel()
 	}
 }
 
 func (c *CustomIOContext) resetCancellation() {
+	lifetimeCtx, lifetimeCancel := context.WithCancel(context.Background())
 	c.contextMu.Lock()
-	if c.lifetimeCancel != nil {
-		c.lifetimeCancel()
-	}
-	c.lifetimeCtx, c.lifetimeCancel = context.WithCancel(context.Background())
+	previousCancel := c.lifetimeCancel
+	c.lifetimeCtx = lifetimeCtx
+	c.lifetimeCancel = lifetimeCancel
 	c.contextMu.Unlock()
+	if previousCancel != nil {
+		previousCancel()
+	}
 }
 
 func (c *CustomIOContext) beginCallback() bool {
@@ -550,6 +553,7 @@ func NewCustomIOContextWithSize(callbacks *IOCallbacks, writable bool, bufferSiz
 func (c *CustomIOContext) Close() error {
 	c.cancelPending()
 	c.waitForCallbacks()
+	c.endOperation()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
