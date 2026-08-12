@@ -6,7 +6,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 // TwoPassTranscode performs a simple 2-pass video transcode using the provided encoder options.
@@ -51,71 +50,64 @@ func TwoPassTranscode(input, output string, opts *EncoderOptions) error {
 		opts.Video.PixelFormat = PixelFormatYUV420P
 	}
 
-	// Determine passlog base
-	passBase := opts.PassLogFile
-	cleanupPassFiles := false
-	if passBase == "" {
-		f, err := os.CreateTemp("", "ffgo-passlog-*")
-		if err != nil {
-			return err
-		}
-		passBase = f.Name()
-		_ = f.Close()
-		_ = os.Remove(passBase) // base path only
-		cleanupPassFiles = true
-	}
-
-	// Build pass1 output path (discard later)
-	pass1Out := opts.PassOutput
-	cleanupPass1Out := false
-	if pass1Out == "" {
-		ext := filepath.Ext(output)
-		if ext == "" {
-			ext = ".mp4"
-		}
-		f, err := os.CreateTemp("", "ffgo-pass1-*"+ext)
-		if err != nil {
-			return err
-		}
-		pass1Out = f.Name()
-		_ = f.Close()
-		cleanupPass1Out = true
-	}
-
-	if err := runPass(dec, videoInfo, pass1Out, opts, 1, passBase); err != nil {
-		if cleanupPass1Out {
-			_ = os.Remove(pass1Out)
-		}
-		if cleanupPassFiles {
-			cleanupPassLogFiles(passBase)
-		}
+	workspace, err := newTwoPassWorkspace(output, opts)
+	if err != nil {
 		return err
 	}
+	defer workspace.cleanup()
 
-	// Ensure we don't keep the pass1 output.
-	if cleanupPass1Out {
-		_ = os.Remove(pass1Out)
+	if err := runPass(dec, videoInfo, workspace.passOutput, opts, 1, workspace.passLogFile); err != nil {
+		return err
 	}
 
 	// Seek back to start for pass 2.
 	if err := dec.SeekTimestamp(0); err != nil {
-		if cleanupPassFiles {
-			cleanupPassLogFiles(passBase)
-		}
 		return err
 	}
 
-	if err := runPass(dec, videoInfo, output, opts, 2, passBase); err != nil {
-		if cleanupPassFiles {
-			cleanupPassLogFiles(passBase)
-		}
+	if err := runPass(dec, videoInfo, output, opts, 2, workspace.passLogFile); err != nil {
 		return err
-	}
-
-	if cleanupPassFiles {
-		cleanupPassLogFiles(passBase)
 	}
 	return nil
+}
+
+type twoPassWorkspace struct {
+	passLogFile string
+	passOutput  string
+	tempDir     string
+}
+
+func newTwoPassWorkspace(output string, opts *EncoderOptions) (twoPassWorkspace, error) {
+	workspace := twoPassWorkspace{
+		passLogFile: opts.PassLogFile,
+		passOutput:  opts.PassOutput,
+	}
+	if workspace.passLogFile != "" && workspace.passOutput != "" {
+		return workspace, nil
+	}
+
+	tempDir, err := os.MkdirTemp("", "ffgo-twopass-*")
+	if err != nil {
+		return twoPassWorkspace{}, err
+	}
+	workspace.tempDir = tempDir
+	if workspace.passLogFile == "" {
+		workspace.passLogFile = filepath.Join(tempDir, "passlog")
+	}
+	if workspace.passOutput == "" {
+		ext := filepath.Ext(output)
+		if ext == "" {
+			ext = ".mp4"
+		}
+		workspace.passOutput = filepath.Join(tempDir, "pass1"+ext)
+	}
+	return workspace, nil
+}
+
+func (w twoPassWorkspace) cleanup() {
+	if w.tempDir != "" {
+		_ = os.RemoveAll(w.tempDir)
+	}
 }
 
 func runPass(dec *Decoder, videoInfo *StreamInfo, output string, baseOpts *EncoderOptions, pass int, passBase string) error {
@@ -182,23 +174,3 @@ func runPass(dec *Decoder, videoInfo *StreamInfo, output string, baseOpts *Encod
 	}
 	return nil
 }
-
-func cleanupPassLogFiles(base string) {
-	if base == "" {
-		return
-	}
-	dir := filepath.Dir(base)
-	prefix := filepath.Base(base)
-
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return
-	}
-	for _, e := range entries {
-		name := e.Name()
-		if strings.HasPrefix(name, prefix) {
-			_ = os.Remove(filepath.Join(dir, name))
-		}
-	}
-}
-
