@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/abi"
@@ -165,6 +166,71 @@ func TestErrNotLoaded(t *testing.T) {
 	// Before loading, IsLoaded should be false
 	if IsLoaded() {
 		t.Error("IsLoaded should be false before Load is called")
+	}
+}
+
+func TestConcurrentLoadAndStateReads(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping FFmpeg load test in short mode")
+	}
+
+	const readerCount = 16
+	start := make(chan struct{})
+	stop := make(chan struct{})
+	var ready sync.WaitGroup
+	var readers sync.WaitGroup
+	ready.Add(readerCount)
+	readers.Add(readerCount)
+
+	readState := func() {
+		_ = IsLoaded()
+		_ = AVUtilVersion()
+		_ = AVCodecVersion()
+		_ = AVFormatVersion()
+		_ = SWScaleVersion()
+		_ = ABI()
+		_ = LibAVUtil()
+		_ = LibAVCodec()
+		_ = LibAVFormat()
+		_ = LibSWScale()
+		_ = HasSWScale()
+	}
+
+	for range readerCount {
+		go func() {
+			defer readers.Done()
+			<-start
+			readState()
+			ready.Done()
+			for {
+				select {
+				case <-stop:
+					readState()
+					return
+				default:
+					readState()
+				}
+			}
+		}()
+	}
+
+	close(start)
+	ready.Wait()
+	err := Load()
+	close(stop)
+	readers.Wait()
+
+	if err != nil {
+		if errors.Is(err, abi.ErrUnsupported) {
+			t.Skipf("installed FFmpeg is outside the supported ABI matrix: %v", err)
+		}
+		t.Fatalf("loading FFmpeg: %v", err)
+	}
+	if !IsLoaded() || ABI().FFmpegMajor == 0 {
+		t.Fatal("successful load did not publish the selected FFmpeg ABI")
+	}
+	if LibAVUtil() == 0 || LibAVCodec() == 0 || LibAVFormat() == 0 {
+		t.Fatal("successful load did not publish the core library handles")
 	}
 }
 

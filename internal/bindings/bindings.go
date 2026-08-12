@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/abi"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/platform"
@@ -56,7 +57,9 @@ var (
 	libAVFormat uintptr
 	libSWScale  uintptr
 
-	loaded     bool
+	// loaded publishes the handles, version functions, and ABI written by
+	// doLoad. Those fields are immutable after the release store succeeds.
+	loaded     atomic.Bool
 	loadOnce   sync.Once
 	loadErr    error
 	currentABI abi.Layout
@@ -72,7 +75,7 @@ var (
 
 // IsLoaded returns true if FFmpeg libraries have been successfully loaded.
 func IsLoaded() bool {
-	return loaded
+	return loaded.Load()
 }
 
 // Load loads a coherent set of FFmpeg libraries and registers their version
@@ -81,7 +84,7 @@ func Load() error {
 	loadOnce.Do(func() {
 		loadErr = doLoad()
 		if loadErr == nil {
-			loaded = true
+			loaded.Store(true)
 		}
 	})
 	return loadErr
@@ -356,7 +359,7 @@ func LibrarySearchPaths() []string {
 
 // AVUtilVersion returns the avutil library version, or 0 before Load succeeds.
 func AVUtilVersion() uint32 {
-	if !loaded || avutilVersion == nil {
+	if !loaded.Load() || avutilVersion == nil {
 		return 0
 	}
 	return avutilVersion()
@@ -364,7 +367,7 @@ func AVUtilVersion() uint32 {
 
 // AVCodecVersion returns the avcodec library version, or 0 before Load succeeds.
 func AVCodecVersion() uint32 {
-	if !loaded || avcodecVersion == nil {
+	if !loaded.Load() || avcodecVersion == nil {
 		return 0
 	}
 	return avcodecVersion()
@@ -372,7 +375,7 @@ func AVCodecVersion() uint32 {
 
 // AVFormatVersion returns the avformat library version, or 0 before Load succeeds.
 func AVFormatVersion() uint32 {
-	if !loaded || avformatVersion == nil {
+	if !loaded.Load() || avformatVersion == nil {
 		return 0
 	}
 	return avformatVersion()
@@ -380,7 +383,7 @@ func AVFormatVersion() uint32 {
 
 // SWScaleVersion returns the swscale version, or 0 when it is unavailable.
 func SWScaleVersion() uint32 {
-	if !loaded || swscaleVersion == nil {
+	if !loaded.Load() || swscaleVersion == nil {
 		return 0
 	}
 	return swscaleVersion()
@@ -388,7 +391,7 @@ func SWScaleVersion() uint32 {
 
 // ABI returns the layout selected from the loaded FFmpeg libraries.
 func ABI() abi.Layout {
-	if !loaded {
+	if !loaded.Load() {
 		return abi.Layout{}
 	}
 	return currentABI
@@ -419,19 +422,39 @@ func validateLibraryVersion(layout abi.Layout, name string, version uint32) erro
 }
 
 // LibAVUtil returns the avutil library handle.
-func LibAVUtil() uintptr { return libAVUtil }
+func LibAVUtil() uintptr {
+	if !loaded.Load() {
+		return 0
+	}
+	return libAVUtil
+}
 
 // LibAVCodec returns the avcodec library handle.
-func LibAVCodec() uintptr { return libAVCodec }
+func LibAVCodec() uintptr {
+	if !loaded.Load() {
+		return 0
+	}
+	return libAVCodec
+}
 
 // LibAVFormat returns the avformat library handle.
-func LibAVFormat() uintptr { return libAVFormat }
+func LibAVFormat() uintptr {
+	if !loaded.Load() {
+		return 0
+	}
+	return libAVFormat
+}
 
 // LibSWScale returns the swscale library handle.
-func LibSWScale() uintptr { return libSWScale }
+func LibSWScale() uintptr {
+	if !loaded.Load() {
+		return 0
+	}
+	return libSWScale
+}
 
 // HasSWScale reports whether a compatible swscale library is available.
-func HasSWScale() bool { return libSWScale != 0 }
+func HasSWScale() bool { return loaded.Load() && libSWScale != 0 }
 
 // LoadOptionalLibrary loads the major of an optional library selected by the
 // already loaded core ABI.
