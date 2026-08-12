@@ -4,6 +4,7 @@ package ffgo
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"unsafe"
@@ -47,10 +48,9 @@ type Encoder struct {
 	// Stream copy mode
 	copyVideo      bool
 	copyAudio      bool
-	videoTimeBase  Rational // Source video time base for rescaling
-	audioTimeBase  Rational // Source audio time base for rescaling
-	videoStreamIdx int      // Index of video stream for WritePacket
-	audioStreamIdx int      // Index of audio stream for WritePacket
+	copyStreams    map[int]streamCopyTarget
+	videoStreamIdx int // Output video stream index
+	audioStreamIdx int // Output audio stream index
 
 	// Deprecated: use videoCodecCtx
 	codecCtx avcodec.Context
@@ -76,6 +76,11 @@ type Encoder struct {
 	closed        bool
 	hasVideo      bool
 	hasAudio      bool
+}
+
+type streamCopyTarget struct {
+	stream         avformat.Stream
+	sourceTimeBase Rational
 }
 
 // EncoderConfig configures encoder behavior (video-only, for compatibility).
@@ -212,14 +217,38 @@ type StreamCopySource struct {
 	// VideoParams is the video codec parameters from the source stream.
 	VideoParams avcodec.Parameters
 
-	// AudioParams is the audio codec parameters from the source stream.
-	AudioParams avcodec.Parameters
-
 	// VideoTimeBase is the time base of the source video stream.
 	VideoTimeBase Rational
 
+	// VideoStreamIndex is the index reported by source video packets.
+	VideoStreamIndex int
+
+	// AudioParams is the audio codec parameters from the source stream.
+	AudioParams avcodec.Parameters
+
 	// AudioTimeBase is the time base of the source audio stream.
 	AudioTimeBase Rational
+
+	// AudioStreamIndex is the index reported by source audio packets.
+	AudioStreamIndex int
+}
+
+// NewStreamCopySource builds stream-copy configuration from decoder stream
+// information. Pass nil for a media type that will not be copied. The source
+// decoder must remain open until the encoder has been created.
+func NewStreamCopySource(video, audio *StreamInfo) *StreamCopySource {
+	source := &StreamCopySource{}
+	if video != nil {
+		source.VideoParams = video.CodecParameters()
+		source.VideoStreamIndex = video.Index
+		source.VideoTimeBase = video.TimeBase
+	}
+	if audio != nil {
+		source.AudioParams = audio.CodecParameters()
+		source.AudioStreamIndex = audio.Index
+		source.AudioTimeBase = audio.TimeBase
+	}
+	return source
 }
 
 // EncoderOptions configures encoder behavior with separate video and audio settings.
@@ -423,6 +452,21 @@ func NewEncoderWithOptions(path string, opts *EncoderOptions) (*Encoder, error) 
 	}
 	if hasAudioCopy && (opts.SourceStreams == nil || opts.SourceStreams.AudioParams == nil) {
 		return nil, errors.New("ffgo: SourceStreams.AudioParams required when CopyAudio is true")
+	}
+	if hasVideoCopy && opts.SourceStreams.VideoStreamIndex < 0 {
+		return nil, errors.New("ffgo: SourceStreams.VideoStreamIndex must be non-negative")
+	}
+	if hasAudioCopy && opts.SourceStreams.AudioStreamIndex < 0 {
+		return nil, errors.New("ffgo: SourceStreams.AudioStreamIndex must be non-negative")
+	}
+	if hasVideoCopy && (opts.SourceStreams.VideoTimeBase.Num <= 0 || opts.SourceStreams.VideoTimeBase.Den <= 0) {
+		return nil, errors.New("ffgo: SourceStreams.VideoTimeBase must be positive")
+	}
+	if hasAudioCopy && (opts.SourceStreams.AudioTimeBase.Num <= 0 || opts.SourceStreams.AudioTimeBase.Den <= 0) {
+		return nil, errors.New("ffgo: SourceStreams.AudioTimeBase must be positive")
+	}
+	if hasVideoCopy && hasAudioCopy && opts.SourceStreams.VideoStreamIndex == opts.SourceStreams.AudioStreamIndex {
+		return nil, errors.New("ffgo: source video and audio stream indices must differ")
 	}
 
 	// Ensure FFmpeg is loaded
@@ -761,6 +805,7 @@ func newEncoderStreamCopy(path string, opts *EncoderOptions) (*Encoder, error) {
 	e := &Encoder{
 		copyVideo:      opts.CopyVideo,
 		copyAudio:      opts.CopyAudio,
+		copyStreams:    make(map[int]streamCopyTarget, 2),
 		videoStreamIdx: -1,
 		audioStreamIdx: -1,
 		path:           path,
@@ -773,8 +818,6 @@ func newEncoderStreamCopy(path string, opts *EncoderOptions) (*Encoder, error) {
 		return nil, err
 	}
 
-	streamIdx := 0
-
 	// Setup video stream for copy mode
 	if opts.CopyVideo && opts.SourceStreams != nil && opts.SourceStreams.VideoParams != nil {
 		// Create stream without codec
@@ -784,8 +827,7 @@ func newEncoderStreamCopy(path string, opts *EncoderOptions) (*Encoder, error) {
 			return nil, errors.New("ffgo: failed to create video stream for copy")
 		}
 		e.videoStream = stream
-		e.videoStreamIdx = streamIdx
-		streamIdx++
+		e.videoStreamIdx = int(avformat.GetStreamIndex(stream))
 
 		// Copy codec parameters from source
 		codecPar := avformat.GetStreamCodecPar(stream)
@@ -794,8 +836,13 @@ func newEncoderStreamCopy(path string, opts *EncoderOptions) (*Encoder, error) {
 			return nil, errors.New("ffgo: failed to copy video codec parameters")
 		}
 
-		// Store time base for timestamp rescaling
-		e.videoTimeBase = opts.SourceStreams.VideoTimeBase
+		// Request the source time base. The muxer may adjust it when writing the
+		// header, so WritePacket reads the final destination value later.
+		avformat.SetStreamTimeBase(stream, opts.SourceStreams.VideoTimeBase.Num, opts.SourceStreams.VideoTimeBase.Den)
+		e.copyStreams[opts.SourceStreams.VideoStreamIndex] = streamCopyTarget{
+			stream:         stream,
+			sourceTimeBase: opts.SourceStreams.VideoTimeBase,
+		}
 		e.hasVideo = true
 	}
 
@@ -808,8 +855,7 @@ func newEncoderStreamCopy(path string, opts *EncoderOptions) (*Encoder, error) {
 			return nil, errors.New("ffgo: failed to create audio stream for copy")
 		}
 		e.audioStream = stream
-		e.audioStreamIdx = streamIdx
-		// Note: streamIdx++ omitted since this is the last stream
+		e.audioStreamIdx = int(avformat.GetStreamIndex(stream))
 
 		// Copy codec parameters from source
 		codecPar := avformat.GetStreamCodecPar(stream)
@@ -818,8 +864,11 @@ func newEncoderStreamCopy(path string, opts *EncoderOptions) (*Encoder, error) {
 			return nil, errors.New("ffgo: failed to copy audio codec parameters")
 		}
 
-		// Store time base for timestamp rescaling
-		e.audioTimeBase = opts.SourceStreams.AudioTimeBase
+		avformat.SetStreamTimeBase(stream, opts.SourceStreams.AudioTimeBase.Num, opts.SourceStreams.AudioTimeBase.Den)
+		e.copyStreams[opts.SourceStreams.AudioStreamIndex] = streamCopyTarget{
+			stream:         stream,
+			sourceTimeBase: opts.SourceStreams.AudioTimeBase,
+		}
 		e.hasAudio = true
 	}
 
@@ -872,46 +921,25 @@ func (e *Encoder) WritePacket(packet *Packet) error {
 		return errors.New("ffgo: packet cannot be nil")
 	}
 
-	// Write header if not yet written
+	sourceStreamIndex := int(avcodec.GetPacketStreamIndex(packet.ptr))
+	target, ok := e.copyStreams[sourceStreamIndex]
+	if !ok {
+		return fmt.Errorf("ffgo: source stream %d is not configured for copy", sourceStreamIndex)
+	}
+
+	// Write header if not yet written. This can change the destination time
+	// base, so read that value only after the header succeeds.
 	if !e.headerWritten {
 		if err := e.writeHeaderLocked(); err != nil {
 			return err
 		}
 	}
 
-	// Determine output stream index based on packet media type
-	packetStreamIdx := avcodec.GetPacketStreamIndex(packet.ptr)
+	dstNum, dstDen := avformat.GetStreamTimeBase(target.stream)
+	avcodec.RescalePacketTS(packet.ptr, target.sourceTimeBase, NewRational(dstNum, dstDen))
 
-	var outputStreamIdx int
-	var srcTimeBase, dstTimeBase Rational
+	avcodec.SetPacketStreamIndex(packet.ptr, avformat.GetStreamIndex(target.stream))
 
-	// Check if this is a video or audio packet based on context
-	// In copy mode, we need to map source stream to output stream
-	if e.copyVideo && e.videoStreamIdx >= 0 && packetStreamIdx == 0 {
-		// Video packet
-		outputStreamIdx = e.videoStreamIdx
-		srcTimeBase = e.videoTimeBase
-		stream := avformat.GetStream(e.formatCtx, e.videoStreamIdx)
-		tbNum, tbDen := avformat.GetStreamTimeBase(stream)
-		dstTimeBase = NewRational(tbNum, tbDen)
-	} else if e.copyAudio && e.audioStreamIdx >= 0 {
-		// Audio packet
-		outputStreamIdx = e.audioStreamIdx
-		srcTimeBase = e.audioTimeBase
-		stream := avformat.GetStream(e.formatCtx, e.audioStreamIdx)
-		tbNum, tbDen := avformat.GetStreamTimeBase(stream)
-		dstTimeBase = NewRational(tbNum, tbDen)
-	} else {
-		return errors.New("ffgo: cannot determine output stream for packet")
-	}
-
-	// Rescale timestamps
-	avcodec.RescalePacketTS(packet.ptr, srcTimeBase, dstTimeBase)
-
-	// Set output stream index
-	avcodec.SetPacketStreamIndex(packet.ptr, int32(outputStreamIdx))
-
-	// Write packet
 	return e.writeOutputPacketLocked(packet.ptr)
 }
 
