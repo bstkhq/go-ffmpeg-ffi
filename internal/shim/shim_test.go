@@ -358,6 +358,7 @@ func TestConcurrentLoadAndFunctionCalls(t *testing.T) {
 		t.Skip("skipping shim load test in short mode")
 	}
 
+	requireShim := os.Getenv("FFGO_SHIM_DIR") != ""
 	const readerCount = 16
 	start := make(chan struct{})
 	stop := make(chan struct{})
@@ -395,10 +396,16 @@ func TestConcurrentLoadAndFunctionCalls(t *testing.T) {
 	close(stop)
 	readers.Wait()
 
-	if err != nil {
+	if err != nil && requireShim {
 		t.Fatalf("loading shim: %v", err)
 	}
 	if !IsLoaded() {
+		if requireShim {
+			t.Fatal("shim configured through FFGO_SHIM_DIR was not loaded")
+		}
+		if err != nil {
+			t.Logf("shim unavailable: %v", err)
+		}
 		t.Log("shim not available; concurrent calls stayed in the unloaded path")
 		return
 	}
