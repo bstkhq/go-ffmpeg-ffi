@@ -30,6 +30,7 @@ type Layout struct {
 
 	Frame           FrameLayout
 	FormatContext   FormatContextLayout
+	IOContext       IOContextLayout
 	CodecParameters CodecParametersLayout
 	CodecContext    CodecContextLayout
 	Packet          PacketLayout
@@ -61,6 +62,11 @@ type FormatContextLayout struct {
 	Duration, BitRate, Flags                                  uintptr
 	NumPrograms, Programs, NumChapters, Chapters, Metadata    uintptr
 	ProbeScore, InterruptCallback                             uintptr
+}
+
+// IOContextLayout contains offsets into AVIOContext.
+type IOContextLayout struct {
+	Buffer uintptr
 }
 
 // CodecParametersLayout contains offsets into AVCodecParameters.
@@ -164,6 +170,9 @@ var (
 // Family-specific constructors fill every structure that changed layout.
 func commonLayout() Layout {
 	return Layout{
+		IOContext: IOContextLayout{
+			Buffer: 8,
+		},
 		Packet: PacketLayout{
 			PTS: 8, DTS: 16, Data: 24, SizeField: 32,
 			StreamIndex: 36, Flags: 40, Duration: 64, Position: 72,

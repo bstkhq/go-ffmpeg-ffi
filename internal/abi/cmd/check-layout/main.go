@@ -151,6 +151,7 @@ func expectedOffsets(layout abi.Layout) map[string]uintptr {
 		"AVFormatContext.chapters":         layout.FormatContext.Chapters,
 		"AVFormatContext.metadata":         layout.FormatContext.Metadata,
 		"AVFormatContext.probe_score":      layout.FormatContext.ProbeScore,
+		"AVIOContext.buffer":               layout.IOContext.Buffer,
 		"AVPacket.pts":                     layout.Packet.PTS,
 		"AVPacket.dts":                     layout.Packet.DTS,
 		"AVPacket.data":                    layout.Packet.Data,

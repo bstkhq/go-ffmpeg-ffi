@@ -95,6 +95,8 @@ int main(void) {
     FIELD(AVFormatContext, interrupt_callback);
     SIZE(AVFormatContext);
 
+    FIELD(AVIOContext, buffer);
+
     FIELD(AVPacket, pts);
     FIELD(AVPacket, dts);
     FIELD(AVPacket, data);

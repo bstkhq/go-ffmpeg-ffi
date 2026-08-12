@@ -6,7 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"unsafe"
 
+	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/bindings"
 )
 
@@ -46,6 +48,35 @@ func TestAllocContext(t *testing.T) {
 		t.Fatal("AllocContext returned nil")
 	}
 	FreeContext(ctx)
+}
+
+func TestIOContextFreeOwnsCurrentBuffer(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+	original := avutil.Malloc(1024)
+	if original == nil {
+		t.Fatal("allocate original I/O buffer")
+	}
+	ctx := IOAllocContext(original, 1024, true, 0, 0, 0, 0)
+	if ctx == nil {
+		avutil.Free(original)
+		t.Fatal("allocate I/O context")
+	}
+
+	replacement := avutil.Malloc(2048)
+	if replacement == nil {
+		IOContextFree(&ctx)
+		t.Fatal("allocate replacement I/O buffer")
+	}
+	buffer := (*unsafe.Pointer)(unsafe.Pointer(uintptr(ctx) + offsetIOContextBuffer))
+	*buffer = replacement
+	avutil.Free(original)
+
+	IOContextFree(&ctx)
+	if ctx != nil {
+		t.Fatal("I/O context was not cleared")
+	}
 }
 
 func TestOpenInput(t *testing.T) {
