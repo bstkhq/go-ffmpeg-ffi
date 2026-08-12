@@ -99,19 +99,45 @@ var (
 	ioCallbacksInitErr error
 )
 
+type ioCallbackPointers struct {
+	read  uintptr
+	write uintptr
+	seek  uintptr
+}
+
 func initIOCallbacks() error {
 	ioCallbacksOnce.Do(func() {
-		// Read callback: int read_packet(void *opaque, uint8_t *buf, int buf_size)
-		readCallbackPtr = purego.NewCallback(customIOReadCallback)
-
-		// Write callback: int write_packet(void *opaque, uint8_t *buf, int buf_size)
-		writeCallbackPtr = purego.NewCallback(customIOWriteCallback)
-
-		// Seek callback: int64_t seek(void *opaque, int64_t offset, int whence)
-		seekCallbackPtr = purego.NewCallback(customIOSeekCallback)
+		callbacks, err := newIOCallbackPointers(purego.NewCallback)
+		if err != nil {
+			ioCallbacksInitErr = err
+			return
+		}
+		readCallbackPtr = callbacks.read
+		writeCallbackPtr = callbacks.write
+		seekCallbackPtr = callbacks.seek
 	})
 
 	return ioCallbacksInitErr
+}
+
+func newIOCallbackPointers(newCallback func(any) uintptr) (callbacks ioCallbackPointers, err error) {
+	defer func() {
+		if value := recover(); value != nil {
+			callbacks = ioCallbackPointers{}
+			err = fmt.Errorf("ffgo: initialize custom I/O callbacks: %w", callbackPanicError(value))
+		}
+	}()
+
+	// Read callback: int read_packet(void *opaque, uint8_t *buf, int buf_size)
+	callbacks.read = newCallback(customIOReadCallback)
+
+	// Write callback: int write_packet(void *opaque, uint8_t *buf, int buf_size)
+	callbacks.write = newCallback(customIOWriteCallback)
+
+	// Seek callback: int64_t seek(void *opaque, int64_t offset, int whence)
+	callbacks.seek = newCallback(customIOSeekCallback)
+
+	return callbacks, nil
 }
 
 func lookupCustomIOContext(opaque uintptr) *CustomIOContext {
