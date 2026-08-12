@@ -12,6 +12,7 @@ import (
 	"github.com/bstkhq/go-ffmpeg-ffi/avformat"
 	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/bindings"
+	"github.com/bstkhq/go-ffmpeg-ffi/internal/cstr"
 )
 
 // SubtitleType represents the type of subtitle content.
@@ -283,13 +284,13 @@ func parseSubtitle(sub unsafe.Pointer) *Subtitle {
 			result.Type = SubtitleTypeText
 			textPtr := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(rectPtr) + rectLayout.Text))
 			if textPtr != nil {
-				result.Text = goString(textPtr)
+				result.Text = cstr.String(textPtr, 4096)
 			}
 		case subtitleTypeASS:
 			result.Type = SubtitleTypeASS
 			assPtr := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(rectPtr) + rectLayout.ASS))
 			if assPtr != nil {
-				result.Text = goString(assPtr)
+				result.Text = cstr.String(assPtr, 4096)
 			}
 		case subtitleTypeBitmap:
 			result.Type = SubtitleTypeBitmap
@@ -335,28 +336,6 @@ func parseSubtitle(sub unsafe.Pointer) *Subtitle {
 	}
 
 	return result
-}
-
-// goString converts a C string to Go string.
-func goString(ptr unsafe.Pointer) string {
-	if ptr == nil {
-		return ""
-	}
-	var length int
-	for {
-		b := *(*byte)(unsafe.Pointer(uintptr(ptr) + uintptr(length)))
-		if b == 0 {
-			break
-		}
-		length++
-		if length > 4096 {
-			break
-		}
-	}
-	if length == 0 {
-		return ""
-	}
-	return string((*[4096]byte)(ptr)[:length:length])
 }
 
 // HasSubtitle returns true if the decoder has a subtitle stream.

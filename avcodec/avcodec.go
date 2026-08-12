@@ -10,6 +10,7 @@ import (
 
 	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/bindings"
+	"github.com/bstkhq/go-ffmpeg-ffi/internal/cstr"
 	"github.com/ebitengine/purego"
 )
 
@@ -399,24 +400,7 @@ func GetCodecName(codec Codec) string {
 	if namePtr == nil {
 		return ""
 	}
-	// Read null-terminated string
-	return goString(namePtr)
-}
-
-// goString converts a C string to a Go string.
-func goString(ptr unsafe.Pointer) string {
-	if ptr == nil {
-		return ""
-	}
-	var buf []byte
-	for i := 0; ; i++ {
-		b := *(*byte)(unsafe.Pointer(uintptr(ptr) + uintptr(i)))
-		if b == 0 {
-			break
-		}
-		buf = append(buf, b)
-	}
-	return string(buf)
+	return cstr.String(namePtr, 256)
 }
 
 // GetPacketPTS returns the presentation timestamp.

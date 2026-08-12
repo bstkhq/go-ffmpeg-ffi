@@ -6,6 +6,7 @@ import (
 	"sync"
 	"unsafe"
 
+	"github.com/bstkhq/go-ffmpeg-ffi/internal/cstr"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/shim"
 	"github.com/ebitengine/purego"
 )
@@ -128,25 +129,7 @@ func logCallbackTrampoline(_ purego.CDecl, _ uintptr, level int32, msg *byte) {
 		return
 	}
 
-	// Convert C string to Go string
-	goMsg := ""
-	if msg != nil {
-		// Find the length
-		ptr := unsafe.Pointer(msg)
-		for i := 0; ; i++ {
-			b := *(*byte)(unsafe.Pointer(uintptr(ptr) + uintptr(i)))
-			if b == 0 {
-				goMsg = string(unsafe.Slice(msg, i))
-				break
-			}
-			if i >= 4096 { // Safety limit
-				goMsg = string(unsafe.Slice(msg, i))
-				break
-			}
-		}
-	}
-
-	cb(LogLevel(level), goMsg)
+	cb(LogLevel(level), cstr.String(unsafe.Pointer(msg), 4096))
 }
 
 // IsLoggingAvailable returns true if logging functionality is available.
