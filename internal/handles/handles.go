@@ -11,6 +11,7 @@
 package handles
 
 import (
+	"runtime"
 	"sync"
 	"sync/atomic"
 )
@@ -20,6 +21,72 @@ var (
 	nextID   atomic.Uintptr
 	count    atomic.Int64
 )
+
+// Lease owns a registered handle without being retained by the registry.
+// Release should be called as soon as the native callback can no longer run.
+// If the owner is abandoned, a finalizer unregisters the handle as a best-effort
+// fallback; native resources must still be released explicitly by their owner.
+type Lease struct {
+	mu        sync.Mutex
+	id        uintptr
+	abandoned func()
+}
+
+// RegisterLease stores v and returns a separately owned registration lease.
+// abandoned is called by the finalizer, but not by an explicit Release. It must
+// not retain the Lease or the object that owns it.
+func RegisterLease(v any, abandoned func()) *Lease {
+	lease := &Lease{
+		id:        Register(v),
+		abandoned: abandoned,
+	}
+	runtime.SetFinalizer(lease, (*Lease).finalize)
+	return lease
+}
+
+// ID returns the handle ID stored in native callback state.
+func (l *Lease) ID() uintptr {
+	if l == nil {
+		return 0
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.id
+}
+
+// Release unregisters the handle without running the abandonment hook.
+// It is safe to call Release multiple times.
+func (l *Lease) Release() {
+	if l == nil {
+		return
+	}
+	runtime.SetFinalizer(l, nil)
+	id, _ := l.take()
+	Unregister(id)
+}
+
+func (l *Lease) finalize() {
+	id, abandoned := l.take()
+	Unregister(id)
+	if abandoned == nil {
+		return
+	}
+	// A cleanup hook must not be able to panic the runtime finalizer goroutine.
+	func() {
+		defer func() { _ = recover() }()
+		abandoned()
+	}()
+}
+
+func (l *Lease) take() (uintptr, func()) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	id := l.id
+	abandoned := l.abandoned
+	l.id = 0
+	l.abandoned = nil
+	return id, abandoned
+}
 
 // Register stores a Go object and returns a handle ID.
 // The handle can be safely stored in C memory (as uintptr or void*).

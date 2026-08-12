@@ -1,8 +1,10 @@
 package handles
 
 import (
+	"runtime"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestRegisterAndLookup(t *testing.T) {
@@ -190,4 +192,60 @@ func TestHandlesAreUnique(t *testing.T) {
 	for h := range handles {
 		Unregister(h)
 	}
+}
+
+func TestLeaseReleaseIsExplicitAndIdempotent(t *testing.T) {
+	baseline := Count()
+	abandoned := false
+	lease := RegisterLease("value", func() { abandoned = true })
+	id := lease.ID()
+
+	if got := Lookup(id); got != "value" {
+		t.Fatalf("Lookup(%d) = %v, want value", id, got)
+	}
+	lease.Release()
+	lease.Release()
+
+	if abandoned {
+		t.Fatal("explicit Release invoked the abandonment hook")
+	}
+	if got := Lookup(id); got != nil {
+		t.Fatalf("Lookup(%d) after Release = %v, want nil", id, got)
+	}
+	if got := Count(); got != baseline {
+		t.Fatalf("registered handles = %d, want baseline %d", got, baseline)
+	}
+}
+
+func TestLeaseFinalizerReleasesAbandonedRegistration(t *testing.T) {
+	baseline := Count()
+	abandoned := make(chan struct{})
+	id := registerAbandonedLease(abandoned)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for Lookup(id) != nil && time.Now().Before(deadline) {
+		runtime.GC()
+		runtime.Gosched()
+		time.Sleep(time.Millisecond)
+	}
+
+	if got := Lookup(id); got != nil {
+		Unregister(id)
+		t.Fatalf("Lookup(%d) after garbage collection = %v, want nil", id, got)
+	}
+	select {
+	case <-abandoned:
+	case <-time.After(time.Second):
+		t.Fatal("lease finalizer did not invoke the abandonment hook")
+	}
+	if got := Count(); got != baseline {
+		t.Fatalf("registered handles = %d, want baseline %d", got, baseline)
+	}
+}
+
+func registerAbandonedLease(abandoned chan<- struct{}) uintptr {
+	lease := RegisterLease("value", func() { close(abandoned) })
+	id := lease.ID()
+	runtime.KeepAlive(lease)
+	return id
 }
