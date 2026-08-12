@@ -1,4 +1,4 @@
-//go:build !ios && !android && (amd64 || arm64)
+//go:build !ios && (amd64 || arm64)
 
 // Package handles provides a thread-safe handle system for storing Go objects
 // that need to be referenced from C callbacks.
