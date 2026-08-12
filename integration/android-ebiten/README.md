@@ -17,6 +17,10 @@ The fixture displays four independent facts:
    signed 16-bit stereo PCM, and an Ebitengine audio player accepted and started
    the resulting stream.
 
+The video path also asserts stable EOF, performs a frame-accurate seek to one
+second, checks cancellation through `DecodeVideoContext`, and verifies that the
+decoder remains usable after that canceled operation.
+
 Until Android FFmpeg shared libraries are added to the APK, a red
 `FFmpeg load: FAILED` result is expected. Once they are packaged, the same APK
 must show a green `FFmpeg load: OK` result before decode tests are enabled.

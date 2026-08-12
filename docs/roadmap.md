@@ -225,9 +225,10 @@ Current branch evidence (12 August 2026): the API 33 x86-64 APK loads FFmpeg
 Ebitengine, software-decodes all 87 AAC frames, resamples them to 96,967 S16
 stereo samples at 48 kHz, and starts an Ebitengine audio player. The current
 host exposes neither `/dev/kvm` nor `/dev/dri`, so this run uses TCG and
-SwiftShader and is correctness evidence only. Seek, cancellation, explicit EOF
-assertions, clean shutdown, and resource-growth checks remain open before phase
-B is complete.
+SwiftShader and is correctness evidence only. Stable EOF, a frame-accurate seek
+to one second, cancellation, and successful decoder reuse after cancellation
+also pass. Android lifecycle shutdown and sustained resource-growth checks
+remain open before phase B is complete.
 
 ### Android phase C: Galaxy Tab A9+ qualification
 

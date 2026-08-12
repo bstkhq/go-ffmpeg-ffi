@@ -5,12 +5,15 @@ package mobile
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"image/color"
 	"log"
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 
 	ffgo "github.com/bstkhq/go-ffmpeg-ffi"
 	"github.com/bstkhq/go-ffmpeg-ffi-android-ebiten-test/internal/rgba"
@@ -93,7 +96,7 @@ func (g *probeGame) start(mediaPath string) {
 
 			g.setStatus(fmt.Sprintf(
 				"Ebitengine + go-ffmpeg-ffi Android probe\n"+
-					"FFmpeg load: OK | H.264 decode: OK\n"+
+					"FFmpeg load: OK | H.264 decode: OK | seek/EOF/cancel: OK\n"+
 					"Video: %dx%d, %d frames -> RGBA -> Ebitengine\n"+
 					"Decoding AAC fixture...",
 				width, height, frames,
@@ -103,7 +106,7 @@ func (g *probeGame) start(mediaPath string) {
 			if audioErr != nil {
 				status := fmt.Sprintf(
 					"Ebitengine + go-ffmpeg-ffi Android probe\n"+
-						"FFmpeg load: OK | H.264 decode: OK\n"+
+						"FFmpeg load: OK | H.264 decode: OK | seek/EOF/cancel: OK\n"+
 						"Video: %dx%d, %d frames -> RGBA -> Ebitengine\n"+
 						"AAC decode/resample/playback: FAILED\n%s",
 					width, height, frames, audioErr,
@@ -115,7 +118,7 @@ func (g *probeGame) start(mediaPath string) {
 
 			status := fmt.Sprintf(
 				"Ebitengine + go-ffmpeg-ffi Android probe\n"+
-					"FFmpeg load: OK | H.264 decode: OK | AAC audio: OK\n"+
+					"FFmpeg/H.264/AAC: OK | seek/EOF/cancel: OK\n"+
 					"Video: %dx%d, %d frames -> RGBA -> Ebitengine\n"+
 					"Audio: %d frames, %d samples -> S16 stereo 48 kHz -> Ebitengine",
 				width, height, frames, audioFrames, audioSamples,
@@ -131,7 +134,11 @@ func (g *probeGame) decodeAndPlayAudio(mediaPath string) (frames, samples int, e
 	if err != nil {
 		return 0, 0, fmt.Errorf("open media fixture: %w", err)
 	}
-	defer func() { _ = decoder.Close() }()
+	defer func() {
+		if closeErr := decoder.Close(); err == nil && closeErr != nil {
+			err = fmt.Errorf("close audio decoder: %w", closeErr)
+		}
+	}()
 
 	stream := decoder.AudioStream()
 	if stream == nil {
@@ -145,7 +152,9 @@ func (g *probeGame) decodeAndPlayAudio(mediaPath string) (frames, samples int, e
 	var resampler *ffgo.Resampler
 	defer func() {
 		if resampler != nil {
-			_ = resampler.Close()
+			if closeErr := resampler.Close(); err == nil && closeErr != nil {
+				err = fmt.Errorf("close audio resampler: %w", closeErr)
+			}
 		}
 	}()
 
@@ -250,7 +259,11 @@ func (g *probeGame) decodeVideo(mediaPath string) (frames, width, height int, er
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("open media fixture: %w", err)
 	}
-	defer func() { _ = decoder.Close() }()
+	defer func() {
+		if closeErr := decoder.Close(); err == nil && closeErr != nil {
+			err = fmt.Errorf("close video decoder: %w", closeErr)
+		}
+	}()
 
 	stream := decoder.VideoStream()
 	if stream == nil {
@@ -263,7 +276,9 @@ func (g *probeGame) decodeVideo(mediaPath string) (frames, width, height int, er
 	var scaler *ffgo.Scaler
 	defer func() {
 		if scaler != nil {
-			_ = scaler.Close()
+			if closeErr := scaler.Close(); err == nil && closeErr != nil {
+				err = fmt.Errorf("close RGBA scaler: %w", closeErr)
+			}
 		}
 	}()
 
@@ -301,6 +316,57 @@ func (g *probeGame) decodeVideo(mediaPath string) (frames, width, height int, er
 	if frames == 0 {
 		return 0, width, height, fmt.Errorf("decoder produced no video frames")
 	}
+
+	// EOF must remain stable until a seek resets the decoder state.
+	eofFrame, eofErr := decoder.DecodeVideo()
+	if eofErr != nil {
+		return frames, width, height, fmt.Errorf("repeat video EOF: %w", eofErr)
+	}
+	if !eofFrame.IsNil() {
+		return frames, width, height, fmt.Errorf("decoder produced a frame after EOF")
+	}
+
+	// Seek to one second, publish the target frame, and prove that a canceled
+	// operation neither advances nor poisons the decoder.
+	if seekErr := decoder.SeekPrecise(time.Second); seekErr != nil {
+		return frames, width, height, fmt.Errorf("seek video to one second: %w", seekErr)
+	}
+	seekFrame, seekErr := decoder.DecodeVideo()
+	if seekErr != nil {
+		return frames, width, height, fmt.Errorf("decode frame after seek: %w", seekErr)
+	}
+	if seekFrame.IsNil() {
+		return frames, width, height, fmt.Errorf("decoder produced no frame after seek")
+	}
+	timeBase := stream.TimeBase
+	if timeBase.Num <= 0 || timeBase.Den <= 0 {
+		return frames, width, height, fmt.Errorf("video stream has invalid time base %d/%d", timeBase.Num, timeBase.Den)
+	}
+	targetPTS := int64(timeBase.Den) / int64(timeBase.Num)
+	if pts := ffgo.GetFrameInfo(seekFrame).PTS; pts < targetPTS {
+		return frames, width, height, fmt.Errorf("seek frame PTS is %d, want at least %d", pts, targetPTS)
+	}
+	seekRGBA, scaleErr := scaler.Scale(seekFrame)
+	if scaleErr != nil {
+		return frames, width, height, fmt.Errorf("scale seek frame: %w", scaleErr)
+	}
+	if publishErr := g.publishFrame(seekRGBA, width, height); publishErr != nil {
+		return frames, width, height, fmt.Errorf("publish seek frame: %w", publishErr)
+	}
+
+	cancelCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, cancelErr := decoder.DecodeVideoContext(cancelCtx); !errors.Is(cancelErr, context.Canceled) {
+		return frames, width, height, fmt.Errorf("canceled decode returned %v, want context canceled", cancelErr)
+	}
+	resumeFrame, resumeErr := decoder.DecodeVideo()
+	if resumeErr != nil {
+		return frames, width, height, fmt.Errorf("resume decoder after cancellation: %w", resumeErr)
+	}
+	if resumeFrame.IsNil() {
+		return frames, width, height, fmt.Errorf("decoder did not resume after cancellation")
+	}
+	log.Printf("H.264 seek/EOF/cancellation checks passed: frames=%d seek_pts=%d", frames, ffgo.GetFrameInfo(seekFrame).PTS)
 	return frames, width, height, nil
 }
 
@@ -363,7 +429,7 @@ func (g *probeGame) Draw(screen *ebiten.Image) {
 	ebitenutil.DrawRect(screen, 0, 0, logicalWidth, 12, accent)
 
 	if g.videoImage != nil {
-		const top = 80
+		const top = 104
 		availableHeight := float64(logicalHeight - top)
 		scale := min(float64(logicalWidth)/float64(frameWidth), availableHeight/float64(frameHeight))
 		op := &ebiten.DrawImageOptions{}
