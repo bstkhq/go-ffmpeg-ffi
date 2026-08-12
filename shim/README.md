@@ -86,13 +86,11 @@ After building, the shim library needs to be discoverable. Options:
    export FFGO_SHIM_DIR=/path/to/ffgo/shim
    ```
 
-3. **Set library path**:
-   - Linux: `export LD_LIBRARY_PATH=/path/to/ffgo/shim:$LD_LIBRARY_PATH`
-   - macOS: `export DYLD_LIBRARY_PATH=/path/to/ffgo/shim:$DYLD_LIBRARY_PATH`
-   - Windows: Add to `PATH`
-
-4. **Copy to application directory**:
+3. **Copy to application directory**:
    - Place the shim library in the same directory as your Go executable
+
+`LD_LIBRARY_PATH`, `DYLD_LIBRARY_PATH`, and `PATH` may still be needed for the
+shim's FFmpeg dependencies, but they are not searched for the shim itself.
 
 ## Pre-built Shims
 
@@ -108,25 +106,26 @@ prebuilt/
 ```
 
 Pre-built shims may be included in releases or you can build them yourself.
+Set `FFGO_SHIM_DIR` to the matching platform directory, install the shim, or
+copy it beside the application executable.
 
 ## Search Paths
 
 The shim library is searched in the following order:
 
 1. `FFGO_SHIM_DIR` environment variable
-2. `LD_LIBRARY_PATH` / `DYLD_LIBRARY_PATH` / `PATH`
-3. Standard library paths (`/usr/local/lib`, `/usr/lib`, etc.)
-4. Executable directory
-5. Module's `shim/prebuilt/<os>-<arch>/` directory
-6. Module's `shim/` directory
-7. Current working directory
+2. Standard library paths (`/usr/local/lib`, `/usr/lib`, etc.)
+3. Executable directory
+
+The current working directory and paths embedded from the build machine are
+deliberately excluded.
 
 ## Troubleshooting
 
 ### Checking Shim Status
 
 ```go
-import "github.com/obinnaokechukwu/ffgo"
+import "github.com/bstkhq/go-ffmpeg-ffi"
 
 func main() {
     // Initialize ffgo (loads FFmpeg and shim if available)
