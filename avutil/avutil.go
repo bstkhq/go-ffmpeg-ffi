@@ -6,12 +6,19 @@
 package avutil
 
 import (
+	"sync"
 	"unsafe"
 
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/bindings"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/cstr"
 	"github.com/ebitengine/purego"
 )
+
+const errorStringBufferSize = 256
+
+var errorStringBuffers = sync.Pool{
+	New: func() any { return new([errorStringBufferSize]byte) },
+}
 
 // Frame is an opaque FFmpeg AVFrame pointer.
 type Frame = unsafe.Pointer
@@ -564,8 +571,10 @@ func ErrorString(errnum int32) string {
 		return "unknown error (FFmpeg not loaded)"
 	}
 
-	bufArr := new([256]byte)
-	avStrerror(errnum, &bufArr[0], 256)
+	bufArr := errorStringBuffers.Get().(*[errorStringBufferSize]byte)
+	defer errorStringBuffers.Put(bufArr)
+	clear(bufArr[:])
+	avStrerror(errnum, &bufArr[0], errorStringBufferSize)
 	buf := bufArr[:]
 
 	// Find null terminator
