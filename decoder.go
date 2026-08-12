@@ -402,6 +402,9 @@ func (d *Decoder) HasAudio() bool {
 
 // NumStreams returns the total number of streams.
 func (d *Decoder) NumStreams() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
 	if d.formatCtx == nil {
 		return 0
 	}
@@ -419,6 +422,12 @@ func (d *Decoder) Duration() time.Duration {
 
 // DurationMicroseconds returns the duration in microseconds (AV_TIME_BASE units).
 func (d *Decoder) DurationMicroseconds() int64 {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.durationMicrosecondsLocked()
+}
+
+func (d *Decoder) durationMicrosecondsLocked() int64 {
 	if d.formatCtx == nil {
 		return 0
 	}
@@ -433,6 +442,9 @@ func (d *Decoder) DurationTime() time.Duration {
 
 // BitRate returns the bit rate.
 func (d *Decoder) BitRate() int64 {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
 	if d.formatCtx == nil {
 		return 0
 	}

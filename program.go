@@ -23,7 +23,13 @@ type ProgramInfo struct {
 
 // Programs returns the programs present in the input, if any.
 func (d *Decoder) Programs() []ProgramInfo {
-	if d == nil || d.formatCtx == nil {
+	if d == nil {
+		return nil
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.formatCtx == nil {
 		return nil
 	}
 	n := avformat.GetNumPrograms(d.formatCtx)

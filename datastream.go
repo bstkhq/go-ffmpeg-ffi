@@ -17,7 +17,13 @@ func (d *Decoder) HasDataStream() bool {
 
 // DataStreams returns information about all data streams (AVMEDIA_TYPE_DATA).
 func (d *Decoder) DataStreams() []*StreamInfo {
-	if d == nil || d.formatCtx == nil {
+	if d == nil {
+		return nil
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.formatCtx == nil {
 		return nil
 	}
 	numStreams := avformat.GetNumStreams(d.formatCtx)

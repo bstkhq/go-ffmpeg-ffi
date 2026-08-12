@@ -263,7 +263,7 @@ func (d *Decoder) TotalFrames() int64 {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	if d.videoStreamIdx < 0 {
+	if d.formatCtx == nil || d.videoStreamIdx < 0 {
 		return 0
 	}
 
@@ -277,6 +277,6 @@ func (d *Decoder) TotalFrames() int64 {
 		return 0
 	}
 
-	durationUS := d.DurationMicroseconds()
+	durationUS := d.durationMicrosecondsLocked()
 	return durationUS * int64(fpsNum) / (int64(fpsDen) * 1000000)
 }
