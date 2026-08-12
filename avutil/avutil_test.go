@@ -4,6 +4,7 @@ package avutil
 
 import (
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/bindings"
@@ -18,7 +19,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func requireFFmpeg(t *testing.T) bool {
+func requireFFmpeg(t testing.TB) bool {
 	t.Helper()
 	if !ffmpegAvailable {
 		t.Log("FFmpeg not available")
@@ -212,5 +213,44 @@ func TestErrorString(t *testing.T) {
 	msg = ErrorString(-999999)
 	if msg == "" {
 		t.Error("ErrorString should return non-empty string for unknown error")
+	}
+}
+
+func TestErrorStringConcurrent(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+
+	const goroutines = 100
+	start := make(chan struct{})
+	errors := make(chan string, goroutines)
+
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for range goroutines {
+		go func() {
+			defer wg.Done()
+			<-start
+			if msg := ErrorString(AVERROR_EOF); msg == "" {
+				errors <- "ErrorString returned an empty string"
+			}
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+	close(errors)
+	for err := range errors {
+		t.Error(err)
+	}
+}
+
+func BenchmarkErrorString(b *testing.B) {
+	if !requireFFmpeg(b) {
+		return
+	}
+	b.ReportAllocs()
+	for range b.N {
+		_ = ErrorString(AVERROR_EOF)
 	}
 }
