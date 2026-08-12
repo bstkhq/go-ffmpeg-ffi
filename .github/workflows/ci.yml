@@ -27,6 +27,38 @@ jobs:
         env:
           CGO_ENABLED: "0"
 
+  # Compile the complete module and every test binary with the pinned Android
+  # NDK. Runtime and hardware-codec qualification are separate device gates.
+  android-compile:
+    runs-on: ubuntu-latest
+    name: Compile (Android API 33, ${{ matrix.arch }})
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, amd64]
+    env:
+      ANDROID_API: "33"
+      ANDROID_NDK_VERSION: "26.3.11579264"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Install pinned Android NDK
+        run: |
+          sdk_root="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          set +o pipefail
+          yes | "$sdk_root/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null
+          set -o pipefail
+          "$sdk_root/cmdline-tools/latest/bin/sdkmanager" "ndk;$ANDROID_NDK_VERSION"
+
+      - name: Compile packages and tests
+        run: ./scripts/verify-android-build.sh "${{ matrix.arch }}"
+
   # Test every supported FFmpeg release line on one pinned platform.
   test-with-ffmpeg-linux:
     runs-on: ubuntu-latest
