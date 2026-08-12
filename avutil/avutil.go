@@ -58,6 +58,7 @@ var (
 	avOptSet       func(obj uintptr, name, val string, searchFlags int32) int32
 	avOptSetInt    func(obj uintptr, name string, val int64, searchFlags int32) int32
 	avOptSetDouble func(obj uintptr, name string, val float64, searchFlags int32) int32
+	avOptGetInt    func(obj uintptr, name string, searchFlags int32, outVal *int64) int32
 
 	// Hardware context functions
 	avHWDeviceCtxCreate      func(deviceCtx *unsafe.Pointer, deviceType int32, device string, opts uintptr, flags int32) int32
@@ -123,6 +124,7 @@ func registerBindings() {
 	purego.RegisterLibFunc(&avOptSet, lib, "av_opt_set")
 	purego.RegisterLibFunc(&avOptSetInt, lib, "av_opt_set_int")
 	purego.RegisterLibFunc(&avOptSetDouble, lib, "av_opt_set_double")
+	purego.RegisterLibFunc(&avOptGetInt, lib, "av_opt_get_int")
 
 	// Hardware context functions
 	purego.RegisterLibFunc(&avHWDeviceCtxCreate, lib, "av_hwdevice_ctx_create")
@@ -219,6 +221,7 @@ var (
 	offsetData, offsetLinesize, offsetExtendedData uintptr
 	offsetWidth, offsetHeight, offsetNbSamples     uintptr
 	offsetFormat, offsetFrameFlags, offsetPts      uintptr
+	offsetLegacyKeyFrame                           uintptr
 	offsetSampleRate, offsetBuffer                 uintptr
 	offsetExtendedBuffer, offsetNbExtendedBuffer   uintptr
 	offsetChLayout, offsetChLayoutChannels         uintptr
@@ -234,6 +237,7 @@ func setFrameOffsets() {
 	offsetNbSamples = layout.NbSamples
 	offsetFormat = layout.Format
 	offsetFrameFlags = layout.Flags
+	offsetLegacyKeyFrame = layout.LegacyKeyFrame
 	offsetPts = layout.PTS
 	offsetSampleRate = layout.SampleRate
 	offsetBuffer = layout.Buffer
@@ -380,11 +384,16 @@ func FrameGetBuffer(frame Frame, align int32) int32 {
 	return avFrameGetBuffer(uintptr(frame), align)
 }
 
-// GetFrameKeyFrame returns 1 if this is a key frame, 0 otherwise. FFmpeg 8
-// removed AVFrame.key_frame, so all supported families use AV_FRAME_FLAG_KEY.
+// GetFrameKeyFrame returns 1 if this is a key frame, 0 otherwise.
 func GetFrameKeyFrame(frame Frame) int32 {
 	if frame == nil {
 		return 0
+	}
+	// AV_FRAME_FLAG_KEY was introduced in libavutil 58.7.100. FFmpeg 6.0
+	// only exposes and populates the legacy AVFrame.key_frame field.
+	const frameKeyFlagVersion = uint32(58<<16 | 7<<8 | 100)
+	if bindings.AVUtilVersion() < frameKeyFlagVersion && offsetLegacyKeyFrame != 0 {
+		return *(*int32)(unsafe.Pointer(uintptr(frame) + offsetLegacyKeyFrame))
 	}
 	if *(*int32)(unsafe.Pointer(uintptr(frame) + offsetFrameFlags))&(1<<1) != 0 {
 		return 1
@@ -640,6 +649,22 @@ func OptSetDouble(obj unsafe.Pointer, name string, val float64, searchFlags int3
 		return NewError(ret, "av_opt_set_double")
 	}
 	return nil
+}
+
+// OptGetInt reads an integer option from an AVOptions-enabled object.
+func OptGetInt(obj unsafe.Pointer, name string, searchFlags int32) (int64, error) {
+	if avOptGetInt == nil {
+		return 0, bindings.ErrNotLoaded
+	}
+	if obj == nil {
+		return 0, NewError(-22, "av_opt_get_int: nil object")
+	}
+	var value int64
+	ret := avOptGetInt(uintptr(obj), name, searchFlags, &value)
+	if ret < 0 {
+		return 0, NewError(ret, "av_opt_get_int")
+	}
+	return value, nil
 }
 
 // HWDeviceType represents a hardware accelerator type.

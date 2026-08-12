@@ -155,6 +155,12 @@ func TestDecoderDecodeVideo(t *testing.T) {
 		if !frame.IsNil() {
 			frameCount++
 			info := GetFrameInfo(frame)
+			if info.MediaType != MediaTypeVideo {
+				t.Fatalf("frame %d media type = %v, want video", frameCount, info.MediaType)
+			}
+			if frameCount == 1 && !info.KeyFrame {
+				t.Fatal("first decoded frame is not reported as a key frame")
+			}
 			t.Logf("Frame %d: %dx%d, format=%d, pts=%d",
 				frameCount, info.Width, info.Height, info.Format, info.PTS)
 		}
@@ -271,6 +277,23 @@ func TestFrameAlloc(t *testing.T) {
 
 	if frame.IsNil() {
 		t.Error("Frame should not be nil before free")
+	}
+}
+
+func TestGetFrameInfoClassifiesAudioFrame(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+	frame := FrameAlloc()
+	if frame.IsNil() {
+		t.Fatal("FrameAlloc returned nil")
+	}
+	defer func() { _ = FrameFree(&frame) }()
+
+	avutil.SetFrameSampleRate(frame.ptr, 48000)
+	avutil.SetFrameNbSamples(frame.ptr, 1024)
+	if got := GetFrameInfo(frame).MediaType; got != MediaTypeAudio {
+		t.Fatalf("audio frame media type = %v, want audio", got)
 	}
 }
 

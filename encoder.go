@@ -1003,6 +1003,11 @@ func applyVideoOptions(ctx unsafe.Pointer, cfg *VideoEncoderConfig) error {
 	}
 
 	// VBV buffer settings (for CBR/constrained VBR)
+	if cfg.MinBitrate > 0 {
+		if err := avutil.OptSetInt(ctx, "minrate", cfg.MinBitrate, avutil.AV_OPT_SEARCH_CHILDREN); err != nil {
+			_ = err
+		}
+	}
 	if cfg.MaxBitrate > 0 {
 		if err := avutil.OptSetInt(ctx, "maxrate", cfg.MaxBitrate, avutil.AV_OPT_SEARCH_CHILDREN); err != nil {
 			_ = err
@@ -1010,6 +1015,11 @@ func applyVideoOptions(ctx unsafe.Pointer, cfg *VideoEncoderConfig) error {
 	}
 	if cfg.BufferSize > 0 {
 		if err := avutil.OptSetInt(ctx, "bufsize", cfg.BufferSize, avutil.AV_OPT_SEARCH_CHILDREN); err != nil {
+			_ = err
+		}
+	}
+	if cfg.BFrameStrategy > 0 {
+		if err := avutil.OptSetInt(ctx, "b_strategy", int64(cfg.BFrameStrategy), avutil.AV_OPT_SEARCH_CHILDREN); err != nil {
 			_ = err
 		}
 	}
@@ -1031,8 +1041,7 @@ func applyVideoOptions(ctx unsafe.Pointer, cfg *VideoEncoderConfig) error {
 	// Custom codec options
 	for key, value := range cfg.CodecOptions {
 		if err := avutil.OptSet(ctx, key, value, avutil.AV_OPT_SEARCH_CHILDREN); err != nil {
-			// Don't fail on unknown options, just skip
-			_ = err
+			return fmt.Errorf("ffgo: set codec option %q: %w", key, err)
 		}
 	}
 

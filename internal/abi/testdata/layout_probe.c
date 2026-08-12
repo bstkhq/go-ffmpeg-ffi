@@ -24,6 +24,7 @@
 
 int main(void) {
     printf("libavutil=%d\n", LIBAVUTIL_VERSION_MAJOR);
+    printf("libavutil_version=%u\n", LIBAVUTIL_VERSION_INT);
     printf("libavcodec=%d\n", LIBAVCODEC_VERSION_MAJOR);
     printf("libavformat=%d\n", LIBAVFORMAT_VERSION_MAJOR);
     printf("libavfilter=%d\n", LIBAVFILTER_VERSION_MAJOR);
@@ -38,6 +39,9 @@ int main(void) {
     FIELD(AVFrame, height);
     FIELD(AVFrame, nb_samples);
     FIELD(AVFrame, format);
+#if LIBAVUTIL_VERSION_INT < AV_VERSION_INT(58, 7, 100)
+    FIELD(AVFrame, key_frame);
+#endif
     FIELD(AVFrame, flags);
     FIELD(AVFrame, pts);
     FIELD(AVFrame, sample_rate);
