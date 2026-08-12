@@ -44,6 +44,7 @@ type Decoder struct {
 	videoState       decoderCodecState
 	audioState       decoderCodecState
 	packetQueue      decoderPacketQueue
+	packetPool       decoderPacketPool
 	demuxEOF         bool
 	activeMedia      MediaType
 	prefetchedFrame  avutil.Frame
@@ -624,12 +625,12 @@ func (d *Decoder) decodePacketLocked(mediaType MediaType, packet *Packet) (Frame
 	if packet == nil || packet.ptr == nil {
 		state.requestFlush()
 	} else {
-		clone, err := cloneRawPacket(packet.ptr)
+		clone, err := d.clonePacketLocked(packet.ptr)
 		if err != nil {
 			return Frame{}, err
 		}
 		if err := state.enqueueOwned(clone); err != nil {
-			avcodec.PacketFree(&clone)
+			d.recyclePacketLocked(&clone)
 			return Frame{}, err
 		}
 	}
@@ -867,6 +868,7 @@ func (d *Decoder) Close() error {
 	}
 	d.closed = true
 	d.clearDecodeStateLocked()
+	d.clearPacketPoolLocked()
 
 	// Free frame
 	if d.frame != nil {

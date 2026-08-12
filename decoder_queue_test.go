@@ -77,3 +77,62 @@ func TestDecoderPacketQueuePreservesDemuxOrder(t *testing.T) {
 		t.Fatalf("queue length = %d, want 0", d.packetQueue.len())
 	}
 }
+
+func TestDecoderPacketPoolReusesReleasedPackets(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+
+	source := avcodec.PacketAlloc()
+	if source == nil {
+		t.Fatal("failed to allocate source packet")
+	}
+	defer avcodec.PacketFree(&source)
+
+	d := Decoder{}
+	t.Cleanup(func() { d.clearPacketPoolLocked() })
+
+	avcodec.SetPacketPTS(source, 10)
+	first, err := d.clonePacketLocked(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstAddress := first
+	d.recyclePacketLocked(&first)
+	if first != nil {
+		t.Fatal("recycled packet still has an owner")
+	}
+
+	avcodec.SetPacketPTS(source, 20)
+	second, err := d.clonePacketLocked(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second != firstAddress {
+		t.Fatal("packet allocation was not reused")
+	}
+	if pts := avcodec.GetPacketPTS(second); pts != 20 {
+		t.Fatalf("reused packet PTS = %d, want 20", pts)
+	}
+	d.recyclePacketLocked(&second)
+}
+
+func TestDecoderPacketPoolIsBounded(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+
+	d := Decoder{}
+	t.Cleanup(func() { d.clearPacketPoolLocked() })
+	for range decoderPacketPoolLimit + 1 {
+		packet := avcodec.PacketAlloc()
+		if packet == nil {
+			t.Fatal("failed to allocate packet")
+		}
+		d.recyclePacketLocked(&packet)
+	}
+
+	if count := d.packetPool.len(); count != decoderPacketPoolLimit {
+		t.Fatalf("cached packets = %d, want %d", count, decoderPacketPoolLimit)
+	}
+}
