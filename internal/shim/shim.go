@@ -32,6 +32,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"unsafe"
 
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/abi"
@@ -69,8 +70,10 @@ type VersionInfo struct {
 }
 
 var (
-	libShim     uintptr
-	loaded      bool
+	libShim uintptr
+	// loaded publishes libShim, versionInfo, and every registered function.
+	// Published bindings are immutable because the shim is never unloaded.
+	loaded      atomic.Bool
 	loadErr     error
 	loadMu      sync.Mutex
 	shimPath    string // Path where shim was found (for diagnostics)
@@ -152,7 +155,7 @@ func Load() error {
 	loadMu.Lock()
 	defer loadMu.Unlock()
 
-	if loaded {
+	if loaded.Load() {
 		return nil
 	}
 	if loadErr != nil {
@@ -197,15 +200,13 @@ func Load() error {
 	shimPath = path
 	versionInfo = info
 	registerBindings()
-	loaded = true
+	loaded.Store(true)
 	return nil
 }
 
 // IsLoaded returns true if the shim library was successfully loaded.
 func IsLoaded() bool {
-	loadMu.Lock()
-	defer loadMu.Unlock()
-	return loaded
+	return loaded.Load()
 }
 
 // Lib returns the shim library handle.
@@ -227,7 +228,7 @@ func Path() string {
 func Info() VersionInfo {
 	loadMu.Lock()
 	defer loadMu.Unlock()
-	if !loaded {
+	if !loaded.Load() {
 		return VersionInfo{}
 	}
 	return versionInfo
@@ -249,7 +250,7 @@ func SearchError() string {
 	if searchErr != "" {
 		return searchErr
 	}
-	if loaded {
+	if loaded.Load() {
 		return ""
 	}
 	return "shim search not yet performed"
@@ -261,7 +262,7 @@ func Status() string {
 	loadMu.Lock()
 	defer loadMu.Unlock()
 
-	if loaded {
+	if loaded.Load() {
 		return fmt.Sprintf(
 			"loaded from %s (shim API %d, FFmpeg %d)",
 			shimPath, versionInfo.API, versionInfo.FFmpegMajor,
@@ -476,7 +477,7 @@ func registerOptionalLibFunc(fptr any, handle uintptr, name string) {
 // SetLogCallback sets the FFmpeg log callback via the shim.
 // cb is a purego callback created with purego.NewCallback.
 func SetLogCallback(cb uintptr) error {
-	if !loaded {
+	if !loaded.Load() {
 		return fmt.Errorf("%w: SetLogCallback requires shim; %s", ErrShimNotLoaded, BuildInstructions())
 	}
 	if shimLogSetCallback == nil {
@@ -488,7 +489,7 @@ func SetLogCallback(cb uintptr) error {
 
 // SetLogLevel sets the FFmpeg log level via the shim.
 func SetLogLevel(level int32) error {
-	if !loaded {
+	if !loaded.Load() {
 		return fmt.Errorf("%w: SetLogLevel requires shim; %s", ErrShimNotLoaded, BuildInstructions())
 	}
 	if shimLogSetLevel == nil {
@@ -500,7 +501,7 @@ func SetLogLevel(level int32) error {
 
 // Log sends a pre-formatted message to FFmpeg's logger via the shim.
 func Log(avcl unsafe.Pointer, level int32, msg string) error {
-	if !loaded {
+	if !loaded.Load() {
 		return fmt.Errorf("%w: Log requires shim; %s", ErrShimNotLoaded, BuildInstructions())
 	}
 	if shimLog == nil {
@@ -513,7 +514,7 @@ func Log(avcl unsafe.Pointer, level int32, msg string) error {
 // NewChapter creates a new chapter in the format context via the shim.
 // Returns the AVChapter pointer or nil on failure.
 func NewChapter(ctx unsafe.Pointer, id int64, tbNum, tbDen int32, start, end int64, metadata unsafe.Pointer) (unsafe.Pointer, error) {
-	if !loaded {
+	if !loaded.Load() {
 		return nil, fmt.Errorf("%w: NewChapter requires shim", ErrShimNotLoaded)
 	}
 	if shimNewChapter == nil {
@@ -535,7 +536,7 @@ func NewChapter(ctx unsafe.Pointer, id int64, tbNum, tbDen int32, start, end int
 //
 // This requires a shim build that links against libavdevice (built with -DFFSHIM_HAVE_AVDEVICE=1).
 func AVDeviceListInputSources(formatName, deviceName string, avdictOpts unsafe.Pointer) (count int, names, descs unsafe.Pointer, err error) {
-	if !loaded {
+	if !loaded.Load() {
 		return 0, nil, nil, fmt.Errorf("%w: device listing requires shim", ErrShimNotLoaded)
 	}
 	if shimAVDeviceListInputSources == nil {
@@ -553,7 +554,7 @@ func AVDeviceListInputSources(formatName, deviceName string, avdictOpts unsafe.P
 
 // AVDeviceFreeStringArray frees a string array allocated by AVDeviceListInputSources.
 func AVDeviceFreeStringArray(arr unsafe.Pointer, count int) {
-	if !loaded || shimAVDeviceFreeStringArray == nil || arr == nil || count <= 0 {
+	if !loaded.Load() || shimAVDeviceFreeStringArray == nil || arr == nil || count <= 0 {
 		return
 	}
 	shimAVDeviceFreeStringArray(uintptr(arr), int32(count))
@@ -565,7 +566,7 @@ func AVDeviceFreeStringArray(arr unsafe.Pointer, count int) {
 // - color_primaries
 // - color_trc
 func AVFrameColorOffsets() (rangeOff, spaceOff, primariesOff, transferOff int32, err error) {
-	if !loaded {
+	if !loaded.Load() {
 		return 0, 0, 0, 0, fmt.Errorf("%w: AVFrameColorOffsets requires shim", ErrShimNotLoaded)
 	}
 	if shimAVFrameColorOffsets == nil {
@@ -583,7 +584,7 @@ func CodecParWidth(par unsafe.Pointer) (int32, error) {
 	if par == nil {
 		return 0, nil
 	}
-	if !loaded || shimCodecParWidth == nil {
+	if !loaded.Load() || shimCodecParWidth == nil {
 		return 0, ErrShimNotLoaded
 	}
 	return shimCodecParWidth(uintptr(par)), nil
@@ -593,7 +594,7 @@ func CodecParHeight(par unsafe.Pointer) (int32, error) {
 	if par == nil {
 		return 0, nil
 	}
-	if !loaded || shimCodecParHeight == nil {
+	if !loaded.Load() || shimCodecParHeight == nil {
 		return 0, ErrShimNotLoaded
 	}
 	return shimCodecParHeight(uintptr(par)), nil
@@ -603,7 +604,7 @@ func CodecParFormat(par unsafe.Pointer) (int32, error) {
 	if par == nil {
 		return -1, nil
 	}
-	if !loaded || shimCodecParFormat == nil {
+	if !loaded.Load() || shimCodecParFormat == nil {
 		return 0, ErrShimNotLoaded
 	}
 	return shimCodecParFormat(uintptr(par)), nil
@@ -613,7 +614,7 @@ func CodecParSampleRate(par unsafe.Pointer) (int32, error) {
 	if par == nil {
 		return 0, nil
 	}
-	if !loaded || shimCodecParSampleRate == nil {
+	if !loaded.Load() || shimCodecParSampleRate == nil {
 		return 0, ErrShimNotLoaded
 	}
 	return shimCodecParSampleRate(uintptr(par)), nil
@@ -623,7 +624,7 @@ func CodecParChannels(par unsafe.Pointer) (int32, error) {
 	if par == nil {
 		return 0, nil
 	}
-	if !loaded || shimCodecParChannels == nil {
+	if !loaded.Load() || shimCodecParChannels == nil {
 		return 0, ErrShimNotLoaded
 	}
 	return shimCodecParChannels(uintptr(par)), nil
@@ -633,7 +634,7 @@ func CodecCtxWidth(ctx unsafe.Pointer) (int32, error) {
 	if ctx == nil {
 		return 0, nil
 	}
-	if !loaded || shimCodecCtxWidth == nil {
+	if !loaded.Load() || shimCodecCtxWidth == nil {
 		return 0, ErrShimNotLoaded
 	}
 	return shimCodecCtxWidth(uintptr(ctx)), nil
@@ -643,7 +644,7 @@ func CodecCtxSetWidth(ctx unsafe.Pointer, width int32) error {
 	if ctx == nil {
 		return nil
 	}
-	if !loaded || shimCodecCtxSetWidth == nil {
+	if !loaded.Load() || shimCodecCtxSetWidth == nil {
 		return ErrShimNotLoaded
 	}
 	shimCodecCtxSetWidth(uintptr(ctx), width)
@@ -654,7 +655,7 @@ func CodecCtxHeight(ctx unsafe.Pointer) (int32, error) {
 	if ctx == nil {
 		return 0, nil
 	}
-	if !loaded || shimCodecCtxHeight == nil {
+	if !loaded.Load() || shimCodecCtxHeight == nil {
 		return 0, ErrShimNotLoaded
 	}
 	return shimCodecCtxHeight(uintptr(ctx)), nil
@@ -664,7 +665,7 @@ func CodecCtxSetHeight(ctx unsafe.Pointer, height int32) error {
 	if ctx == nil {
 		return nil
 	}
-	if !loaded || shimCodecCtxSetHeight == nil {
+	if !loaded.Load() || shimCodecCtxSetHeight == nil {
 		return ErrShimNotLoaded
 	}
 	shimCodecCtxSetHeight(uintptr(ctx), height)
@@ -675,7 +676,7 @@ func CodecCtxPixFmt(ctx unsafe.Pointer) (int32, error) {
 	if ctx == nil {
 		return -1, nil
 	}
-	if !loaded || shimCodecCtxPixFmt == nil {
+	if !loaded.Load() || shimCodecCtxPixFmt == nil {
 		return 0, ErrShimNotLoaded
 	}
 	return shimCodecCtxPixFmt(uintptr(ctx)), nil
@@ -685,7 +686,7 @@ func CodecCtxSetPixFmt(ctx unsafe.Pointer, pixFmt int32) error {
 	if ctx == nil {
 		return nil
 	}
-	if !loaded || shimCodecCtxSetPixFmt == nil {
+	if !loaded.Load() || shimCodecCtxSetPixFmt == nil {
 		return ErrShimNotLoaded
 	}
 	shimCodecCtxSetPixFmt(uintptr(ctx), pixFmt)
@@ -696,7 +697,7 @@ func CodecCtxSampleFmt(ctx unsafe.Pointer) (int32, error) {
 	if ctx == nil {
 		return -1, nil
 	}
-	if !loaded || shimCodecCtxSampleFmt == nil {
+	if !loaded.Load() || shimCodecCtxSampleFmt == nil {
 		return 0, ErrShimNotLoaded
 	}
 	return shimCodecCtxSampleFmt(uintptr(ctx)), nil
@@ -706,7 +707,7 @@ func CodecCtxSetSampleFmt(ctx unsafe.Pointer, sampleFmt int32) error {
 	if ctx == nil {
 		return nil
 	}
-	if !loaded || shimCodecCtxSetSampleFmt == nil {
+	if !loaded.Load() || shimCodecCtxSetSampleFmt == nil {
 		return ErrShimNotLoaded
 	}
 	shimCodecCtxSetSampleFmt(uintptr(ctx), sampleFmt)
@@ -717,7 +718,7 @@ func CodecCtxTimeBase(ctx unsafe.Pointer) (num, den int32, err error) {
 	if ctx == nil {
 		return 0, 0, nil
 	}
-	if !loaded || shimCodecCtxTimeBase == nil {
+	if !loaded.Load() || shimCodecCtxTimeBase == nil {
 		return 0, 0, ErrShimNotLoaded
 	}
 	shimCodecCtxTimeBase(uintptr(ctx), &num, &den)
@@ -728,7 +729,7 @@ func CodecCtxSetTimeBase(ctx unsafe.Pointer, num, den int32) error {
 	if ctx == nil {
 		return nil
 	}
-	if !loaded || shimCodecCtxSetTimeBase == nil {
+	if !loaded.Load() || shimCodecCtxSetTimeBase == nil {
 		return ErrShimNotLoaded
 	}
 	shimCodecCtxSetTimeBase(uintptr(ctx), num, den)
@@ -739,7 +740,7 @@ func CodecCtxSetChLayoutDefault(ctx unsafe.Pointer, nbChannels int32) error {
 	if ctx == nil {
 		return nil
 	}
-	if !loaded || shimCodecCtxSetChLayout == nil {
+	if !loaded.Load() || shimCodecCtxSetChLayout == nil {
 		return ErrShimNotLoaded
 	}
 	shimCodecCtxSetChLayout(uintptr(ctx), nbChannels)
@@ -750,7 +751,7 @@ func CodecCtxFramerate(ctx unsafe.Pointer) (num, den int32, err error) {
 	if ctx == nil {
 		return 0, 0, nil
 	}
-	if !loaded || shimCodecCtxFramerate == nil {
+	if !loaded.Load() || shimCodecCtxFramerate == nil {
 		return 0, 0, ErrShimNotLoaded
 	}
 	shimCodecCtxFramerate(uintptr(ctx), &num, &den)
@@ -761,7 +762,7 @@ func CodecCtxSetFramerate(ctx unsafe.Pointer, num, den int32) error {
 	if ctx == nil {
 		return nil
 	}
-	if !loaded || shimCodecCtxSetFramerate == nil {
+	if !loaded.Load() || shimCodecCtxSetFramerate == nil {
 		return ErrShimNotLoaded
 	}
 	shimCodecCtxSetFramerate(uintptr(ctx), num, den)
@@ -772,7 +773,7 @@ func CodecCtxHWDeviceCtx(ctx unsafe.Pointer) (unsafe.Pointer, error) {
 	if ctx == nil {
 		return nil, nil
 	}
-	if !loaded || shimCodecCtxHWDeviceCtx == nil {
+	if !loaded.Load() || shimCodecCtxHWDeviceCtx == nil {
 		return nil, ErrShimNotLoaded
 	}
 	return unsafe.Pointer(shimCodecCtxHWDeviceCtx(uintptr(ctx))), nil
@@ -782,7 +783,7 @@ func CodecCtxSetHWDeviceCtx(ctx unsafe.Pointer, ref unsafe.Pointer) error {
 	if ctx == nil {
 		return nil
 	}
-	if !loaded || shimCodecCtxSetHWDevice == nil {
+	if !loaded.Load() || shimCodecCtxSetHWDevice == nil {
 		return ErrShimNotLoaded
 	}
 	shimCodecCtxSetHWDevice(uintptr(ctx), uintptr(ref))
@@ -793,7 +794,7 @@ func CodecCtxHWFramesCtx(ctx unsafe.Pointer) (unsafe.Pointer, error) {
 	if ctx == nil {
 		return nil, nil
 	}
-	if !loaded || shimCodecCtxHWFramesCtx == nil {
+	if !loaded.Load() || shimCodecCtxHWFramesCtx == nil {
 		return nil, ErrShimNotLoaded
 	}
 	return unsafe.Pointer(shimCodecCtxHWFramesCtx(uintptr(ctx))), nil
@@ -803,7 +804,7 @@ func CodecCtxSetHWFramesCtx(ctx unsafe.Pointer, ref unsafe.Pointer) error {
 	if ctx == nil {
 		return nil
 	}
-	if !loaded || shimCodecCtxSetHWFrames == nil {
+	if !loaded.Load() || shimCodecCtxSetHWFrames == nil {
 		return ErrShimNotLoaded
 	}
 	shimCodecCtxSetHWFrames(uintptr(ctx), uintptr(ref))
@@ -814,7 +815,7 @@ func FormatCtxDuration(ctx unsafe.Pointer) (int64, error) {
 	if ctx == nil {
 		return 0, nil
 	}
-	if !loaded || shimFormatCtxDuration == nil {
+	if !loaded.Load() || shimFormatCtxDuration == nil {
 		return 0, ErrShimNotLoaded
 	}
 	return shimFormatCtxDuration(uintptr(ctx)), nil
@@ -824,7 +825,7 @@ func FormatCtxBitRate(ctx unsafe.Pointer) (int64, error) {
 	if ctx == nil {
 		return 0, nil
 	}
-	if !loaded || shimFormatCtxBitRate == nil {
+	if !loaded.Load() || shimFormatCtxBitRate == nil {
 		return 0, ErrShimNotLoaded
 	}
 	return shimFormatCtxBitRate(uintptr(ctx)), nil
@@ -834,7 +835,7 @@ func FormatCtxNbChapters(ctx unsafe.Pointer) (int, error) {
 	if ctx == nil {
 		return 0, nil
 	}
-	if !loaded || shimFormatCtxNbChapters == nil {
+	if !loaded.Load() || shimFormatCtxNbChapters == nil {
 		return 0, ErrShimNotLoaded
 	}
 	return int(shimFormatCtxNbChapters(uintptr(ctx))), nil
@@ -844,7 +845,7 @@ func FormatCtxChapter(ctx unsafe.Pointer, index int) (unsafe.Pointer, error) {
 	if ctx == nil {
 		return nil, nil
 	}
-	if !loaded || shimFormatCtxChapter == nil {
+	if !loaded.Load() || shimFormatCtxChapter == nil {
 		return nil, ErrShimNotLoaded
 	}
 	return unsafe.Pointer(shimFormatCtxChapter(uintptr(ctx), int32(index))), nil
@@ -854,7 +855,7 @@ func FormatCtxNbPrograms(ctx unsafe.Pointer) (int, error) {
 	if ctx == nil {
 		return 0, nil
 	}
-	if !loaded || shimFormatCtxNbPrograms == nil {
+	if !loaded.Load() || shimFormatCtxNbPrograms == nil {
 		return 0, ErrShimNotLoaded
 	}
 	return int(shimFormatCtxNbPrograms(uintptr(ctx))), nil
@@ -864,7 +865,7 @@ func FormatCtxProgram(ctx unsafe.Pointer, index int) (unsafe.Pointer, error) {
 	if ctx == nil {
 		return nil, nil
 	}
-	if !loaded || shimFormatCtxProgram == nil {
+	if !loaded.Load() || shimFormatCtxProgram == nil {
 		return nil, ErrShimNotLoaded
 	}
 	return unsafe.Pointer(shimFormatCtxProgram(uintptr(ctx), int32(index))), nil
@@ -874,7 +875,7 @@ func ChapterID(ch unsafe.Pointer) (int64, error) {
 	if ch == nil {
 		return 0, nil
 	}
-	if !loaded || shimChapterID == nil {
+	if !loaded.Load() || shimChapterID == nil {
 		return 0, ErrShimNotLoaded
 	}
 	return shimChapterID(uintptr(ch)), nil
@@ -884,7 +885,7 @@ func ChapterTimeBase(ch unsafe.Pointer) (num, den int32, err error) {
 	if ch == nil {
 		return 0, 1, nil
 	}
-	if !loaded || shimChapterTimeBase == nil {
+	if !loaded.Load() || shimChapterTimeBase == nil {
 		return 0, 0, ErrShimNotLoaded
 	}
 	shimChapterTimeBase(uintptr(ch), &num, &den)
@@ -895,7 +896,7 @@ func ChapterStart(ch unsafe.Pointer) (int64, error) {
 	if ch == nil {
 		return 0, nil
 	}
-	if !loaded || shimChapterStart == nil {
+	if !loaded.Load() || shimChapterStart == nil {
 		return 0, ErrShimNotLoaded
 	}
 	return shimChapterStart(uintptr(ch)), nil
@@ -905,7 +906,7 @@ func ChapterEnd(ch unsafe.Pointer) (int64, error) {
 	if ch == nil {
 		return 0, nil
 	}
-	if !loaded || shimChapterEnd == nil {
+	if !loaded.Load() || shimChapterEnd == nil {
 		return 0, ErrShimNotLoaded
 	}
 	return shimChapterEnd(uintptr(ch)), nil
@@ -915,7 +916,7 @@ func ChapterMetadata(ch unsafe.Pointer) (unsafe.Pointer, error) {
 	if ch == nil {
 		return nil, nil
 	}
-	if !loaded || shimChapterMetadata == nil {
+	if !loaded.Load() || shimChapterMetadata == nil {
 		return nil, ErrShimNotLoaded
 	}
 	return unsafe.Pointer(shimChapterMetadata(uintptr(ch))), nil
@@ -925,7 +926,7 @@ func ProgramID(p unsafe.Pointer) (int32, error) {
 	if p == nil {
 		return 0, nil
 	}
-	if !loaded || shimProgramID == nil {
+	if !loaded.Load() || shimProgramID == nil {
 		return 0, ErrShimNotLoaded
 	}
 	return shimProgramID(uintptr(p)), nil
@@ -935,7 +936,7 @@ func ProgramNbStreamIndexes(p unsafe.Pointer) (int, error) {
 	if p == nil {
 		return 0, nil
 	}
-	if !loaded || shimProgramNbStreamIdx == nil {
+	if !loaded.Load() || shimProgramNbStreamIdx == nil {
 		return 0, ErrShimNotLoaded
 	}
 	return int(shimProgramNbStreamIdx(uintptr(p))), nil
@@ -945,7 +946,7 @@ func ProgramStreamIndexPtr(p unsafe.Pointer) (unsafe.Pointer, error) {
 	if p == nil {
 		return nil, nil
 	}
-	if !loaded || shimProgramStreamIndexPtr == nil {
+	if !loaded.Load() || shimProgramStreamIndexPtr == nil {
 		return nil, ErrShimNotLoaded
 	}
 	return unsafe.Pointer(shimProgramStreamIndexPtr(uintptr(p))), nil
@@ -955,7 +956,7 @@ func ProgramMetadata(p unsafe.Pointer) (unsafe.Pointer, error) {
 	if p == nil {
 		return nil, nil
 	}
-	if !loaded || shimProgramMetadata == nil {
+	if !loaded.Load() || shimProgramMetadata == nil {
 		return nil, ErrShimNotLoaded
 	}
 	return unsafe.Pointer(shimProgramMetadata(uintptr(p))), nil
