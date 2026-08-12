@@ -61,16 +61,25 @@ type IOCallbacks struct {
 
 // CustomIOContext wraps an AVIOContext with custom callbacks.
 type CustomIOContext struct {
-	mu             sync.Mutex
+	mu sync.Mutex
+	*customIOState
+	avioCtx avformat.IOContext
+	handle  uintptr
+	lease   *handles.Lease
+	closed  bool
+}
+
+// customIOState contains only the Go state needed by native callbacks. The
+// handle registry retains this state rather than its owning CustomIOContext,
+// allowing an abandoned registration lease to be finalized.
+type customIOState struct {
 	errorMu        sync.Mutex
 	contextMu      sync.RWMutex
 	callbackMu     sync.Mutex
 	callbackCond   *sync.Cond
 	activeCallback int
 	callbacksDone  bool
-	avioCtx        avformat.IOContext
 	callbacks      *IOCallbacks
-	handle         uintptr
 	callbackErr    error
 	pendingReadErr error
 	lifetimeCtx    context.Context
@@ -78,7 +87,6 @@ type CustomIOContext struct {
 	operationCtx   context.Context
 	operationEnd   context.CancelFunc
 	stopLifetime   func() bool
-	closed         bool
 }
 
 // Default buffer size for custom I/O (32KB)
@@ -140,59 +148,59 @@ func newIOCallbackPointers(newCallback func(any) uintptr) (callbacks ioCallbackP
 	return callbacks, nil
 }
 
-func lookupCustomIOContext(opaque uintptr) *CustomIOContext {
-	ctx, _ := handles.Lookup(opaque).(*CustomIOContext)
-	return ctx
+func lookupCustomIOState(opaque uintptr) *customIOState {
+	state, _ := handles.Lookup(opaque).(*customIOState)
+	return state
 }
 
 func customIOReadCallback(_ purego.CDecl, opaque uintptr, buf *byte, bufSize int32) (result int32) {
 	result = avutil.AVERROR_EXTERNAL
-	ctx := lookupCustomIOContext(opaque)
-	if ctx == nil {
+	state := lookupCustomIOState(opaque)
+	if state == nil {
 		return result
 	}
 	defer func() {
 		if value := recover(); value != nil {
-			ctx.recordCallbackError("read", callbackPanicError(value))
+			state.recordCallbackError("read", callbackPanicError(value))
 			result = avutil.AVERROR_EXTERNAL
 		}
 	}()
-	if !ctx.beginCallback() {
+	if !state.beginCallback() {
 		return result
 	}
-	defer ctx.endCallback()
+	defer state.endCallback()
 
-	if err := ctx.takePendingReadError(); err != nil {
+	if err := state.takePendingReadError(); err != nil {
 		if errors.Is(err, io.EOF) {
 			return avutil.AVERROR_EOF
 		}
-		ctx.recordCallbackError("read", err)
+		state.recordCallbackError("read", err)
 		return result
 	}
 	if buf == nil || bufSize <= 0 {
-		ctx.recordCallbackError("read", errors.New("invalid destination buffer"))
+		state.recordCallbackError("read", errors.New("invalid destination buffer"))
 		return result
 	}
-	if ctx.callbacks == nil || (ctx.callbacks.ReadContext == nil && ctx.callbacks.Read == nil) {
-		ctx.recordCallbackError("read", errors.New("callback is not configured"))
+	if state.callbacks == nil || (state.callbacks.ReadContext == nil && state.callbacks.Read == nil) {
+		state.recordCallbackError("read", errors.New("callback is not configured"))
 		return result
 	}
 
 	goBuffer := unsafe.Slice(buf, int(bufSize))
 	var n int
 	var err error
-	if ctx.callbacks.ReadContext != nil {
-		n, err = ctx.callbacks.ReadContext(ctx.callbackContext(), goBuffer)
+	if state.callbacks.ReadContext != nil {
+		n, err = state.callbacks.ReadContext(state.callbackContext(), goBuffer)
 	} else {
-		n, err = ctx.callbacks.Read(goBuffer)
+		n, err = state.callbacks.Read(goBuffer)
 	}
 	if n < 0 || n > int(bufSize) {
-		ctx.recordCallbackError("read", errors.Join(errors.New("invalid byte count"), err))
+		state.recordCallbackError("read", errors.Join(errors.New("invalid byte count"), err))
 		return result
 	}
 	if n > 0 {
 		if err != nil {
-			ctx.setPendingReadError(err)
+			state.setPendingReadError(err)
 		}
 		return int32(n)
 	}
@@ -202,56 +210,56 @@ func customIOReadCallback(_ purego.CDecl, opaque uintptr, buf *byte, bufSize int
 	if err == nil {
 		err = io.ErrNoProgress
 	}
-	ctx.recordCallbackError("read", err)
+	state.recordCallbackError("read", err)
 	return result
 }
 
 func customIOWriteCallback(_ purego.CDecl, opaque uintptr, buf *byte, bufSize int32) (result int32) {
 	result = avutil.AVERROR_EXTERNAL
-	ctx := lookupCustomIOContext(opaque)
-	if ctx == nil {
+	state := lookupCustomIOState(opaque)
+	if state == nil {
 		return result
 	}
 	defer func() {
 		if value := recover(); value != nil {
-			ctx.recordCallbackError("write", callbackPanicError(value))
+			state.recordCallbackError("write", callbackPanicError(value))
 			result = avutil.AVERROR_EXTERNAL
 		}
 	}()
-	if !ctx.beginCallback() {
+	if !state.beginCallback() {
 		return result
 	}
-	defer ctx.endCallback()
+	defer state.endCallback()
 
 	if buf == nil || bufSize <= 0 {
-		ctx.recordCallbackError("write", errors.New("invalid source buffer"))
+		state.recordCallbackError("write", errors.New("invalid source buffer"))
 		return result
 	}
-	if ctx.callbacks == nil || (ctx.callbacks.WriteContext == nil && ctx.callbacks.Write == nil) {
-		ctx.recordCallbackError("write", errors.New("callback is not configured"))
+	if state.callbacks == nil || (state.callbacks.WriteContext == nil && state.callbacks.Write == nil) {
+		state.recordCallbackError("write", errors.New("callback is not configured"))
 		return result
 	}
 
 	goBuffer := unsafe.Slice(buf, int(bufSize))
 	var n int
 	var err error
-	if ctx.callbacks.WriteContext != nil {
-		n, err = ctx.callbacks.WriteContext(ctx.callbackContext(), goBuffer)
+	if state.callbacks.WriteContext != nil {
+		n, err = state.callbacks.WriteContext(state.callbackContext(), goBuffer)
 	} else {
-		n, err = ctx.callbacks.Write(goBuffer)
+		n, err = state.callbacks.Write(goBuffer)
 	}
 	if n < 0 || n > int(bufSize) {
-		ctx.recordCallbackError("write", errors.Join(errors.New("invalid byte count"), err))
+		state.recordCallbackError("write", errors.Join(errors.New("invalid byte count"), err))
 		return result
 	}
 	if err != nil {
-		ctx.recordCallbackError("write", err)
+		state.recordCallbackError("write", err)
 		if n < int(bufSize) {
 			return result
 		}
 	}
 	if n != int(bufSize) {
-		ctx.recordCallbackError("write", io.ErrShortWrite)
+		state.recordCallbackError("write", io.ErrShortWrite)
 		return result
 	}
 	return int32(n)
@@ -259,43 +267,43 @@ func customIOWriteCallback(_ purego.CDecl, opaque uintptr, buf *byte, bufSize in
 
 func customIOSeekCallback(_ purego.CDecl, opaque uintptr, offset int64, whence int32) (result int64) {
 	result = int64(avutil.AVERROR_EXTERNAL)
-	ctx := lookupCustomIOContext(opaque)
-	if ctx == nil {
+	state := lookupCustomIOState(opaque)
+	if state == nil {
 		return result
 	}
 	defer func() {
 		if value := recover(); value != nil {
-			ctx.recordCallbackError("seek", callbackPanicError(value))
+			state.recordCallbackError("seek", callbackPanicError(value))
 			result = int64(avutil.AVERROR_EXTERNAL)
 		}
 	}()
-	if !ctx.beginCallback() {
+	if !state.beginCallback() {
 		return result
 	}
-	defer ctx.endCallback()
+	defer state.endCallback()
 
-	if ctx.callbacks == nil || (ctx.callbacks.SeekContext == nil && ctx.callbacks.Seek == nil) {
+	if state.callbacks == nil || (state.callbacks.SeekContext == nil && state.callbacks.Seek == nil) {
 		return -1
 	}
 	seek := func(offset int64, whence int) (int64, error) {
-		if ctx.callbacks.SeekContext != nil {
-			return ctx.callbacks.SeekContext(ctx.callbackContext(), offset, whence)
+		if state.callbacks.SeekContext != nil {
+			return state.callbacks.SeekContext(state.callbackContext(), offset, whence)
 		}
-		return ctx.callbacks.Seek(offset, whence)
+		return state.callbacks.Seek(offset, whence)
 	}
 	if whence&avSeekSize != 0 {
 		current, err := seek(0, io.SeekCurrent)
 		if err != nil {
-			ctx.recordCallbackError("seek", err)
+			state.recordCallbackError("seek", err)
 			return result
 		}
 		end, err := seek(0, io.SeekEnd)
 		if err != nil {
-			ctx.recordCallbackError("seek", err)
+			state.recordCallbackError("seek", err)
 			return result
 		}
 		if _, err := seek(current, io.SeekStart); err != nil {
-			ctx.recordCallbackError("seek", err)
+			state.recordCallbackError("seek", err)
 			return result
 		}
 		return end
@@ -303,7 +311,7 @@ func customIOSeekCallback(_ purego.CDecl, opaque uintptr, offset int64, whence i
 
 	newPosition, err := seek(offset, int(whence&^avSeekForce))
 	if err != nil {
-		ctx.recordCallbackError("seek", err)
+		state.recordCallbackError("seek", err)
 		return result
 	}
 	return newPosition
@@ -316,7 +324,7 @@ func callbackPanicError(value any) error {
 	return fmt.Errorf("panic: %v", value)
 }
 
-func (c *CustomIOContext) recordCallbackError(operation string, err error) {
+func (c *customIOState) recordCallbackError(operation string, err error) {
 	if err == nil {
 		return
 	}
@@ -327,13 +335,13 @@ func (c *CustomIOContext) recordCallbackError(operation string, err error) {
 	}
 }
 
-func (c *CustomIOContext) setPendingReadError(err error) {
+func (c *customIOState) setPendingReadError(err error) {
 	c.errorMu.Lock()
 	c.pendingReadErr = err
 	c.errorMu.Unlock()
 }
 
-func (c *CustomIOContext) takePendingReadError() error {
+func (c *customIOState) takePendingReadError() error {
 	c.errorMu.Lock()
 	defer c.errorMu.Unlock()
 	err := c.pendingReadErr
@@ -341,11 +349,11 @@ func (c *CustomIOContext) takePendingReadError() error {
 	return err
 }
 
-func (c *CustomIOContext) beginOperation() {
+func (c *customIOState) beginOperation() {
 	c.beginOperationContext(context.Background())
 }
 
-func (c *CustomIOContext) beginOperationContext(ctx context.Context) {
+func (c *customIOState) beginOperationContext(ctx context.Context) {
 	c.endOperation()
 	c.errorMu.Lock()
 	c.callbackErr = nil
@@ -363,7 +371,7 @@ func (c *CustomIOContext) beginOperationContext(ctx context.Context) {
 	c.contextMu.Unlock()
 }
 
-func (c *CustomIOContext) finishOperation(nativeErr error) error {
+func (c *customIOState) finishOperation(nativeErr error) error {
 	c.errorMu.Lock()
 	callbackErr := c.callbackErr
 	c.callbackErr = nil
@@ -372,7 +380,7 @@ func (c *CustomIOContext) finishOperation(nativeErr error) error {
 	return errors.Join(nativeErr, callbackErr)
 }
 
-func (c *CustomIOContext) callbackContext() context.Context {
+func (c *customIOState) callbackContext() context.Context {
 	c.contextMu.RLock()
 	ctx := c.operationCtx
 	if ctx == nil {
@@ -385,7 +393,7 @@ func (c *CustomIOContext) callbackContext() context.Context {
 	return context.Background()
 }
 
-func (c *CustomIOContext) endOperation() {
+func (c *customIOState) endOperation() {
 	c.contextMu.Lock()
 	operationEnd := c.operationEnd
 	stopLifetime := c.stopLifetime
@@ -401,7 +409,7 @@ func (c *CustomIOContext) endOperation() {
 	}
 }
 
-func (c *CustomIOContext) cancelPending() {
+func (c *customIOState) cancelPending() {
 	if c == nil {
 		return
 	}
@@ -413,7 +421,7 @@ func (c *CustomIOContext) cancelPending() {
 	}
 }
 
-func (c *CustomIOContext) resetCancellation() {
+func (c *customIOState) resetCancellation() {
 	lifetimeCtx, lifetimeCancel := context.WithCancel(context.Background())
 	c.contextMu.Lock()
 	previousCancel := c.lifetimeCancel
@@ -425,7 +433,7 @@ func (c *CustomIOContext) resetCancellation() {
 	}
 }
 
-func (c *CustomIOContext) beginCallback() bool {
+func (c *customIOState) beginCallback() bool {
 	c.callbackMu.Lock()
 	defer c.callbackMu.Unlock()
 	if c.callbacksDone {
@@ -435,7 +443,7 @@ func (c *CustomIOContext) beginCallback() bool {
 	return true
 }
 
-func (c *CustomIOContext) endCallback() {
+func (c *customIOState) endCallback() {
 	c.callbackMu.Lock()
 	c.activeCallback--
 	if c.activeCallback == 0 && c.callbackCond != nil {
@@ -444,7 +452,7 @@ func (c *CustomIOContext) endCallback() {
 	c.callbackMu.Unlock()
 }
 
-func (c *CustomIOContext) waitForCallbacks() {
+func (c *customIOState) waitForCallbacks() {
 	c.callbackMu.Lock()
 	c.callbacksDone = true
 	if c.callbackCond == nil {
@@ -454,6 +462,16 @@ func (c *CustomIOContext) waitForCallbacks() {
 		c.callbackCond.Wait()
 	}
 	c.callbackMu.Unlock()
+}
+
+// abandon prevents future callbacks and cancels cooperative callbacks without
+// waiting on user code from the runtime finalizer goroutine.
+func (c *customIOState) abandon() {
+	c.callbackMu.Lock()
+	c.callbacksDone = true
+	c.callbackMu.Unlock()
+	c.cancelPending()
+	c.endOperation()
 }
 
 func (d *Decoder) readInputPacketLocked(packet avcodec.Packet) error {
@@ -533,14 +551,18 @@ func NewCustomIOContextWithSize(callbacks *IOCallbacks, writable bool, bufferSiz
 	}
 
 	lifetimeCtx, lifetimeCancel := context.WithCancel(context.Background())
-	ctx := &CustomIOContext{
+	state := &customIOState{
 		callbacks:      callbacks,
 		lifetimeCtx:    lifetimeCtx,
 		lifetimeCancel: lifetimeCancel,
 	}
+	ctx := &CustomIOContext{
+		customIOState: state,
+	}
 
 	// Register handle for callback lookup
-	ctx.handle = handles.Register(ctx)
+	ctx.lease = handles.RegisterLease(state, state.abandon)
+	ctx.handle = ctx.lease.ID()
 
 	// Determine which callbacks to use
 	var readCb, writeCb, seekCb uintptr
@@ -567,7 +589,10 @@ func NewCustomIOContextWithSize(callbacks *IOCallbacks, writable bool, bufferSiz
 
 	if ctx.avioCtx == nil {
 		avutil.Free(buffer)
-		handles.Unregister(ctx.handle)
+		ctx.lease.Release()
+		ctx.lease = nil
+		ctx.handle = 0
+		state.cancelPending()
 		return nil, errors.New("ffgo: failed to create AVIOContext")
 	}
 
@@ -599,9 +624,10 @@ func (c *CustomIOContext) Close() error {
 	c.pendingReadErr = nil
 	c.errorMu.Unlock()
 
-	// Unregister handle
-	if c.handle != 0 {
-		handles.Unregister(c.handle)
+	// Release the callback registration after native callbacks have stopped.
+	if c.lease != nil {
+		c.lease.Release()
+		c.lease = nil
 		c.handle = 0
 	}
 

@@ -7,11 +7,13 @@ import (
 	"context"
 	"errors"
 	"io"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/bstkhq/go-ffmpeg-ffi/avcodec"
+	"github.com/bstkhq/go-ffmpeg-ffi/avformat"
 	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/handles"
 	"github.com/ebitengine/purego"
@@ -19,9 +21,11 @@ import (
 
 func registerTestCustomIO(t *testing.T, callbacks *IOCallbacks) *CustomIOContext {
 	t.Helper()
-	ctx := &CustomIOContext{callbacks: callbacks}
-	ctx.handle = handles.Register(ctx)
-	t.Cleanup(func() { handles.Unregister(ctx.handle) })
+	state := &customIOState{callbacks: callbacks}
+	ctx := &CustomIOContext{customIOState: state}
+	ctx.lease = handles.RegisterLease(state, state.abandon)
+	ctx.handle = ctx.lease.ID()
+	t.Cleanup(ctx.lease.Release)
 	return ctx
 }
 
@@ -309,8 +313,80 @@ func TestCustomIOCloseCancelsActiveCallback(t *testing.T) {
 	}
 }
 
+func TestCustomIOLeaseReleasesAbandonedHandle(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+	baseline := handles.Count()
+	handle, native := abandonCustomIOContext(t)
+	defer avformat.IOContextFree(&native)
+
+	waitForHandleRelease(t, handle)
+	if got := handles.Count(); got != baseline {
+		t.Fatalf("registered handles = %d, want baseline %d", got, baseline)
+	}
+}
+
+func TestCustomIOAbandonCancelsActiveCallback(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+	readStarted := make(chan struct{})
+	ctx, err := NewCustomIOContext(&IOCallbacks{
+		ReadContext: func(ctx context.Context, _ []byte) (int, error) {
+			close(readStarted)
+			<-ctx.Done()
+			return 0, ctx.Err()
+		},
+	}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx.beginOperation()
+	handle := ctx.handle
+	native := ctx.avioCtx
+	defer avformat.IOContextFree(&native)
+
+	callbackDone := make(chan int32, 1)
+	buffer := make([]byte, 8)
+	go func() {
+		callbackDone <- customIOReadCallback(purego.CDecl{}, handle, &buffer[0], int32(len(buffer)))
+	}()
+	select {
+	case <-readStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("read callback did not start")
+	}
+
+	runtime.KeepAlive(ctx)
+	ctx = nil
+	waitForHandleRelease(t, handle)
+	select {
+	case code := <-callbackDone:
+		if code != avutil.AVERROR_EXTERNAL {
+			t.Fatalf("callback returned %d, want %d", code, avutil.AVERROR_EXTERNAL)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("abandonment did not cancel the active callback")
+	}
+}
+
+func abandonCustomIOContext(t *testing.T) (uintptr, avformat.IOContext) {
+	t.Helper()
+	ctx, err := NewCustomIOContext(&IOCallbacks{
+		Read: func([]byte) (int, error) { return 0, io.EOF },
+	}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handle := ctx.handle
+	native := ctx.avioCtx
+	runtime.KeepAlive(ctx)
+	return handle, native
+}
+
 func TestCustomIOCancellationStateConcurrentAccess(t *testing.T) {
-	ctx := &CustomIOContext{}
+	ctx := &CustomIOContext{customIOState: &customIOState{}}
 	ctx.resetCancellation()
 
 	const iterations = 500
