@@ -22,9 +22,26 @@ func (d *Decoder) SeekPrecise(ts time.Duration) error {
 	if d.closed {
 		return errors.New("ffgo: decoder is closed")
 	}
+	if err := d.openVideoDecoderLocked(); err != nil {
+		return err
+	}
+
+	// Get video stream time base for conversion
+	stream := avformat.GetStream(d.formatCtx, d.videoStreamIdx)
+	if stream == nil {
+		return errors.New("ffgo: failed to get video stream")
+	}
+	tbNum, tbDen := avformat.GetStreamTimeBase(stream)
+	if tbNum <= 0 || tbDen <= 0 {
+		return errors.New("ffgo: invalid video stream time base")
+	}
+
+	// Convert target to stream time base
+	// targetTS is in microseconds (AV_TIME_BASE = 1000000)
+	targetTS := ts.Microseconds()
+	targetPTS := targetTS * int64(tbDen) / (int64(tbNum) * 1000000)
 
 	// Seek to keyframe before target
-	targetTS := ts.Microseconds()
 	if err := d.seekInputLocked(-1, targetTS, avformat.SeekFlagBackward); err != nil {
 		return err
 	}
@@ -38,30 +55,6 @@ func (d *Decoder) SeekPrecise(ts time.Duration) error {
 	}
 	d.clearDecodeStateLocked()
 
-	// If no video stream, we're done
-	if d.videoStreamIdx < 0 || !d.videoDecoderOpen {
-		return nil
-	}
-
-	// Get video stream time base for conversion
-	stream := avformat.GetStream(d.formatCtx, d.videoStreamIdx)
-	if stream == nil {
-		return nil
-	}
-	tbNum, tbDen := avformat.GetStreamTimeBase(stream)
-	if tbDen == 0 {
-		return nil
-	}
-
-	// Convert target to stream time base
-	// targetTS is in microseconds (AV_TIME_BASE = 1000000)
-	var targetPTS int64
-	if tbNum == 0 {
-		targetPTS = targetTS * int64(tbDen) / 1000000
-	} else {
-		targetPTS = targetTS * int64(tbDen) / (int64(tbNum) * 1000000)
-	}
-
 	// Decode frames until we reach or pass the target PTS.
 	for {
 		frame, err := d.nextFrameLocked(MediaTypeVideo)
@@ -69,9 +62,13 @@ func (d *Decoder) SeekPrecise(ts time.Duration) error {
 			return err
 		}
 		if frame.IsNil() {
-			return nil
+			return errors.New("ffgo: reached end of video before precise seek target")
 		}
-		if avutil.GetFramePTS(frame.ptr) >= targetPTS {
+		pts := avutil.GetFramePTS(frame.ptr)
+		if pts == avutil.NoPTSValue {
+			return errors.New("ffgo: precise seek requires frame timestamps")
+		}
+		if pts >= targetPTS {
 			return d.prefetchCurrentFrameLocked(MediaTypeVideo)
 		}
 	}

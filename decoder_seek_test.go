@@ -32,7 +32,7 @@ func TestDecoderSeekResetsEOFState(t *testing.T) {
 	}
 }
 
-func TestDecoderSeekPreciseReturnsTargetFrame(t *testing.T) {
+func TestDecoderSeekPreciseOpensDecoderAndReturnsTargetFrame(t *testing.T) {
 	if !requireFFmpeg(t) {
 		return
 	}
@@ -41,10 +41,6 @@ func TestDecoderSeekPreciseReturnsTargetFrame(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer decoder.Close()
-	if err := decoder.OpenVideoDecoder(); err != nil {
-		t.Fatal(err)
-	}
-
 	if err := decoder.SeekPrecise(time.Second); err != nil {
 		t.Fatal(err)
 	}

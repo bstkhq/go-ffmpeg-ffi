@@ -121,20 +121,33 @@ func FrameRateDetect(decoder *Decoder) (float64, error) {
 		return 0, err
 	}
 
-	const maxFrames = 90
+	return estimateFrameRateFromPTS(func() (int64, bool, error) {
+		f, err := decoder.DecodeVideo()
+		if err != nil {
+			return 0, false, err
+		}
+		if f.IsNil() {
+			return 0, false, nil
+		}
+		return avutil.GetFramePTS(f.ptr), true, nil
+	}, tb)
+}
+
+const frameRateDetectionSampleSize = 90
+
+func estimateFrameRateFromPTS(next func() (int64, bool, error), tb Rational) (float64, error) {
 	var firstPTS int64 = avutil.NoPTSValue
 	var lastPTS int64 = avutil.NoPTSValue
 	var count int
 
-	for count < maxFrames {
-		f, err := decoder.DecodeVideo()
+	for decoded := 0; decoded < frameRateDetectionSampleSize; decoded++ {
+		pts, ok, err := next()
 		if err != nil {
 			return 0, err
 		}
-		if f.IsNil() {
+		if !ok {
 			break
 		}
-		pts := avutil.GetFramePTS(f.ptr)
 		if pts == avutil.NoPTSValue {
 			continue
 		}
