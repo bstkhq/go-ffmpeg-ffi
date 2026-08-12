@@ -179,6 +179,36 @@ func TestEncoderFromIOOwnsContextAndWritesFrames(t *testing.T) {
 	}
 }
 
+func TestEncoderToWriterPreservesFractionalFrameRate(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+
+	var output bytes.Buffer
+	encoder, err := NewEncoderToWriterWithOptions(&output, "mpegts", &EncoderOptions{
+		Video: &VideoEncoderConfig{
+			Codec:       avcodec.CodecIDMPEG2VIDEO,
+			Width:       16,
+			Height:      16,
+			PixelFormat: PixelFormatYUV420P,
+			FrameRate:   NewRational(30_000, 1_001),
+			Bitrate:     100_000,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer encoder.Close()
+
+	want := NewRational(1_001, 30_000)
+	if got := avcodec.GetCtxTimeBase(encoder.videoCodecCtx); got != want {
+		t.Fatalf("codec time base = %d/%d, want %d/%d", got.Num, got.Den, want.Num, want.Den)
+	}
+	if encoder.timeBaseNum != want.Num || encoder.timeBaseDen != want.Den {
+		t.Fatalf("encoder time base = %d/%d, want %d/%d", encoder.timeBaseNum, encoder.timeBaseDen, want.Num, want.Den)
+	}
+}
+
 func TestDecoderFromIOContextCancelsBlockedOpen(t *testing.T) {
 	if !requireFFmpeg(t) {
 		return

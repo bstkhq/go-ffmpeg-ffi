@@ -15,10 +15,15 @@ func (e *Encoder) encodeVideoFrameLocked(frame Frame) error {
 	if e.videoCodecCtx == nil || e.videoPacket == nil || e.videoStream == nil {
 		return errors.New("ffgo: video encoder is not configured")
 	}
-	if frame.ptr != nil {
+	restoreMissingPTS := frame.ptr != nil && avutil.GetFramePTS(frame.ptr) == avutil.AV_NOPTS_VALUE
+	if restoreMissingPTS {
 		avutil.SetFramePTS(frame.ptr, e.frameCount)
 	}
-	if err := e.videoState.encode(e.videoCodecCtx, frame.ptr, e.videoPacket, e.writeVideoPacketLocked); err != nil {
+	err := e.videoState.encode(e.videoCodecCtx, frame.ptr, e.videoPacket, e.writeVideoPacketLocked)
+	if restoreMissingPTS {
+		avutil.SetFramePTS(frame.ptr, avutil.AV_NOPTS_VALUE)
+	}
+	if err != nil {
 		return err
 	}
 	if frame.ptr != nil {
