@@ -33,16 +33,16 @@ var (
 // Function bindings
 var (
 	// Graph management
-	avfilter_graph_alloc         func() uintptr
+	avfilter_graph_alloc         func() unsafe.Pointer
 	avfilter_graph_free          func(graph *Graph)
 	avfilter_graph_config        func(graphctx, log_ctx uintptr) int32
 	avfilter_graph_parse2        func(graph uintptr, filters *byte, inputs, outputs *InOut) int32
-	avfilter_graph_alloc_filter  func(graphctx, filter, namePtr uintptr) uintptr
+	avfilter_graph_alloc_filter  func(graphctx, filter, namePtr uintptr) unsafe.Pointer
 	avfilter_graph_create_filter func(filt_ctx *Context, filt, namePtr, argsPtr, opaque, graphCtx uintptr) int32
 	avfilter_init_str            func(filterctx, argsPtr uintptr) int32
 
 	// Filter lookup
-	avfilter_get_by_name func(name *byte) uintptr
+	avfilter_get_by_name func(name *byte) unsafe.Pointer
 
 	// Filter linking
 	avfilter_link func(src uintptr, srcpad uint32, dst uintptr, dstpad uint32) int32
@@ -53,7 +53,7 @@ var (
 	av_buffersink_get_frame       func(ctx, frame uintptr) int32
 
 	// InOut management
-	avfilter_inout_alloc func() uintptr
+	avfilter_inout_alloc func() unsafe.Pointer
 	avfilter_inout_free  func(inout *InOut)
 
 	// Version
@@ -146,7 +146,7 @@ func GraphAlloc() Graph {
 	if err := Init(); err != nil {
 		return nil
 	}
-	return unsafe.Pointer(avfilter_graph_alloc())
+	return avfilter_graph_alloc()
 }
 
 // GraphFree frees a filter graph and all associated filters.
@@ -246,10 +246,10 @@ func GraphAllocFilter(graph Graph, filter Filter, name string) (Context, error) 
 		uintptr(filter),
 		uintptr(unsafe.Pointer(cString(name))),
 	)
-	if ctx == 0 {
+	if ctx == nil {
 		return nil, fmt.Errorf("avfilter_graph_alloc_filter failed")
 	}
-	return unsafe.Pointer(ctx), nil
+	return ctx, nil
 }
 
 // InitFilter initializes a filter after its AVOptions have been set.
@@ -271,7 +271,7 @@ func GetByName(name string) Filter {
 	if err := Init(); err != nil {
 		return nil
 	}
-	return unsafe.Pointer(avfilter_get_by_name(cString(name)))
+	return avfilter_get_by_name(cString(name))
 }
 
 // Link links two filter contexts together.
@@ -332,7 +332,7 @@ func InOutAlloc() InOut {
 	if err := Init(); err != nil {
 		return nil
 	}
-	return unsafe.Pointer(avfilter_inout_alloc())
+	return avfilter_inout_alloc()
 }
 
 // InOutFree frees an AVFilterInOut structure.
@@ -368,8 +368,7 @@ func InOutSetFilterCtx(inout InOut, ctx Context) {
 	if inout == nil {
 		return
 	}
-	ptr := uintptr(inout) + offsetInOutFilterCtx
-	*(*unsafe.Pointer)(unsafe.Pointer(ptr)) = ctx
+	*(*unsafe.Pointer)(unsafe.Add(inout, offsetInOutFilterCtx)) = ctx
 }
 
 // InOutSetPadIdx sets the pad_idx field of an AVFilterInOut.
@@ -377,8 +376,7 @@ func InOutSetPadIdx(inout InOut, padIdx int32) {
 	if inout == nil {
 		return
 	}
-	ptr := uintptr(inout) + offsetInOutPadIdx
-	*(*int32)(unsafe.Pointer(ptr)) = padIdx
+	*(*int32)(unsafe.Add(inout, offsetInOutPadIdx)) = padIdx
 }
 
 // InOutSetNext sets the next field of an AVFilterInOut.
@@ -386,8 +384,7 @@ func InOutSetNext(inout InOut, next InOut) {
 	if inout == nil {
 		return
 	}
-	ptr := uintptr(inout) + offsetInOutNext
-	*(*unsafe.Pointer)(unsafe.Pointer(ptr)) = next
+	*(*unsafe.Pointer)(unsafe.Add(inout, offsetInOutNext)) = next
 }
 
 // InOutGetFilterCtx gets the filter_ctx from an AVFilterInOut.
@@ -395,8 +392,7 @@ func InOutGetFilterCtx(inout InOut) Context {
 	if inout == nil {
 		return nil
 	}
-	ptr := uintptr(inout) + offsetInOutFilterCtx
-	return *(*unsafe.Pointer)(unsafe.Pointer(ptr))
+	return *(*unsafe.Pointer)(unsafe.Add(inout, offsetInOutFilterCtx))
 }
 
 // InOutGetPadIdx gets the pad_idx from an AVFilterInOut.
@@ -404,8 +400,7 @@ func InOutGetPadIdx(inout InOut) int32 {
 	if inout == nil {
 		return 0
 	}
-	ptr := uintptr(inout) + offsetInOutPadIdx
-	return *(*int32)(unsafe.Pointer(ptr))
+	return *(*int32)(unsafe.Add(inout, offsetInOutPadIdx))
 }
 
 // InOutGetNext gets the next pointer from an AVFilterInOut.
@@ -413,6 +408,5 @@ func InOutGetNext(inout InOut) InOut {
 	if inout == nil {
 		return nil
 	}
-	ptr := uintptr(inout) + offsetInOutNext
-	return *(*unsafe.Pointer)(unsafe.Pointer(ptr))
+	return *(*unsafe.Pointer)(unsafe.Add(inout, offsetInOutNext))
 }

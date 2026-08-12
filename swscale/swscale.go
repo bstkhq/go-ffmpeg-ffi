@@ -7,9 +7,9 @@ package swscale
 import (
 	"unsafe"
 
-	"github.com/ebitengine/purego"
 	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/bindings"
+	"github.com/ebitengine/purego"
 )
 
 // Context is an opaque SwsContext pointer.
@@ -35,7 +35,7 @@ const (
 
 // Function bindings
 var (
-	swsGetContext     func(srcW, srcH int32, srcFormat int32, dstW, dstH int32, dstFormat int32, flags int32, srcFilter, dstFilter, param uintptr) uintptr
+	swsGetContext     func(srcW, srcH int32, srcFormat int32, dstW, dstH int32, dstFormat int32, flags int32, srcFilter, dstFilter, param uintptr) unsafe.Pointer
 	swsScale          func(ctx, srcSlice, srcStride uintptr, srcSliceY, srcSliceH int32, dst, dstStride uintptr) int32
 	swsFreeContext    func(ctx uintptr)
 	swsScaleFrame     func(ctx, dst, src uintptr) int32
@@ -46,7 +46,7 @@ var (
 
 	swsGetColorspaceDetails func(ctx uintptr, invTable *unsafe.Pointer, srcRange *int32, table *unsafe.Pointer, dstRange *int32, brightness, contrast, saturation *int32) int32
 	swsSetColorspaceDetails func(ctx, invTable uintptr, srcRange int32, table uintptr, dstRange int32, brightness, contrast, saturation int32) int32
-	swsGetCoefficients      func(colorspace int32) uintptr
+	swsGetCoefficients      func(colorspace int32) unsafe.Pointer
 
 	bindingsRegistered bool
 )
@@ -107,12 +107,12 @@ func GetContext(srcW, srcH int, srcFormat avutil.PixelFormat, dstW, dstH int, ds
 	if swsGetContext == nil {
 		return nil
 	}
-	return unsafe.Pointer(swsGetContext(
+	return swsGetContext(
 		int32(srcW), int32(srcH), int32(srcFormat),
 		int32(dstW), int32(dstH), int32(dstFormat),
 		flags,
 		uintptr(srcFilter), uintptr(dstFilter), uintptr(param),
-	))
+	)
 }
 
 // FreeContext frees a scaling context.
@@ -219,5 +219,5 @@ func GetCoefficients(colorspace int32) unsafe.Pointer {
 	if swsGetCoefficients == nil {
 		return nil
 	}
-	return unsafe.Pointer(swsGetCoefficients(colorspace))
+	return swsGetCoefficients(colorspace)
 }

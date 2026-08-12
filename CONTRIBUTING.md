@@ -40,14 +40,15 @@ At minimum, run:
 
 ```bash
 gofmt -w <changed-go-files>
-go vet -unsafeptr=false ./...
+go vet ./...
 CGO_ENABLED=0 go build ./...
 CGO_ENABLED=0 go test ./...
 ```
 
-The `unsafeptr` analyzer is disabled because this FFI layer intentionally
-converts native addresses. Those conversions require ABI-specific review and
-integration or stress coverage instead of a blanket analyzer exemption.
+The `unsafeptr` analyzer remains enabled. Declare native pointer results as
+`unsafe.Pointer`, and use `unsafe.Add` when a field address must remain related
+to its base pointer. Any unavoidable integer-to-pointer conversion requires
+ABI-specific review and integration or stress coverage.
 
 FFmpeg-facing changes must also run the relevant pinned integration job from the
 [test matrix](docs/roadmap.md#pr-5-make-compatibility-claims-executable). ABI,

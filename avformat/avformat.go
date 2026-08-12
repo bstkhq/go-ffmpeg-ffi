@@ -45,10 +45,10 @@ var (
 	avformatOpenInput       func(ctx *unsafe.Pointer, url string, fmt uintptr, options *unsafe.Pointer) int32
 	avformatCloseInput      func(ctx *unsafe.Pointer)
 	avformatFindStreamInfo  func(ctx uintptr, options *unsafe.Pointer) int32
-	avformatAllocContext    func() uintptr
+	avformatAllocContext    func() unsafe.Pointer
 	avformatFreeContext     func(ctx uintptr)
 	avformatAllocOutputCtx2 func(ctx *unsafe.Pointer, oformat uintptr, formatName, filename string) int32
-	avformatNewStream       func(ctx, codec uintptr) uintptr
+	avformatNewStream       func(ctx, codec uintptr) unsafe.Pointer
 	avformatWriteHeader     func(ctx uintptr, options *unsafe.Pointer) int32
 	avWriteTrailer          func(ctx uintptr) int32
 
@@ -58,23 +58,23 @@ var (
 	avSeekFrame             func(ctx uintptr, streamIndex int32, timestamp int64, flags int32) int32
 
 	avFindBestStream  func(ctx uintptr, mediaType, wanted, related int32, decoder *unsafe.Pointer, flags int32) int32
-	avFindInputFormat func(name string) uintptr
-	avDemuxerIterate  func(opaque *unsafe.Pointer) uintptr
+	avFindInputFormat func(name string) unsafe.Pointer
+	avDemuxerIterate  func(opaque *unsafe.Pointer) unsafe.Pointer
 
 	avioOpen         func(ctx *unsafe.Pointer, url string, flags int32) int32
 	avioOpen2        func(ctx *unsafe.Pointer, url string, flags int32, intCb uintptr, options *unsafe.Pointer) int32
 	avioClose        func(ctx uintptr) int32
 	avioClosep       func(ctx *unsafe.Pointer) int32
-	avioAllocContext func(buffer uintptr, bufferSize, writeFlag int32, opaque uintptr, readPacket, writePacket, seek uintptr) uintptr
+	avioAllocContext func(buffer uintptr, bufferSize, writeFlag int32, opaque uintptr, readPacket, writePacket, seek uintptr) unsafe.Pointer
 	avioContextFree  func(ctx *unsafe.Pointer)
 
 	// Packet functions (in avcodec but often used with avformat)
-	avPacketAlloc func() uintptr
+	avPacketAlloc func() unsafe.Pointer
 	avPacketFree  func(pkt *unsafe.Pointer)
 	avPacketUnref func(pkt uintptr)
 
 	// Dictionary functions (from avutil, used for metadata)
-	avDictGet func(m uintptr, key string, prev uintptr, flags int32) uintptr
+	avDictGet func(m uintptr, key string, prev uintptr, flags int32) unsafe.Pointer
 	avDictSet func(pm *unsafe.Pointer, key, value string, flags int32) int32
 
 	bindingsRegistered bool
@@ -154,7 +154,7 @@ func AllocContext() FormatContext {
 	if avformatAllocContext == nil {
 		return nil
 	}
-	return unsafe.Pointer(avformatAllocContext())
+	return avformatAllocContext()
 }
 
 // FreeContext frees an AVFormatContext.
@@ -171,7 +171,7 @@ func FindInputFormat(name string) InputFormat {
 	if avFindInputFormat == nil {
 		return nil
 	}
-	f := unsafe.Pointer(avFindInputFormat(name))
+	f := avFindInputFormat(name)
 	runtime.KeepAlive(name)
 	return f
 }
@@ -235,7 +235,7 @@ func NewStream(ctx FormatContext, codec avcodec.Codec) Stream {
 	if avformatNewStream == nil {
 		return nil
 	}
-	return unsafe.Pointer(avformatNewStream(uintptr(ctx), uintptr(codec)))
+	return avformatNewStream(uintptr(ctx), uintptr(codec))
 }
 
 // WriteHeader writes the file header.
@@ -396,7 +396,7 @@ func AllocPacket() avcodec.Packet {
 	if avPacketAlloc == nil {
 		return nil
 	}
-	return unsafe.Pointer(avPacketAlloc())
+	return avPacketAlloc()
 }
 
 // FreePacket frees a packet.
@@ -558,7 +558,7 @@ func DemuxerNames() []string {
 	var opaque unsafe.Pointer
 	var out []string
 	for {
-		f := unsafe.Pointer(avDemuxerIterate(&opaque))
+		f := avDemuxerIterate(&opaque)
 		if f == nil {
 			break
 		}
@@ -993,7 +993,7 @@ func IOAllocContext(buffer unsafe.Pointer, bufferSize int, writeFlag bool, opaqu
 	if writeFlag {
 		wf = 1
 	}
-	return unsafe.Pointer(avioAllocContext(uintptr(buffer), int32(bufferSize), wf, opaque, readPacket, writePacket, seek))
+	return avioAllocContext(uintptr(buffer), int32(bufferSize), wf, opaque, readPacket, writePacket, seek)
 }
 
 // IOContextFree frees an AVIOContext and its current buffer.
@@ -1148,7 +1148,7 @@ func DictGet(dict avutil.Dictionary, key string, prev unsafe.Pointer, flags int3
 	if dict == nil || avDictGet == nil {
 		return nil
 	}
-	result := unsafe.Pointer(avDictGet(uintptr(dict), key, uintptr(prev), flags))
+	result := avDictGet(uintptr(dict), key, uintptr(prev), flags)
 	runtime.KeepAlive(key)
 	return result
 }
