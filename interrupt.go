@@ -15,11 +15,16 @@ import (
 
 var errDecoderClosed = errors.New("ffgo: decoder is closed")
 
-type decoderInterrupt struct {
+type decoderInterruptState struct {
 	mu        sync.RWMutex
 	operation context.Context
-	handle    uintptr
 	closed    atomic.Bool
+}
+
+type decoderInterrupt struct {
+	state  *decoderInterruptState
+	lease  *handles.Lease
+	handle uintptr
 }
 
 var (
@@ -35,9 +40,11 @@ func initDecoderInterruptCallback() {
 
 func newDecoderInterrupt() *decoderInterrupt {
 	initDecoderInterruptCallback()
-	state := &decoderInterrupt{}
-	state.handle = handles.Register(state)
-	return state
+	state := &decoderInterruptState{}
+	interrupt := &decoderInterrupt{state: state}
+	interrupt.lease = handles.RegisterLease(state, state.stop)
+	interrupt.handle = interrupt.lease.ID()
+	return interrupt
 }
 
 func decoderInterruptCallback(_ purego.CDecl, opaque uintptr) (result int32) {
@@ -48,7 +55,7 @@ func decoderInterruptCallback(_ purego.CDecl, opaque uintptr) (result int32) {
 			result = 1
 		}
 	}()
-	state, ok := handles.Lookup(opaque).(*decoderInterrupt)
+	state, ok := handles.Lookup(opaque).(*decoderInterruptState)
 	if !ok || state.interrupted() {
 		return result
 	}
@@ -60,6 +67,10 @@ func (s *decoderInterrupt) attach(formatCtx avformat.FormatContext) {
 }
 
 func (s *decoderInterrupt) begin(ctx context.Context) error {
+	return s.state.begin(ctx)
+}
+
+func (s *decoderInterruptState) begin(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("ffgo: context cannot be nil")
 	}
@@ -76,23 +87,31 @@ func (s *decoderInterrupt) begin(ctx context.Context) error {
 }
 
 func (s *decoderInterrupt) clear() {
+	s.state.clear()
+}
+
+func (s *decoderInterruptState) clear() {
 	s.mu.Lock()
 	s.operation = nil
 	s.mu.Unlock()
 }
 
 func (s *decoderInterrupt) finish(nativeErr error) error {
+	return s.state.finish(nativeErr)
+}
+
+func (s *decoderInterruptState) finish(nativeErr error) error {
 	if err := s.operationError(); err != nil {
 		return errors.Join(nativeErr, err)
 	}
 	return nativeErr
 }
 
-func (s *decoderInterrupt) interrupted() bool {
+func (s *decoderInterruptState) interrupted() bool {
 	return s.operationError() != nil
 }
 
-func (s *decoderInterrupt) operationError() error {
+func (s *decoderInterruptState) operationError() error {
 	if s.closed.Load() {
 		return errDecoderClosed
 	}
@@ -106,10 +125,12 @@ func (s *decoderInterrupt) operationError() error {
 }
 
 func (s *decoderInterrupt) stop() {
-	if s != nil {
-		s.closed.Store(true)
+	if s != nil && s.state != nil {
+		s.state.stop()
 	}
 }
+
+func (s *decoderInterruptState) stop() { s.closed.Store(true) }
 
 func (s *decoderInterrupt) release(formatCtx avformat.FormatContext) {
 	if s == nil {
@@ -118,8 +139,9 @@ func (s *decoderInterrupt) release(formatCtx avformat.FormatContext) {
 	if formatCtx != nil {
 		avformat.SetInterruptCallback(formatCtx, 0, 0)
 	}
-	if s.handle != 0 {
-		handles.Unregister(s.handle)
+	if s.lease != nil {
+		s.lease.Release()
+		s.lease = nil
 		s.handle = 0
 	}
 }
@@ -151,9 +173,9 @@ func (d *Decoder) interruptContext() context.Context {
 	if d.interrupt == nil {
 		return context.Background()
 	}
-	d.interrupt.mu.RLock()
-	ctx := d.interrupt.operation
-	d.interrupt.mu.RUnlock()
+	d.interrupt.state.mu.RLock()
+	ctx := d.interrupt.state.operation
+	d.interrupt.state.mu.RUnlock()
 	if ctx == nil {
 		return context.Background()
 	}
