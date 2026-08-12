@@ -2443,6 +2443,14 @@ func TestGenerateThumbnails(t *testing.T) {
 	}
 }
 
+func TestGenerateThumbnailsRejectsNonPositiveInterval(t *testing.T) {
+	for _, interval := range []time.Duration{0, -time.Second} {
+		if _, err := GenerateThumbnails("unused", interval, 1, "unused"); err == nil {
+			t.Fatalf("GenerateThumbnails interval %s returned nil error", interval)
+		}
+	}
+}
+
 func TestGetKeyframes(t *testing.T) {
 	if !requireFFmpeg(t) {
 		return
