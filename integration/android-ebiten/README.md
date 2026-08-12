@@ -1,0 +1,115 @@
+# Android Ebitengine integration fixture
+
+This is an intentionally separate Go module that consumes the local
+`go-ffmpeg-ffi` checkout. It proves that an Ebitengine Android application can
+bind the complete public package without making Ebitengine a dependency of the
+library.
+
+The fixture displays four independent facts:
+
+1. Ebitengine created and rendered the Android surface.
+2. go-ffmpeg-ffi attempted to load the packaged FFmpeg libraries and reported
+   complete diagnostics on screen and in Android `logcat`.
+3. FFmpeg demuxed and software-decoded the repository's two-second H.264/AAC
+   fixture, swscale converted its video frames to RGBA, and Ebitengine presented
+   the decoded image.
+4. FFmpeg decoded the AAC track, swresample converted it to 48 kHz interleaved
+   signed 16-bit stereo PCM, and an Ebitengine audio player accepted and started
+   the resulting stream.
+
+The video path also asserts stable EOF, performs a frame-accurate seek to one
+second, checks cancellation through `DecodeVideoContext`, and verifies that the
+decoder remains usable after that canceled operation.
+
+`MainActivity.onStop` calls the fixture's `Shutdown` hook and `onStart` starts a
+fresh run; `onDestroy` repeats shutdown as an idempotent safety net. The hook
+cancels an in-flight probe, waits for FFmpeg objects to close, releases the
+Ebitengine player, and leaves the process ready for Activity recreation with
+the existing Ebitengine audio context.
+
+Until Android FFmpeg shared libraries are added to the APK, a red
+`FFmpeg load: FAILED` result is expected. Once they are packaged, the same APK
+must show a green `FFmpeg load: OK` result before decode tests are enabled.
+
+## Compile the Go AAR
+
+The production target is ARM64 and the emulator target is x86-64:
+
+```bash
+export ANDROID_SDK_ROOT="$HOME/Android/Sdk"
+export JAVA_HOME="/path/to/jdk-17"
+export PATH="$ANDROID_SDK_ROOT/platform-tools:$(go env GOPATH)/bin:$PATH"
+
+make compile ANDROID_TARGET=android/arm64
+make clean_arr compile ANDROID_TARGET=android/amd64
+```
+
+`make build` also assembles the debug APK. The default Makefile clones
+`bstkhq/apk-ebiten-builder` below `.build/`. An existing checkout can be reused
+without changing tracked files:
+
+```bash
+make compile \
+  BUILDER_DIR=/absolute/path/to/apk-ebiten-builder \
+  ANDROID_TARGET=android/arm64
+```
+
+## Build and package FFmpeg
+
+The repository builds pinned FFmpeg 8.0.3 shared libraries from the official
+source tag. The configuration remains LGPL, includes the native software
+codecs, and enables Android MediaCodec decoders and encoders for later device
+qualification:
+
+```bash
+../../scripts/build-ffmpeg-android.sh amd64
+make apk_with_ffmpeg ANDROID_TARGET=android/amd64
+
+../../scripts/build-ffmpeg-android.sh arm64
+make apk_with_ffmpeg ANDROID_TARGET=android/arm64
+```
+
+The script verifies the source checksum and each unversioned Android SONAME.
+The resulting libraries and APK are build artifacts below `.build/`; no native
+binary is committed to the Go binding.
+
+`apk_with_ffmpeg` copies `../../testdata/test.mp4` into the generated Android
+assets. A small Java bridge copies it into application-private storage because
+FFmpeg requires a real seekable path for this integration scenario. Neither
+the media file nor the bridge becomes part of the go-ffmpeg-ffi API.
+The bridge stages each copy under a unique temporary name and atomically
+replaces the cache path, so Activity restarts cannot truncate a file already
+open in FFmpeg.
+
+The Android floor is API 33. ARM64 is the only shipping ABI; x86-64 exists for
+the emulator integration gate and is not a production target. The
+`apk_with_ffmpeg` target changes the generated application manifest floor to
+API 33 so an APK containing API-33 native libraries cannot be installed on an
+older Android version by mistake.
+
+The headless emulator validates audio decoding, resampling, and Ebitengine
+player startup. Because it runs without an audio device, audible output and
+latency remain physical-device gates for the Galaxy Tab A9+.
+
+## Prolonged and lifecycle stress test
+
+After installing and launching the APK, wait for the first
+`FFmpeg/H.264/AAC: OK` result and run:
+
+```bash
+ADB_BIN="$ANDROID_SDK_ROOT/platform-tools/adb" \
+  ../../scripts/android-emulator-stress.sh
+```
+
+The default workload performs 20 complete background/foreground cycles and
+then 30 rapid cancellations. Every complete cycle decodes video and audio,
+checks seek/EOF/cancellation, stops the Activity, releases its resources, and
+repeats in the same process. Every rapid cycle resumes active native work,
+waits one second, and stops it again. A final complete run proves recovery.
+
+The runner fails on a process restart, timeout, probe error, app ANR, excessive
+PSS/RSS growth, or excessive thread/file-descriptor growth. It writes CSV
+metrics, filtered `logcat`, and a summary below `.build/android-artifacts/`.
+The APK must be debuggable so `run-as` can read its own `/proc` metrics without
+root. Cycle counts, timeouts, and resource limits can be overridden with the
+`FFGO_ANDROID_*` environment variables declared at the top of the script.

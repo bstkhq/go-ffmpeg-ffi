@@ -27,6 +27,54 @@ jobs:
         env:
           CGO_ENABLED: "0"
 
+  # Compile the complete module and every test binary with the pinned Android
+  # NDK. Runtime and hardware-codec qualification are separate device gates.
+  android-compile:
+    runs-on: ubuntu-latest
+    name: Compile (Android API 33, ${{ matrix.arch }})
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, amd64]
+    env:
+      ANDROID_API: "33"
+      ANDROID_NDK_VERSION: "26.3.11579264"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          # Ebitengine 2.9.9 declares Go 1.24. The binding itself retains its
+          # older language floor and is compiled by the other jobs as well.
+          go-version: '1.24'
+
+      - name: Install pinned Android NDK
+        run: |
+          sdk_root="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          set +o pipefail
+          yes | "$sdk_root/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null
+          set -o pipefail
+          "$sdk_root/cmdline-tools/latest/bin/sdkmanager" "ndk;$ANDROID_NDK_VERSION"
+
+      - name: Compile packages and tests
+        run: ./scripts/verify-android-build.sh "${{ matrix.arch }}"
+
+      - name: Install pinned Ebitengine mobile binder
+        run: go install github.com/hajimehoshi/ebiten/v2/cmd/ebitenmobile@v2.9.9
+
+      - name: Bind downstream Ebitengine fixture
+        run: |
+          output="$GITHUB_WORKSPACE/.build/android-ebiten/${{ matrix.arch }}/game.aar"
+          mkdir -p "$(dirname "$output")"
+          cd integration/android-ebiten
+          ebitenmobile bind \
+            -target "android/${{ matrix.arch }}" \
+            -javapkg dev.bstk.ffgo.probe.corelib \
+            -o "$output" .
+          test -s "$output"
+
   # Test every supported FFmpeg release line on one pinned platform.
   test-with-ffmpeg-linux:
     runs-on: ubuntu-latest

@@ -1,4 +1,4 @@
-//go:build !ios && !android && (amd64 || arm64)
+//go:build !ios && (amd64 || arm64)
 
 package bindings
 
@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 
@@ -14,6 +15,12 @@ import (
 
 func TestLibrarySearchPaths(t *testing.T) {
 	paths := LibrarySearchPaths()
+	if runtime.GOOS == "android" {
+		if len(paths) != 0 {
+			t.Fatalf("Android should rely on its linker namespace, got desktop paths: %v", paths)
+		}
+		return
+	}
 	if len(paths) == 0 {
 		t.Error("LibrarySearchPaths should return at least one path")
 	}

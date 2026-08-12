@@ -1,7 +1,8 @@
 # go-ffmpeg-ffi
 
-CGO-free Go bindings for dynamically loaded FFmpeg libraries, built with
-[PureGo](https://github.com/ebitengine/purego).
+Go bindings for dynamically loaded FFmpeg libraries, built with
+[PureGo](https://github.com/ebitengine/purego). Supported desktop targets aim
+to remain CGO-free; PureGo mobile targets require the platform C toolchain.
 
 > **Hard fork:** go-ffmpeg-ffi starts from
 > [obinnaokechukwu/ffgo](https://github.com/obinnaokechukwu/ffgo). We are
@@ -36,8 +37,9 @@ the same codecs, filters, devices, or hardware accelerators.
 
 ## Design in brief
 
-- Exported FFmpeg functions are loaded with PureGo; applications remain
-  buildable with `CGO_ENABLED=0`.
+- Exported FFmpeg functions are loaded with PureGo. Supported desktop
+  applications remain buildable with `CGO_ENABLED=0`; planned Android and iOS
+  builds follow PureGo's requirement for `CGO_ENABLED=1`.
 - Version-specific Go ABI layouts cover simple, verified structure access.
 - A small versioned C shim handles C features that cannot be expressed safely
   through direct calls, such as variadic APIs and header-derived accessors.
@@ -47,7 +49,7 @@ the same codecs, filters, devices, or hardware accelerators.
   explicitly.
 
 See [Architecture](docs/architecture.md) for the reasoning and
-[Roadmap](docs/roadmap.md) for the six reviewable implementation PRs.
+[Roadmap](docs/roadmap.md) for the bootstrap and platform rollout.
 
 ## Documentation
 

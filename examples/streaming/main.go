@@ -1,4 +1,4 @@
-//go:build !ios && !android && (amd64 || arm64)
+//go:build !ios && (amd64 || arm64)
 
 // Example: streaming - Demonstrates streaming output helpers (RTMP/UDP/RTP).
 //

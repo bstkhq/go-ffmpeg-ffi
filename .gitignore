@@ -3,3 +3,8 @@ libffshim.so
 libffshim.dylib
 ffshim.dll
 
+# Downstream Android integration fixture artifacts.
+/integration/android-ebiten/.build/
+
+# Reproducible local build outputs (Android sources, native libraries, APKs).
+/.build/

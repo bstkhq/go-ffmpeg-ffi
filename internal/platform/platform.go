@@ -1,4 +1,4 @@
-//go:build !ios && !android && (amd64 || arm64)
+//go:build !ios && (amd64 || arm64)
 
 // Package platform provides platform detection and capabilities for ffgo.
 // It determines what features are available based on the operating system and architecture.
@@ -47,6 +47,7 @@ func init() {
 //   - Linux:   FormatLibraryName("avcodec", 60) -> "libavcodec.so.60"
 //   - macOS:   FormatLibraryName("avcodec", 60) -> "libavcodec.60.dylib"
 //   - Windows: FormatLibraryName("avcodec", 60) -> "avcodec-60.dll"
+//   - Android: FormatLibraryName("avcodec", 60) -> "libavcodec.so"
 func FormatLibraryName(name string, version int) string {
 	switch runtime.GOOS {
 	case "darwin":
@@ -58,6 +59,11 @@ func FormatLibraryName(name string, version int) string {
 		if version > 0 {
 			return fmt.Sprintf("%s%s-%d%s", LibraryPrefix, name, version, LibraryExtension)
 		}
+		return fmt.Sprintf("%s%s%s", LibraryPrefix, name, LibraryExtension)
+	case "android":
+		// Android packages and nativeLibraryDir recognize unversioned lib*.so
+		// filenames. The runtime ABI is validated immediately after loading, so
+		// the filename does not need to encode the FFmpeg major.
 		return fmt.Sprintf("%s%s%s", LibraryPrefix, name, LibraryExtension)
 	default: // linux, freebsd
 		if version > 0 {

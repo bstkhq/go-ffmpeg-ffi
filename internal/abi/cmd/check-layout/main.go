@@ -1,4 +1,4 @@
-//go:build !ios && !android && (amd64 || arm64)
+//go:build !ios && (amd64 || arm64)
 
 // Command check-layout compares layout_probe.c output with the Go ABI table.
 package main

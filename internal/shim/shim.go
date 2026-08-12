@@ -1,4 +1,4 @@
-//go:build !ios && !android && (amd64 || arm64)
+//go:build !ios && (amd64 || arm64)
 
 // Package shim provides bindings to the ffshim helper library.
 //
@@ -176,6 +176,15 @@ func Load() error {
 
 	lib, err := purego.Dlopen(path, purego.RTLD_NOW|purego.RTLD_GLOBAL)
 	if err != nil {
+		if runtime.GOOS == "android" {
+			// Android native libraries can live in the APK linker namespace and
+			// cannot be discovered reliably with os.Stat. A failed direct open is
+			// therefore treated like the existing optional-shim not-found path,
+			// while LoadError retains the loader diagnostic.
+			loadErr = fmt.Errorf("%w: cannot load %s: %v", ErrShimNotFound, path, err)
+			searchErr = loadErr.Error()
+			return nil
+		}
 		loadErr = fmt.Errorf("failed to load shim at %s: %w", path, err)
 		searchErr = loadErr.Error()
 		return loadErr
@@ -965,6 +974,10 @@ func findShimLibrary() (string, error) {
 	switch runtime.GOOS {
 	case "linux", "freebsd", "openbsd", "netbsd":
 		names = []string{"libffshim.so", "libffshim.so.1"}
+	case "android":
+		// Native libraries packaged in an APK may be addressable by soname even
+		// when no filesystem path is visible to os.Stat.
+		return "libffshim.so", nil
 	case "darwin":
 		names = []string{"libffshim.dylib", "libffshim.1.dylib"}
 	case "windows":

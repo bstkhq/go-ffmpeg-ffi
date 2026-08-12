@@ -1,9 +1,11 @@
 # Roadmap
 
-This is the project's only implementation plan. It is intentionally organized
-as six coherent pull requests, not as one PR per bullet. Work found inside the
-same subsystem stays in its PR unless reviewability forces a split; if one PR is
-split, another is consolidated so the bootstrap remains at roughly six PRs.
+This is the project's only implementation plan. The hard-fork bootstrap is
+intentionally organized as six coherent pull requests, not as one PR per
+bullet. Work found inside the same subsystem stays in its PR unless
+reviewability forces a split; if one PR is split, another is consolidated so
+the bootstrap remains at roughly six PRs. Platform expansion follows the
+bootstrap as an Android-first program with its own evidence gates.
 
 ## PR 1: establish the hard-fork baseline
 
@@ -134,6 +136,185 @@ differences.
 
 Complete when the API has an explicit compatibility promise and the first
 release can be reproduced from its tag.
+
+## Platform expansion program
+
+Platform support is earned in three separate stages:
+
+1. **Compile:** every importable package and its tests compile for the target,
+   with the expected public API present.
+2. **Integrate:** an external application packages the native libraries, loads
+   FFmpeg, and exercises representative audio/video paths on the target OS.
+3. **Qualify:** named hardware passes codec, stability, and performance tests.
+
+Passing an earlier stage does not imply a later one. In particular, emulator
+graphics acceleration is not evidence that a physical device provides FFmpeg
+MediaCodec, VideoToolbox, or 60 FPS performance.
+
+go-ffmpeg-ffi remains independent of Ebitengine. Ebitengine applications are
+downstream integration fixtures: the binding does not import Ebitengine, expose
+an Ebitengine API, or make the engine part of its platform implementation.
+
+### Target order and support floor
+
+| Order | Target | Architecture and floor | Planned evidence |
+| --- | --- | --- | --- |
+| 1 | Android production | `arm64-v8a`, Android 13 / API 33 | Compile CI, external APK, and Samsung Galaxy Tab A9+ qualification. |
+| 1 | Android emulator | `x86_64`, Android 13 / API 33 | GPU-accelerated application integration; not a shipping ABI or hardware-codec benchmark. |
+| 2 | iOS | `arm64` device and simulator; simulator `amd64` while supported by the selected Xcode | Compile and application integration first; the minimum iOS version and reference device are set before implementation. |
+| 3 | Windows | `amd64`, then `arm64` | Replace the Unix loader calls, add compile CI, and add native runtime evidence. |
+| Continuous | macOS | `amd64`, `arm64` | Preserve the existing native compile/runtime jobs as regression gates. |
+| Continuous | Linux | `amd64`, `arm64` | Preserve the primary FFmpeg release-line and stress matrix. |
+
+[PureGo](https://github.com/ebitengine/purego#supported-platforms) treats
+Android and iOS 64-bit targets as Tier 1, but requires `CGO_ENABLED=1` for them.
+The mobile build is therefore still PureGo-based, but it requires the Android
+NDK or Xcode C toolchain. Desktop targets retain the CGO-free application-build
+goal where PureGo supports it.
+
+### Android phase A: make the module compile
+
+- Remove the blanket Android exclusions and replace them with capability-based
+  build constraints.
+- Split library open, symbol lookup, close, naming, and search policy by
+  platform. Android uses its native linker and packaged `.so` files rather than
+  desktop search paths.
+- Verify every enabled ABI layout against Android FFmpeg headers for each
+  supported FFmpeg family. Do not infer layout compatibility from Linux alone.
+- Keep the public API present. Operations that are genuinely unavailable on
+  Android return a documented unsupported-capability error instead of
+  disappearing behind build constraints.
+- Pin an NDK and compile all packages and test binaries with API 33 toolchains
+  for `arm64-v8a` and `x86_64`. Native FFmpeg libraries are not required for the
+  compile-only gate.
+- Compare the exported API with the Linux reference so a green mobile build
+  cannot be produced by accidentally excluding most of the module.
+
+Complete when `go list ./...`, package builds, and test compilation succeed for
+both Android targets with the intended public surface and without an Ebitengine
+dependency.
+
+Current branch evidence (12 August 2026): this compile gate passes for API 33
+`arm64` and `amd64`, including every root package and test binary. The external
+Ebitengine fixture remains a separate module.
+
+### Android phase B: emulator integration
+
+- Maintain the external-module fixture in
+  [`integration/android-ebiten`](../integration/android-ebiten) and build it with
+  [`apk-ebiten-builder`](https://github.com/bstkhq/apk-ebiten-builder). Packaging
+  FFmpeg `.so` files belongs to that fixture or its builder, not to the Go
+  binding.
+- Run an Android 13 / API 33 `x86_64` AVD with VM acceleration and host GPU
+  graphics where the runner exposes them.
+- Install and launch the APK through the connected Android automation tooling;
+  retain screenshots, application state, logcat output, FFmpeg library/version
+  diagnostics, and crash traces as test evidence.
+- Exercise library initialization, audiovisual decode, audio conversion,
+  frame presentation through Ebitengine, seek, EOF, cancellation, and clean
+  shutdown with the same small redistributable fixture used by desktop tests.
+- Treat emulator MediaCodec results as diagnostic only. The host GPU validates
+  Ebitengine graphics; it does not emulate the Snapdragon video codec blocks in
+  the reference tablet.
+
+Complete when a reproducible APK runs through the audiovisual scenario without
+crashes, missing symbols, growing resources, or unexplained output differences.
+
+Current branch evidence (12 August 2026): the API 33 x86-64 APK loads FFmpeg
+8.0.3, software-decodes all 60 H.264 frames, converts and presents RGBA through
+Ebitengine, software-decodes all 87 AAC frames, resamples them to 96,967 S16
+stereo samples at 48 kHz, and starts an Ebitengine audio player. The current
+host exposes neither `/dev/kvm` nor `/dev/dri`, so this run uses TCG and
+SwiftShader and is correctness evidence only. Stable EOF, a frame-accurate seek
+to one second, cancellation, and successful decoder reuse after cancellation
+also pass. The probe cancels and closes its FFmpeg/audio resources on Android
+`onStop`, then completes the full audiovisual path again after `onStart` in the
+same process.
+
+The reproducible prolonged/stress runner completed 20 full lifecycle cycles in
+one process followed by a separate 30-cycle rapid-cancellation run and a full
+recovery. All 20 prolonged cycles completed the H.264/AAC scenario. The rapid
+run interrupted video 16 times and audio 14 times; all 30 shutdowns completed,
+and the final audiovisual recovery passed. The prolonged run grew from 73,848
+to 84,444 KiB PSS and from 173,188 to 186,432 KiB RSS as the process warmed, but
+cycles 10 through 20 added only 134 KiB PSS and 308 KiB RSS. Threads finished
+at 37 from 33 and file descriptors returned to their baseline of 124. Across
+the rapid run and recovery, PSS grew 967 KiB, RSS 1,668 KiB, threads by four,
+and file descriptors by one. The PID remained stable and the retained logs
+contain no probe failure, app ANR, or native crash. This closes the emulator
+resource-growth gate for phase B; it remains correctness and lifecycle
+evidence, not GPU, MediaCodec, audible-audio, thermal, or frame-rate evidence.
+
+### Android phase C: Galaxy Tab A9+ qualification
+
+The Samsung Galaxy Tab A9+ is the minimum supported Android device and the
+physical acceptance reference. Its launch platform, Android 13 / API 33, is the
+OS floor; newer Android devices and framework versions must remain compatible.
+
+- Install the exact APK already exercised by the emulator, using its
+  `arm64-v8a` native libraries.
+- Record device model, Android build, ABI, FFmpeg configuration and versions,
+  selected decoders/encoders, and the MediaCodec capability report.
+- Test H.264 and H.265 software and MediaCodec paths separately. A codec name or
+  API being present is not sufficient evidence that frames stay on the
+  hardware path.
+- Measure 30 and 60 FPS workloads separately, including dropped/late frames,
+  audiovisual drift, CPU load, memory, temperature-related throttling, and
+  clean resource release. Screenshots prove rendered output, not frame rate.
+- Report decode and encode results separately. A device can decode a profile or
+  resolution in hardware without being able to encode the same combination.
+- Run a sustained test after the short correctness case so a transient 60 FPS
+  result is not presented as stable performance.
+
+Compilation support is complete independently of hardware acceleration.
+MediaCodec and 60 FPS claims are published only for the exact codec, profile,
+resolution, pixel format, device, Android build, and FFmpeg configuration that
+passed qualification.
+
+### iOS phase
+
+- Reuse the platform loader boundary established by Android, with iOS-specific
+  library naming and application-bundle resolution.
+- Compile all packages and tests for ARM64 device and simulator targets with
+  Xcode and `CGO_ENABLED=1`; retain Intel simulator coverage only while the
+  supported Xcode toolchain provides it.
+- Verify ABI layouts against the selected iPhoneOS and simulator SDKs.
+- Use an external application fixture for runtime integration; do not add an
+  Ebitengine dependency or XCFramework packaging responsibility to the module.
+- Qualify VideoToolbox and sustained codec performance on a named physical
+  device. Simulator graphics and codec results are not physical-device
+  qualification.
+
+The minimum iOS version and reference hardware must be recorded before this
+phase changes support claims.
+
+### Windows and macOS closure
+
+PureGo supports Windows `amd64` and `arm64` as Tier 1 platforms. The current
+go-ffmpeg-ffi loader nevertheless calls PureGo's `Dlopen`, `Dlsym`, `Dlclose`,
+and `RTLD_*` API, which is intentionally unavailable on Windows. Windows needs
+a platform loader using `LoadLibrary`, `GetProcAddress`, and `FreeLibrary`; this
+is a go-ffmpeg-ffi integration gap, not a lack of Windows support in PureGo.
+
+After the mobile phases:
+
+- add Windows `amd64` and `arm64` compile gates and native `amd64` runtime
+  coverage;
+- extend native runtime coverage to Windows ARM64 when a runner is available;
+- rerun the existing macOS Intel and Apple Silicon FFmpeg jobs after every
+  loader refactor; and
+- keep hardware acceleration capability-driven: D3D11VA/DXVA2 and
+  VideoToolbox are not implied by successful compilation.
+
+### Unscheduled ecosystems
+
+FreeBSD remains best-effort pending a pinned native runner. WebAssembly cannot
+use the current dynamic-FFmpeg/PureGo architecture and would require a distinct
+backend. Nintendo Switch and Xbox require their proprietary SDK and program
+access before feasibility can be evaluated; they are not inferred from
+Ebitengine application support. PlayStation is not a public Ebitengine target
+and is not scheduled. None of these platforms is part of the Android/iOS
+delivery sequence.
 
 ## Review contract
 

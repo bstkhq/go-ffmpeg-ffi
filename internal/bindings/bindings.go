@@ -1,4 +1,4 @@
-//go:build !ios && !android && (amd64 || arm64)
+//go:build !ios && (amd64 || arm64)
 
 // Package bindings handles loading FFmpeg shared libraries and registering
 // function bindings using purego.
@@ -352,6 +352,10 @@ func LibrarySearchPaths() []string {
 			paths = append(paths, filepath.SplitList(ldPath)...)
 		}
 		paths = append(paths, "/usr/local/lib", "/usr/lib")
+	case "android":
+		// Android application native libraries are resolved by soname inside the
+		// app linker namespace. Unqualified candidates are appended by
+		// libraryCandidates, so desktop filesystem paths must not be searched.
 	}
 
 	return paths
