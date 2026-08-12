@@ -1,3 +1,5 @@
+//go:build !ios && !android && (amd64 || arm64)
+
 package ffgo
 
 import (

@@ -25,6 +25,26 @@ func registerTestCustomIO(t *testing.T, callbacks *IOCallbacks) *CustomIOContext
 	return ctx
 }
 
+func TestNewIOCallbackPointersRecoversRegistrationPanic(t *testing.T) {
+	wantErr := errors.New("callback registration failed")
+	calls := 0
+
+	callbacks, err := newIOCallbackPointers(func(any) uintptr {
+		calls++
+		if calls == 2 {
+			panic(wantErr)
+		}
+		return uintptr(calls)
+	})
+
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("newIOCallbackPointers error = %v, want %v", err, wantErr)
+	}
+	if callbacks != (ioCallbackPointers{}) {
+		t.Fatalf("newIOCallbackPointers returned partial callbacks: %+v", callbacks)
+	}
+}
+
 func TestCustomIOReadPreservesCallbackError(t *testing.T) {
 	wantErr := errors.New("reader failed")
 	ctx := registerTestCustomIO(t, &IOCallbacks{
