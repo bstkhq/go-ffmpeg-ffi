@@ -33,6 +33,11 @@ endif
 
 FFMPEG_ANDROID_LIB_DIR ?= $(FFMPEG_ANDROID_ROOT)/$(ANDROID_ABI)/lib
 JNI_LIB_DIR := $(ANDROID_DIR)/app/src/main/jniLibs/$(ANDROID_ABI)
+MEDIA_FIXTURE ?= $(abspath ../../testdata/test.mp4)
+ANDROID_ASSET_DIR := $(ANDROID_DIR)/app/src/main/assets
+MEDIA_BRIDGE_SRC := $(abspath android/MediaFixture.java)
+MEDIA_BRIDGE_DST := $(JAVA_DST_DIR)/MediaFixture.java
+MAIN_ACTIVITY_DST := $(JAVA_DST_DIR)/MainActivity.java
 
 configure_android_floor: generate
 	$(call LOG,Setting Android minimum SDK to API $(ANDROID_MIN_SDK))
@@ -49,10 +54,22 @@ package_ffmpeg: generate
 	$(Q)mkdir -p "$(JNI_LIB_DIR)"
 	$(Q)install -m 755 "$(FFMPEG_ANDROID_LIB_DIR)"/*.so "$(JNI_LIB_DIR)/"
 
-apk_with_ffmpeg: configure_android_floor compile package_ffmpeg
+package_media: generate
+	$(call LOG,Packaging audiovisual integration fixture)
+	$(Q)test -f "$(MEDIA_FIXTURE)"
+	$(Q)mkdir -p "$(ANDROID_ASSET_DIR)" "$(JAVA_DST_DIR)"
+	$(Q)install -m 644 "$(MEDIA_FIXTURE)" "$(ANDROID_ASSET_DIR)/test.mp4"
+	$(Q)install -m 644 "$(MEDIA_BRIDGE_SRC)" "$(MEDIA_BRIDGE_DST)"
+	$(Q)perl -0777 -i $(PERL_SUBS) "$(MEDIA_BRIDGE_DST)"
+	$(Q)grep -q 'MediaFixture.prepare(this)' "$(MAIN_ACTIVITY_DST)" || \
+		perl -0777 -i -pe \
+		's/(Seq\.setContext\(getApplicationContext\(\)\);)/$$1\n      MediaFixture.prepare(this);/' \
+		"$(MAIN_ACTIVITY_DST)"
+
+apk_with_ffmpeg: configure_android_floor compile package_ffmpeg package_media
 	$(call LOG,Building debug APK with FFmpeg for $(ANDROID_ABI))
 	$(call GRADLE_RUN,assembleDebug)
 	@echo -n "    Output File: "
 	@realpath -m --relative-to="$(ROOT_DIR)" "$(APK_DEBUG)"
 
-.PHONY: configure_android_floor package_ffmpeg apk_with_ffmpeg
+.PHONY: configure_android_floor package_ffmpeg package_media apk_with_ffmpeg

@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	ffgo "github.com/bstkhq/go-ffmpeg-ffi"
+	"github.com/bstkhq/go-ffmpeg-ffi-android-ebiten-test/internal/rgba"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/mobile"
@@ -23,17 +24,25 @@ const (
 )
 
 type probeGame struct {
-	mu      sync.RWMutex
-	status  string
-	success bool
-	started sync.Once
+	mu              sync.RWMutex
+	status          string
+	success         bool
+	framePixels     []byte
+	frameWidth      int
+	frameHeight     int
+	frameGeneration uint64
+	started         sync.Once
+
+	// The following fields are touched only by Ebitengine's render goroutine.
+	videoImage          *ebiten.Image
+	presentedGeneration uint64
 }
 
 func newProbeGame() *probeGame {
 	return &probeGame{status: "Waiting for the Android host..."}
 }
 
-func (g *probeGame) start() {
+func (g *probeGame) start(mediaPath string) {
 	g.started.Do(func() {
 		g.setStatus("Ebitengine is running. Loading FFmpeg...", false)
 		go func() {
@@ -52,16 +61,123 @@ func (g *probeGame) start() {
 				return
 			}
 
-			status := fmt.Sprintf(
+			loadStatus := fmt.Sprintf(
 				"Ebitengine + go-ffmpeg-ffi Android probe\n\n"+
 					"Platform: %s/%s\n"+
 					"FFmpeg load: OK\n\n%s",
 				runtime.GOOS, runtime.GOARCH, diagnostic.String(),
 			)
+			log.Print(loadStatus)
+			g.setStatus(loadStatus+"\n\nDecoding H.264 fixture...", false)
+
+			frames, width, height, decodeErr := g.decodeVideo(mediaPath)
+			if decodeErr != nil {
+				status := fmt.Sprintf(
+					"Ebitengine + go-ffmpeg-ffi Android probe\n\n"+
+						"Platform: %s/%s\n"+
+						"FFmpeg load: OK\n"+
+						"H.264 decode/scale: FAILED\n%s",
+					runtime.GOOS, runtime.GOARCH, decodeErr,
+				)
+				log.Print(status)
+				g.setStatus(status, false)
+				return
+			}
+
+			status := fmt.Sprintf(
+				"Ebitengine + go-ffmpeg-ffi Android probe\n"+
+					"FFmpeg load: OK | H.264 decode: OK\n"+
+					"Video: %dx%d, %d frames -> RGBA -> Ebitengine",
+				width, height, frames,
+			)
 			log.Print(status)
 			g.setStatus(status, true)
 		}()
 	})
+}
+
+func (g *probeGame) decodeVideo(mediaPath string) (frames, width, height int, err error) {
+	if mediaPath == "" {
+		return 0, 0, 0, fmt.Errorf("media fixture path was not provided by Android")
+	}
+
+	decoder, err := ffgo.NewDecoder(mediaPath, ffgo.WithStreams(ffgo.MediaTypeVideo))
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("open media fixture: %w", err)
+	}
+	defer func() { _ = decoder.Close() }()
+
+	stream := decoder.VideoStream()
+	if stream == nil {
+		return 0, 0, 0, fmt.Errorf("media fixture has no video stream")
+	}
+	if stream.CodecID != ffgo.CodecIDH264 {
+		return 0, 0, 0, fmt.Errorf("video codec is %s, want H.264", stream.CodecName)
+	}
+
+	var scaler *ffgo.Scaler
+	defer func() {
+		if scaler != nil {
+			_ = scaler.Close()
+		}
+	}()
+
+	for {
+		frame, decodeErr := decoder.DecodeVideo()
+		if decodeErr != nil {
+			return frames, width, height, fmt.Errorf("decode frame %d: %w", frames, decodeErr)
+		}
+		if frame.IsNil() {
+			break
+		}
+
+		info := ffgo.GetFrameInfo(frame)
+		if scaler == nil {
+			width, height = info.Width, info.Height
+			scaler, err = ffgo.NewScaler(
+				width, height, ffgo.PixelFormat(info.Format),
+				width, height, ffgo.PixelFormatRGBA, ffgo.ScaleBilinear,
+			)
+			if err != nil {
+				return frames, width, height, fmt.Errorf("create RGBA scaler: %w", err)
+			}
+		}
+
+		rgba, scaleErr := scaler.Scale(frame)
+		if scaleErr != nil {
+			return frames, width, height, fmt.Errorf("scale frame %d: %w", frames, scaleErr)
+		}
+		if publishErr := g.publishFrame(rgba, width, height); publishErr != nil {
+			return frames, width, height, fmt.Errorf("publish frame %d: %w", frames, publishErr)
+		}
+		frames++
+	}
+
+	if frames == 0 {
+		return 0, width, height, fmt.Errorf("decoder produced no video frames")
+	}
+	return frames, width, height, nil
+}
+
+func (g *probeGame) publishFrame(frame ffgo.Frame, width, height int) error {
+	wrapper := ffgo.WrapFrame(frame, ffgo.MediaTypeVideo)
+	if wrapper == nil {
+		return fmt.Errorf("scaled frame is nil")
+	}
+	data := wrapper.Data(0)
+	stride := wrapper.Linesize(0)
+	pixels, err := rgba.Pack(data, stride, width, height)
+	if err != nil {
+		return err
+	}
+
+	g.mu.Lock()
+	g.framePixels = pixels
+	g.frameWidth = width
+	g.frameHeight = height
+	g.frameGeneration++
+	g.mu.Unlock()
+	return nil
 }
 
 func (g *probeGame) setStatus(status string, success bool) {
@@ -77,7 +193,21 @@ func (g *probeGame) Draw(screen *ebiten.Image) {
 	g.mu.RLock()
 	status := g.status
 	success := g.success
+	frameWidth := g.frameWidth
+	frameHeight := g.frameHeight
+	frameGeneration := g.frameGeneration
+	var pixels []byte
+	if frameGeneration != g.presentedGeneration {
+		pixels = append(pixels, g.framePixels...)
+	}
 	g.mu.RUnlock()
+	if frameGeneration != g.presentedGeneration && len(pixels) != 0 {
+		if g.videoImage == nil || g.videoImage.Bounds().Dx() != frameWidth || g.videoImage.Bounds().Dy() != frameHeight {
+			g.videoImage = ebiten.NewImage(frameWidth, frameHeight)
+		}
+		g.videoImage.WritePixels(pixels)
+		g.presentedGeneration = frameGeneration
+	}
 
 	background := color.RGBA{R: 34, G: 39, B: 46, A: 255}
 	accent := color.RGBA{R: 214, G: 84, B: 72, A: 255}
@@ -87,7 +217,20 @@ func (g *probeGame) Draw(screen *ebiten.Image) {
 	screen.Fill(background)
 	ebitenutil.DrawRect(screen, 0, 0, logicalWidth, 12, accent)
 
-	ebitenutil.DebugPrintAt(screen, strings.TrimSpace(status), 24, 32)
+	if g.videoImage != nil {
+		const top = 80
+		availableHeight := float64(logicalHeight - top)
+		scale := min(float64(logicalWidth)/float64(frameWidth), availableHeight/float64(frameHeight))
+		op := &ebiten.DrawImageOptions{}
+		op.GeoM.Scale(scale, scale)
+		op.GeoM.Translate(
+			(float64(logicalWidth)-float64(frameWidth)*scale)/2,
+			float64(top),
+		)
+		screen.DrawImage(g.videoImage, op)
+	}
+
+	ebitenutil.DebugPrintAt(screen, strings.TrimSpace(status), 24, 26)
 }
 
 func (g *probeGame) Layout(_, _ int) (int, int) {
@@ -112,8 +255,11 @@ func RegisterIMEBridge(IMEBridge) {}
 
 // SetAndroidID is called by apk-ebiten-builder after the Android activity is
 // created. The identifier is intentionally unused by this diagnostic fixture.
-func SetAndroidID(_ int64) {
-	game.start()
+func SetAndroidID(_ int64) {}
+
+// SetMediaPath receives the private path prepared from the APK's test asset.
+func SetMediaPath(path string) {
+	game.start(path)
 }
 
 // SetTimezone is an optional hook detected by apk-ebiten-builder.

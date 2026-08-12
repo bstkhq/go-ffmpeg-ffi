@@ -5,11 +5,14 @@ This is an intentionally separate Go module that consumes the local
 bind the complete public package without making Ebitengine a dependency of the
 library.
 
-The first milestone displays two independent facts:
+The fixture displays three independent facts:
 
 1. Ebitengine created and rendered the Android surface.
 2. go-ffmpeg-ffi attempted to load the packaged FFmpeg libraries and reported
    complete diagnostics on screen and in Android `logcat`.
+3. FFmpeg demuxed and software-decoded the repository's two-second H.264/AAC
+   fixture, swscale converted its video frames to RGBA, and Ebitengine presented
+   the decoded image.
 
 Until Android FFmpeg shared libraries are added to the APK, a red
 `FFmpeg load: FAILED` result is expected. Once they are packaged, the same APK
@@ -56,6 +59,11 @@ make apk_with_ffmpeg ANDROID_TARGET=android/arm64
 The script verifies the source checksum and each unversioned Android SONAME.
 The resulting libraries and APK are build artifacts below `.build/`; no native
 binary is committed to the Go binding.
+
+`apk_with_ffmpeg` copies `../../testdata/test.mp4` into the generated Android
+assets. A small Java bridge copies it into application-private storage because
+FFmpeg requires a real seekable path for this integration scenario. Neither
+the media file nor the bridge becomes part of the go-ffmpeg-ffi API.
 
 The Android floor is API 33. ARM64 is the only shipping ABI; x86-64 exists for
 the emulator integration gate and is not a production target. The
