@@ -59,6 +59,54 @@ func TestFindShimLibrary_FFGO_SHIM_DIR_NotFound(t *testing.T) {
 	}
 }
 
+func TestFindShimLibraryInPathsDoesNotUseWorkingDirectory(t *testing.T) {
+	name := ExpectedLibraryName()
+	cwd := t.TempDir()
+	trusted := t.TempDir()
+	if err := os.WriteFile(filepath.Join(cwd, name), []byte("not a real shim"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(cwd); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(previous); err != nil {
+			t.Errorf("restore working directory: %v", err)
+		}
+	})
+
+	if path, err := findShimLibraryInPaths([]string{name}, []string{"", trusted}); err == nil {
+		t.Fatalf("found untrusted working-directory shim at %q", path)
+	}
+}
+
+func TestTrustedShimSearchPathsExcludeSourceAndWorkingDirectories(t *testing.T) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve test source path")
+	}
+	moduleRoot := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
+	executableDir := filepath.Join(t.TempDir(), "bin")
+
+	paths := trustedShimSearchPathsFor(runtime.GOOS, runtime.GOARCH, executableDir)
+	for _, path := range paths {
+		if path == cwd || path == moduleRoot || path == filepath.Join(moduleRoot, "shim") {
+			t.Fatalf("untrusted implicit shim search path %q", path)
+		}
+	}
+	if paths[len(paths)-1] != executableDir {
+		t.Fatalf("executable directory missing from trusted paths: %v", paths)
+	}
+}
+
 func TestExpectedLibraryName(t *testing.T) {
 	name := ExpectedLibraryName()
 

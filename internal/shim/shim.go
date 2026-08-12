@@ -145,12 +145,8 @@ var (
 //
 // The shim is searched for in the following locations (in order):
 //  1. FFGO_SHIM_DIR environment variable
-//  2. LD_LIBRARY_PATH / DYLD_LIBRARY_PATH / PATH
-//  3. Standard library paths (/usr/local/lib, /usr/lib, etc.)
-//  4. Executable directory
-//  5. Module's shim/prebuilt/<os>-<arch>/ directory
-//  6. Module's shim/ directory
-//  7. Current working directory
+//  2. Standard library paths (/usr/local/lib, /usr/lib, etc.)
+//  3. Executable directory
 func Load() error {
 	loadMu.Lock()
 	defer loadMu.Unlock()
@@ -988,46 +984,46 @@ func findShimLibrary() (string, error) {
 		return "", fmt.Errorf("%w: FFGO_SHIM_DIR=%s does not contain %s", ErrShimNotFound, dir, names[0])
 	}
 
-	// Build search paths list
+	searchPaths := trustedShimSearchPaths()
+	return findShimLibraryInPaths(names, searchPaths)
+}
+
+func trustedShimSearchPaths() []string {
+	executableDir := ""
+	if exe, err := os.Executable(); err == nil {
+		executableDir = filepath.Dir(exe)
+	}
+	return trustedShimSearchPathsFor(runtime.GOOS, runtime.GOARCH, executableDir)
+}
+
+func trustedShimSearchPathsFor(goos, goarch, executableDir string) []string {
 	var searchPaths []string
-	var searchedPaths []string // For error message
-
-	// Check LD_LIBRARY_PATH / DYLD_LIBRARY_PATH first
-	if runtime.GOOS == "darwin" {
-		if p := os.Getenv("DYLD_LIBRARY_PATH"); p != "" {
-			searchPaths = append(searchPaths, filepath.SplitList(p)...)
-		}
-	} else {
-		if p := os.Getenv("LD_LIBRARY_PATH"); p != "" {
-			searchPaths = append(searchPaths, filepath.SplitList(p)...)
-		}
-	}
-
-	// Check PATH on Windows
-	if runtime.GOOS == "windows" {
-		if p := os.Getenv("PATH"); p != "" {
-			searchPaths = append(searchPaths, filepath.SplitList(p)...)
-		}
-	}
-
-	// Standard library paths
-	searchPaths = append(searchPaths,
-		"/usr/local/lib",
-		"/usr/lib",
-		"/lib",
-		"/opt/ffmpeg/lib",
-	)
 
 	// Platform-specific paths
-	switch runtime.GOOS {
+	switch goos {
 	case "linux":
-		if runtime.GOARCH == "amd64" {
+		searchPaths = append(searchPaths,
+			"/usr/local/lib",
+			"/usr/lib",
+			"/lib",
+			"/opt/ffmpeg/lib",
+		)
+		if goarch == "amd64" {
 			searchPaths = append(searchPaths, "/usr/lib/x86_64-linux-gnu")
-		} else if runtime.GOARCH == "arm64" {
+		} else if goarch == "arm64" {
 			searchPaths = append(searchPaths, "/usr/lib/aarch64-linux-gnu")
 		}
+	case "freebsd", "openbsd", "netbsd":
+		searchPaths = append(searchPaths,
+			"/usr/local/lib",
+			"/usr/lib",
+			"/lib",
+		)
 	case "darwin":
 		searchPaths = append(searchPaths,
+			"/usr/local/lib",
+			"/usr/lib",
+			"/opt/ffmpeg/lib",
 			"/opt/homebrew/lib",
 			"/usr/local/opt/ffmpeg/lib",
 		)
@@ -1038,37 +1034,19 @@ func findShimLibrary() (string, error) {
 		)
 	}
 
-	// Executable directory
-	if exe, err := os.Executable(); err == nil {
-		searchPaths = append(searchPaths, filepath.Dir(exe))
+	if executableDir != "" {
+		searchPaths = append(searchPaths, executableDir)
 	}
+	return searchPaths
+}
 
-	// Module-local prebuilt shim (dev/test and releases)
-	// <module_root>/shim/prebuilt/<goos>-<goarch>/<filename>
-	if _, file, _, ok := runtime.Caller(0); ok {
-		// internal/shim/shim.go -> <module_root>
-		moduleRoot := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
-		prebuiltDir := filepath.Join(moduleRoot, "shim", "prebuilt", runtime.GOOS+"-"+runtime.GOARCH)
-		searchPaths = append(searchPaths, prebuiltDir)
-		// also allow <module_root>/shim/ (source tree)
-		searchPaths = append(searchPaths, filepath.Join(moduleRoot, "shim"))
-		// and <module_root>/ (repo root) for existing check-in binaries
-		searchPaths = append(searchPaths, moduleRoot)
-	}
-
-	// Current working directory
-	if cwd, err := os.Getwd(); err == nil {
-		searchPaths = append(searchPaths, cwd)
-	}
-
-	// Try each name in each path
+func findShimLibraryInPaths(names, searchPaths []string) (string, error) {
+	var searchedPaths []string
 	for _, name := range names {
-		// Try direct load first (uses system path resolution)
-		if _, err := os.Stat(name); err == nil {
-			return name, nil
-		}
-
 		for _, dir := range searchPaths {
+			if dir == "" {
+				continue
+			}
 			path := filepath.Join(dir, name)
 			if _, err := os.Stat(path); err == nil {
 				return path, nil

@@ -5,10 +5,65 @@ package ffgo
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/bstkhq/go-ffmpeg-ffi/avcodec"
 )
+
+func TestTwoPassWorkspaceUsesPrivateDirectory(t *testing.T) {
+	workspace, err := newTwoPassWorkspace("output.MP4", &EncoderOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tempDir := workspace.tempDir
+	defer workspace.cleanup()
+
+	if tempDir == "" {
+		t.Fatal("temporary workspace was not created")
+	}
+	if filepath.Dir(workspace.passLogFile) != tempDir || filepath.Dir(workspace.passOutput) != tempDir {
+		t.Fatalf("generated paths escaped workspace: log=%q output=%q", workspace.passLogFile, workspace.passOutput)
+	}
+	if filepath.Ext(workspace.passOutput) != ".MP4" {
+		t.Fatalf("pass output = %q, want original extension", workspace.passOutput)
+	}
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(tempDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if perm := info.Mode().Perm(); perm != 0o700 {
+			t.Fatalf("workspace permissions = %o, want 700", perm)
+		}
+	}
+	for _, path := range []string{workspace.passLogFile, workspace.passOutput} {
+		if _, err := os.Lstat(path); !os.IsNotExist(err) {
+			t.Fatalf("generated path %q exists before encoder use: %v", path, err)
+		}
+	}
+
+	workspace.cleanup()
+	if _, err := os.Stat(tempDir); !os.IsNotExist(err) {
+		t.Fatalf("temporary workspace still exists after cleanup: %v", err)
+	}
+}
+
+func TestTwoPassWorkspacePreservesCallerPaths(t *testing.T) {
+	dir := t.TempDir()
+	passLog := filepath.Join(dir, "passlog")
+	passOutput := filepath.Join(dir, "pass1.mkv")
+	workspace, err := newTwoPassWorkspace("output.mkv", &EncoderOptions{
+		PassLogFile: passLog,
+		PassOutput:  passOutput,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if workspace.tempDir != "" || workspace.passLogFile != passLog || workspace.passOutput != passOutput {
+		t.Fatalf("workspace changed caller paths: %#v", workspace)
+	}
+}
 
 func TestTwoPassTranscode_Integration(t *testing.T) {
 	if testing.Short() {
@@ -60,6 +115,16 @@ func TestTwoPassTranscode_Integration(t *testing.T) {
 	matches, _ := filepath.Glob(passBase + "*")
 	if len(matches) == 0 {
 		t.Fatalf("expected passlog files with prefix %q", passBase)
+	}
+
+	generatedOut := filepath.Join(tmpDir, "generated.mp4")
+	generatedOpts := *opts
+	generatedOpts.PassLogFile = ""
+	if err := TwoPassTranscode(in, generatedOut, &generatedOpts); err != nil {
+		t.Fatalf("TwoPassTranscode with generated workspace: %v", err)
+	}
+	if _, err := os.Stat(generatedOut); err != nil {
+		t.Fatalf("output with generated workspace not created: %v", err)
 	}
 }
 
