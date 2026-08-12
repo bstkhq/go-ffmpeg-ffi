@@ -49,9 +49,9 @@ func (q *decoderPacketFIFO) len() int {
 	return len(q.packets) - q.head
 }
 
-func (q *decoderPacketFIFO) clear() {
+func (q *decoderPacketFIFO) clear(release func(*avcodec.Packet)) {
 	for i := q.head; i < len(q.packets); i++ {
-		avcodec.PacketFree(&q.packets[i].packet)
+		release(&q.packets[i].packet)
 	}
 	q.packets = nil
 	q.head = 0
@@ -110,31 +110,100 @@ func (q *decoderPacketQueue) len() int {
 	return q.video.len() + q.audio.len()
 }
 
-func (q *decoderPacketQueue) clear() {
-	q.video.clear()
-	q.audio.clear()
+func (q *decoderPacketQueue) clear(release func(*avcodec.Packet)) {
+	q.video.clear(release)
+	q.audio.clear(release)
 	q.nextSequence = 0
 }
 
-func cloneRawPacket(packet avcodec.Packet) (avcodec.Packet, error) {
-	clone := avcodec.PacketAlloc()
-	if clone == nil {
+const decoderPacketPoolLimit = 32
+
+type decoderPacketPool struct {
+	packets []avcodec.Packet
+}
+
+func (p *decoderPacketPool) acquire() (avcodec.Packet, error) {
+	if count := len(p.packets); count > 0 {
+		packet := p.packets[count-1]
+		p.packets[count-1] = nil
+		p.packets = p.packets[:count-1]
+		return packet, nil
+	}
+
+	packet := avcodec.PacketAlloc()
+	if packet == nil {
 		return nil, ErrOutOfMemory
 	}
-	if err := avcodec.PacketRef(clone, packet); err != nil {
-		avcodec.PacketFree(&clone)
+	return packet, nil
+}
+
+func (p *decoderPacketPool) clone(source avcodec.Packet, cache bool) (avcodec.Packet, error) {
+	packet, err := p.acquire()
+	if err != nil {
 		return nil, err
 	}
-	return clone, nil
+	if err := avcodec.PacketRef(packet, source); err != nil {
+		p.recycle(&packet, cache)
+		return nil, err
+	}
+	return packet, nil
+}
+
+func (p *decoderPacketPool) recycle(packet *avcodec.Packet, cache bool) {
+	if packet == nil || *packet == nil {
+		return
+	}
+	avcodec.PacketUnref(*packet)
+	if !cache || len(p.packets) >= decoderPacketPoolLimit {
+		avcodec.PacketFree(packet)
+		return
+	}
+	p.packets = append(p.packets, *packet)
+	*packet = nil
+}
+
+func (p *decoderPacketPool) clear() {
+	for i := range p.packets {
+		avcodec.PacketFree(&p.packets[i])
+	}
+	p.packets = nil
+}
+
+func (p *decoderPacketPool) len() int {
+	return len(p.packets)
+}
+
+func cloneRawPacket(source avcodec.Packet) (avcodec.Packet, error) {
+	packet := avcodec.PacketAlloc()
+	if packet == nil {
+		return nil, ErrOutOfMemory
+	}
+	if err := avcodec.PacketRef(packet, source); err != nil {
+		avcodec.PacketFree(&packet)
+		return nil, err
+	}
+	return packet, nil
+}
+
+func (d *Decoder) clonePacketLocked(source avcodec.Packet) (avcodec.Packet, error) {
+	return d.packetPool.clone(source, !d.closed)
+}
+
+func (d *Decoder) recyclePacketLocked(packet *avcodec.Packet) {
+	d.packetPool.recycle(packet, !d.closed)
+}
+
+func (d *Decoder) clearPacketPoolLocked() {
+	d.packetPool.clear()
 }
 
 func (d *Decoder) queuePacketRefLocked(packet avcodec.Packet, mediaType MediaType) error {
-	clone, err := cloneRawPacket(packet)
+	clone, err := d.clonePacketLocked(packet)
 	if err != nil {
 		return err
 	}
 	if !d.packetQueue.push(mediaType, clone) {
-		avcodec.PacketFree(&clone)
+		d.recyclePacketLocked(&clone)
 		return errors.New("ffgo: cannot queue unsupported decoder media type")
 	}
 	return nil
@@ -182,7 +251,7 @@ func (d *Decoder) popFirstQueuedPacketLocked() (MediaType, avcodec.Packet) {
 func (d *Decoder) clearDecodeStateLocked() {
 	d.videoState.reset()
 	d.audioState.reset()
-	d.packetQueue.clear()
+	d.packetQueue.clear(d.recyclePacketLocked)
 	d.demuxEOF = false
 	d.activeMedia = MediaTypeUnknown
 	if d.prefetchedFrame != nil {
@@ -229,10 +298,16 @@ func (d *Decoder) codecStateLocked(mediaType MediaType) (*decoderCodecState, avc
 		if !d.videoDecoderOpen || d.videoCodecCtx == nil {
 			return nil, nil, errors.New("ffgo: video decoder not opened; call OpenVideoDecoder first")
 		}
+		if d.videoState.freePacket == nil {
+			d.videoState.freePacket = d.recyclePacketLocked
+		}
 		return &d.videoState, d.videoCodecCtx, nil
 	case MediaTypeAudio:
 		if !d.audioDecoderOpen || d.audioCodecCtx == nil {
 			return nil, nil, errors.New("ffgo: audio decoder not opened; call OpenAudioDecoder first")
+		}
+		if d.audioState.freePacket == nil {
+			d.audioState.freePacket = d.recyclePacketLocked
 		}
 		return &d.audioState, d.audioCodecCtx, nil
 	default:
@@ -243,11 +318,11 @@ func (d *Decoder) codecStateLocked(mediaType MediaType) (*decoderCodecState, avc
 func (d *Decoder) enqueueOwnedPacketLocked(mediaType MediaType, packet avcodec.Packet) error {
 	state, _, err := d.codecStateLocked(mediaType)
 	if err != nil {
-		avcodec.PacketFree(&packet)
+		d.recyclePacketLocked(&packet)
 		return err
 	}
 	if err := state.enqueueOwned(packet); err != nil {
-		avcodec.PacketFree(&packet)
+		d.recyclePacketLocked(&packet)
 		return err
 	}
 	return nil

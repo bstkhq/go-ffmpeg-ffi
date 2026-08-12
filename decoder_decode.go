@@ -113,7 +113,7 @@ func (d *Decoder) readPacketLocked() (*Packet, error) {
 	if d.packetQueue.len() > 0 {
 		_, packet := d.popFirstQueuedPacketLocked()
 		err := avcodec.PacketRef(d.packet, packet)
-		avcodec.PacketFree(&packet)
+		d.recyclePacketLocked(&packet)
 		if err != nil {
 			return nil, err
 		}
