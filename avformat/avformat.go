@@ -11,6 +11,7 @@ import (
 	"github.com/bstkhq/go-ffmpeg-ffi/avcodec"
 	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/bindings"
+	"github.com/bstkhq/go-ffmpeg-ffi/internal/cstr"
 	"github.com/ebitengine/purego"
 )
 
@@ -536,7 +537,7 @@ func InputFormatName(f InputFormat) string {
 		return ""
 	}
 	namePtr := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(f) + offsetInputFormatName))
-	return goString(namePtr)
+	return cstr.String(namePtr, 4096)
 }
 
 // InputFormatLongName returns the demuxer long name.
@@ -545,7 +546,7 @@ func InputFormatLongName(f InputFormat) string {
 		return ""
 	}
 	namePtr := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(f) + offsetInputFormatLongName))
-	return goString(namePtr)
+	return cstr.String(namePtr, 4096)
 }
 
 // DemuxerNames returns the names of available input formats (demuxers), if supported by the FFmpeg build.
@@ -1161,7 +1162,7 @@ func DictEntryKey(entry unsafe.Pointer) string {
 	if keyPtr == nil {
 		return ""
 	}
-	return goString(keyPtr)
+	return cstr.String(keyPtr, 4096)
 }
 
 // DictEntryValue returns the value from a dictionary entry.
@@ -1173,29 +1174,5 @@ func DictEntryValue(entry unsafe.Pointer) string {
 	if valuePtr == nil {
 		return ""
 	}
-	return goString(valuePtr)
-}
-
-// goString converts a C string to a Go string.
-func goString(ptr unsafe.Pointer) string {
-	if ptr == nil {
-		return ""
-	}
-	// Find null terminator
-	var length int
-	for {
-		b := *(*byte)(unsafe.Pointer(uintptr(ptr) + uintptr(length)))
-		if b == 0 {
-			break
-		}
-		length++
-		// Safety limit
-		if length > 4096 {
-			break
-		}
-	}
-	if length == 0 {
-		return ""
-	}
-	return string((*[4096]byte)(ptr)[:length:length])
+	return cstr.String(valuePtr, 4096)
 }

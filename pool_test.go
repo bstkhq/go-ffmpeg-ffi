@@ -4,11 +4,62 @@ package ffgo
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 	"unsafe"
 
 	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 )
+
+func TestPlanVideoLayoutSubsampledOddDimensions(t *testing.T) {
+	tests := []struct {
+		name        string
+		format      PixelFormat
+		wantOffsets []int
+		wantLines   []int
+		wantTotal   int
+	}{
+		{
+			name:        "YUV420P",
+			format:      PixelFormatYUV420P,
+			wantOffsets: []int{0, 15, 21},
+			wantLines:   []int{5, 3, 3},
+			wantTotal:   27,
+		},
+		{
+			name:        "NV12",
+			format:      PixelFormatNV12,
+			wantOffsets: []int{0, 15},
+			wantLines:   []int{5, 6},
+			wantTotal:   27,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			offsets, lines, total, err := planVideoLayout(5, 3, tt.format)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(offsets, tt.wantOffsets) {
+				t.Errorf("offsets = %v, want %v", offsets, tt.wantOffsets)
+			}
+			if !reflect.DeepEqual(lines, tt.wantLines) {
+				t.Errorf("linesizes = %v, want %v", lines, tt.wantLines)
+			}
+			if total != tt.wantTotal {
+				t.Errorf("total = %d, want %d", total, tt.wantTotal)
+			}
+		})
+	}
+}
+
+func TestPlanVideoLayoutRejectsOverflow(t *testing.T) {
+	maxInt := int(^uint(0) >> 1)
+	if _, _, _, err := planVideoLayout(maxInt, 2, PixelFormatRGBA); err == nil {
+		t.Fatal("planVideoLayout accepted dimensions that overflow int")
+	}
+}
 
 func TestFramePool_GetPutAndLimit(t *testing.T) {
 	if !requireFFmpeg(t) {
@@ -179,6 +230,35 @@ func TestFrameWrapBuffer_RGB24(t *testing.T) {
 	final := WrappedBufferMemoryUsage()
 	if final.PinnedBuffers != before.PinnedBuffers || final.PinnedBytes != before.PinnedBytes {
 		t.Fatalf("expected pinned usage to return to baseline: before=%v final=%v", before, final)
+	}
+}
+
+func TestFrameWrapBufferSubsampledOddDimensions(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+
+	for _, tt := range []struct {
+		name      string
+		format    PixelFormat
+		wantLines []int32
+	}{
+		{name: "YUV420P", format: PixelFormatYUV420P, wantLines: []int32{5, 3, 3}},
+		{name: "NV12", format: PixelFormatNV12, wantLines: []int32{5, 6}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var frame Frame
+			if err := frame.WrapBuffer(make([]byte, 27), 5, 3, tt.format); err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = FrameFree(&frame) }()
+
+			for plane, want := range tt.wantLines {
+				if got := avutil.GetFrameLinesizePlane(frame.ptr, plane); got != want {
+					t.Errorf("linesize[%d] = %d, want %d", plane, got, want)
+				}
+			}
+		})
 	}
 }
 

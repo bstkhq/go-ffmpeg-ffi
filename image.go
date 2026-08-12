@@ -179,6 +179,10 @@ func ExtractFrame(inputPath string, ts time.Duration, outputPath string) error {
 // pattern should contain a format specifier like %02d for the frame number.
 // interval is the time between thumbnails, maxCount limits the number of thumbnails.
 func GenerateThumbnails(inputPath string, interval time.Duration, maxCount int, outputPattern string) ([]string, error) {
+	if interval <= 0 {
+		return nil, errors.New("ffgo: thumbnail interval must be positive")
+	}
+
 	decoder, err := NewDecoder(inputPath)
 	if err != nil {
 		return nil, err

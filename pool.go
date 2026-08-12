@@ -282,32 +282,68 @@ func (f *Frame) WrapBuffer(data []byte, width, height int, format PixelFormat) e
 }
 
 func planVideoLayout(w, h int, fmt PixelFormat) (planeOffsets []int, linesizes []int, total int, err error) {
+	if w <= 0 || h <= 0 {
+		return nil, nil, 0, errors.New("ffgo: invalid frame dimensions")
+	}
+
+	type plane struct{ linesize, rows int }
+	var planes []plane
 	switch fmt {
 	case PixelFormatRGB24:
-		ls := w * 3
-		total = ls * h
-		return []int{0}, []int{ls}, total, nil
+		ls, ok := checkedLayoutMul(w, 3)
+		if !ok {
+			return nil, nil, 0, errors.New("ffgo: frame layout size overflows int")
+		}
+		planes = []plane{{ls, h}}
 	case PixelFormatRGBA, PixelFormatBGRA:
-		ls := w * 4
-		total = ls * h
-		return []int{0}, []int{ls}, total, nil
+		ls, ok := checkedLayoutMul(w, 4)
+		if !ok {
+			return nil, nil, 0, errors.New("ffgo: frame layout size overflows int")
+		}
+		planes = []plane{{ls, h}}
 	case PixelFormatNV12:
-		ls0 := w
-		ls1 := w
-		ySize := ls0 * h
-		uvSize := ls1 * (h / 2)
-		total = ySize + uvSize
-		return []int{0, ySize}, []int{ls0, ls1}, total, nil
+		chromaWidth := w/2 + w%2
+		chromaHeight := h/2 + h%2
+		uvLinesize, ok := checkedLayoutMul(chromaWidth, 2)
+		if !ok {
+			return nil, nil, 0, errors.New("ffgo: frame layout size overflows int")
+		}
+		planes = []plane{{w, h}, {uvLinesize, chromaHeight}}
 	case PixelFormatYUV420P:
-		ls0 := w
-		ls1 := w / 2
-		ls2 := w / 2
-		ySize := ls0 * h
-		uSize := ls1 * (h / 2)
-		vSize := ls2 * (h / 2)
-		total = ySize + uSize + vSize
-		return []int{0, ySize, ySize + uSize}, []int{ls0, ls1, ls2}, total, nil
+		chromaWidth := w/2 + w%2
+		chromaHeight := h/2 + h%2
+		planes = []plane{{w, h}, {chromaWidth, chromaHeight}, {chromaWidth, chromaHeight}}
 	default:
 		return nil, nil, 0, errors.New("ffgo: unsupported pixel format for WrapBuffer")
 	}
+
+	for _, p := range planes {
+		planeSize, ok := checkedLayoutMul(p.linesize, p.rows)
+		if !ok {
+			return nil, nil, 0, errors.New("ffgo: frame layout size overflows int")
+		}
+		planeOffsets = append(planeOffsets, total)
+		linesizes = append(linesizes, p.linesize)
+		total, ok = checkedLayoutAdd(total, planeSize)
+		if !ok {
+			return nil, nil, 0, errors.New("ffgo: frame layout size overflows int")
+		}
+	}
+	return planeOffsets, linesizes, total, nil
+}
+
+func checkedLayoutMul(a, b int) (int, bool) {
+	maxInt := int(^uint(0) >> 1)
+	if a < 0 || b < 0 || (a != 0 && b > maxInt/a) {
+		return 0, false
+	}
+	return a * b, true
+}
+
+func checkedLayoutAdd(a, b int) (int, bool) {
+	maxInt := int(^uint(0) >> 1)
+	if a < 0 || b < 0 || a > maxInt-b {
+		return 0, false
+	}
+	return a + b, true
 }

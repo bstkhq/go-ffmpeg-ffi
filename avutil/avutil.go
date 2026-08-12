@@ -9,6 +9,7 @@ import (
 	"unsafe"
 
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/bindings"
+	"github.com/bstkhq/go-ffmpeg-ffi/internal/cstr"
 	"github.com/ebitengine/purego"
 )
 
@@ -694,7 +695,7 @@ func HWDeviceGetTypeName(deviceType HWDeviceType) string {
 	if ptr == nil {
 		return ""
 	}
-	return goString(ptr)
+	return cstr.String(ptr, 256)
 }
 
 // HWFrameTransferData copies data from a hardware frame to a software frame.
@@ -736,26 +737,4 @@ func FreeBufferRef(buf *AVBufferRef) {
 	}
 	avBufferUnref(buf)
 	*buf = nil
-}
-
-// goString converts a C string to a Go string.
-func goString(ptr unsafe.Pointer) string {
-	if ptr == nil {
-		return ""
-	}
-	var length int
-	for {
-		b := *(*byte)(unsafe.Pointer(uintptr(ptr) + uintptr(length)))
-		if b == 0 {
-			break
-		}
-		length++
-		if length > 256 {
-			break
-		}
-	}
-	if length == 0 {
-		return ""
-	}
-	return string((*[256]byte)(ptr)[:length:length])
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/bstkhq/go-ffmpeg-ffi/avformat"
 	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/bindings"
+	"github.com/bstkhq/go-ffmpeg-ffi/internal/cstr"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/shim"
 )
 
@@ -164,25 +165,6 @@ func ListDevicesWithOptions(deviceType DeviceType, opts *DeviceListOptions) ([]D
 	return out, nil
 }
 
-func cStringToGo(ptr unsafe.Pointer) string {
-	if ptr == nil {
-		return ""
-	}
-	// FFmpeg strings can be long; cap scanning to a reasonable limit.
-	const max = 4096
-	n := 0
-	for n < max {
-		if *(*byte)(unsafe.Add(ptr, n)) == 0 {
-			break
-		}
-		n++
-	}
-	if n == 0 {
-		return ""
-	}
-	return string(unsafe.Slice((*byte)(ptr), n))
-}
-
 func cStringArrayToGo(arr unsafe.Pointer, count int) []string {
 	if arr == nil || count <= 0 {
 		return nil
@@ -190,7 +172,7 @@ func cStringArrayToGo(arr unsafe.Pointer, count int) []string {
 	s := unsafe.Slice((*unsafe.Pointer)(arr), count)
 	out := make([]string, 0, count)
 	for i := 0; i < count; i++ {
-		out = append(out, cStringToGo(s[i]))
+		out = append(out, cstr.String(s[i], 4096))
 	}
 	return out
 }

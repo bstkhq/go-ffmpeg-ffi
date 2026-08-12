@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 	"unsafe"
@@ -1234,6 +1235,108 @@ func TestFilterGraphClose(t *testing.T) {
 	}
 }
 
+func TestFilterGraphConcurrentClose(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+	graph, err := NewVideoFilterGraph("null", 320, 240, PixelFormatYUV420P)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const callers = 32
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(callers)
+	for range callers {
+		go func() {
+			defer wg.Done()
+			<-start
+			if err := graph.Close(); err != nil {
+				t.Errorf("Close() failed: %v", err)
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+}
+
+func TestFilterGraphCloseWaitsForInFlightFilter(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+	graph, err := NewFilterGraph(FilterGraphConfig{
+		Width:    32,
+		Height:   32,
+		PixelFmt: PixelFormatYUV420P,
+		TimeBase: Rational{Num: 1, Den: 1000},
+		Filters:  "realtime",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer graph.Close()
+
+	frame := FrameAlloc()
+	defer func() { _ = FrameFree(&frame) }()
+	AVUtil.SetFrameWidth(frame, 32)
+	AVUtil.SetFrameHeight(frame, 32)
+	AVUtil.SetFrameFormat(frame, int32(PixelFormatYUV420P))
+	if err := AVUtil.FrameGetBuffer(frame, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	avutil.SetFramePTS(frame.ptr, 0)
+	frames, err := graph.Filter(&frame)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, filtered := range frames {
+		_ = FrameFree(filtered)
+	}
+
+	// The realtime filter delays this frame by roughly one second. Observe the
+	// operation mutex so Close cannot win the scheduler race before Filter starts.
+	avutil.SetFramePTS(frame.ptr, 1000)
+	filterDone := make(chan error, 1)
+	go func() {
+		frames, err := graph.Filter(&frame)
+		for _, filtered := range frames {
+			_ = FrameFree(filtered)
+		}
+		filterDone <- err
+	}()
+
+	deadline := time.Now().Add(time.Second)
+	for graph.mu.TryLock() {
+		graph.mu.Unlock()
+		select {
+		case err := <-filterDone:
+			t.Fatalf("Filter returned before entering the delayed operation: %v", err)
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("Filter did not enter the graph operation")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- graph.Close() }()
+	select {
+	case err := <-closeDone:
+		t.Fatalf("Close returned while Filter was in flight: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	if err := <-filterDone; err != nil {
+		t.Fatalf("Filter failed: %v", err)
+	}
+	if err := <-closeDone; err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+}
+
 func TestAudioFilterGraphBasic(t *testing.T) {
 	if !requireFFmpeg(t) {
 		return
@@ -2439,6 +2542,14 @@ func TestGenerateThumbnails(t *testing.T) {
 			t.Errorf("Thumbnail not found: %s", f)
 		} else {
 			t.Logf("  %s (%d bytes)", f, info.Size())
+		}
+	}
+}
+
+func TestGenerateThumbnailsRejectsNonPositiveInterval(t *testing.T) {
+	for _, interval := range []time.Duration{0, -time.Second} {
+		if _, err := GenerateThumbnails("unused", interval, 1, "unused"); err == nil {
+			t.Fatalf("GenerateThumbnails interval %s returned nil error", interval)
 		}
 	}
 }

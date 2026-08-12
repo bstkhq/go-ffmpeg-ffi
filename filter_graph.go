@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
+	"sync"
 	"unsafe"
 
 	"github.com/bstkhq/go-ffmpeg-ffi/avfilter"
@@ -15,7 +16,10 @@ import (
 
 // FilterGraph represents a filter processing pipeline for video or audio.
 // It abstracts the complexity of FFmpeg filter graphs into a simple push/pull interface.
+// Close is safe to call concurrently; it blocks until an in-flight Filter or
+// Flush returns.
 type FilterGraph struct {
+	mu         sync.Mutex
 	graph      avfilter.Graph
 	bufferSrc  avfilter.Context
 	bufferSink avfilter.Context
@@ -436,6 +440,12 @@ func getSampleFormatName(fmt SampleFormat) string {
 //	    // Process filtered frame
 //	}
 func (g *FilterGraph) Filter(frame *Frame) ([]*Frame, error) {
+	g.mu.Lock()
+	defer func() {
+		g.mu.Unlock()
+		runtime.KeepAlive(g)
+	}()
+
 	if g.closed {
 		return nil, ErrFilterGraphClosed
 	}
@@ -489,6 +499,12 @@ func (g *FilterGraph) Filter(frame *Frame) ([]*Frame, error) {
 // Flush drains any remaining frames from the filter graph.
 // Call this after sending all input frames to get any buffered output.
 func (g *FilterGraph) Flush() ([]*Frame, error) {
+	g.mu.Lock()
+	defer func() {
+		g.mu.Unlock()
+		runtime.KeepAlive(g)
+	}()
+
 	if g.closed {
 		return nil, ErrFilterGraphClosed
 	}
@@ -529,16 +545,26 @@ func (g *FilterGraph) Flush() ([]*Frame, error) {
 
 // Close releases all resources associated with the filter graph.
 func (g *FilterGraph) Close() error {
+	runtime.SetFinalizer(g, nil)
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
 	if g.closed {
 		return nil
 	}
 	g.closed = true
-	runtime.SetFinalizer(g, nil)
-	g.cleanup()
+	g.cleanupLocked()
 	return nil
 }
 
 func (g *FilterGraph) cleanup() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.closed = true
+	g.cleanupLocked()
+}
+
+func (g *FilterGraph) cleanupLocked() {
 	if g.outFrame != nil {
 		avutil.FrameFree(&g.outFrame)
 		g.outFrame = nil
