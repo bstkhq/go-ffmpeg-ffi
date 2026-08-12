@@ -100,6 +100,81 @@ func TestConcurrentAccess(t *testing.T) {
 	wg.Wait()
 }
 
+func TestConcurrentTakeReturnsValueOnce(t *testing.T) {
+	const numGoroutines = 100
+
+	baseline := Count()
+	handle := Register("value")
+	start := make(chan struct{})
+	results := make(chan any, numGoroutines)
+
+	var wg sync.WaitGroup
+	wg.Add(numGoroutines)
+	for range numGoroutines {
+		go func() {
+			defer wg.Done()
+			<-start
+			results <- Take(handle)
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+	close(results)
+
+	winners := 0
+	for result := range results {
+		if result != nil {
+			winners++
+			if result != "value" {
+				t.Fatalf("Take returned %v, want value", result)
+			}
+		}
+	}
+	if winners != 1 {
+		t.Fatalf("successful Take calls = %d, want 1", winners)
+	}
+	if got := Count(); got != baseline {
+		t.Fatalf("registered handles = %d, want baseline %d", got, baseline)
+	}
+}
+
+func TestConcurrentRegistrationCount(t *testing.T) {
+	const numHandles = 1000
+
+	baseline := Count()
+	handles := make(chan uintptr, numHandles)
+
+	var registerWG sync.WaitGroup
+	registerWG.Add(numHandles)
+	for i := range numHandles {
+		go func(value int) {
+			defer registerWG.Done()
+			handles <- Register(value)
+		}(i)
+	}
+	registerWG.Wait()
+	close(handles)
+
+	if got := Count(); got != baseline+numHandles {
+		t.Fatalf("registered handles = %d, want %d", got, baseline+numHandles)
+	}
+
+	var unregisterWG sync.WaitGroup
+	for handle := range handles {
+		unregisterWG.Add(1)
+		go func() {
+			defer unregisterWG.Done()
+			Unregister(handle)
+		}()
+	}
+	unregisterWG.Wait()
+
+	if got := Count(); got != baseline {
+		t.Fatalf("registered handles = %d, want baseline %d", got, baseline)
+	}
+}
+
 func TestHandlesAreUnique(t *testing.T) {
 	handles := make(map[uintptr]bool)
 

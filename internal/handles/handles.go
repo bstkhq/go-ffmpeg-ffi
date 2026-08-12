@@ -12,12 +12,13 @@ package handles
 
 import (
 	"sync"
+	"sync/atomic"
 )
 
 var (
-	mu      sync.RWMutex
-	handles         = make(map[uintptr]any)
-	nextID  uintptr = 1
+	registry sync.Map
+	nextID   atomic.Uintptr
+	count    atomic.Int64
 )
 
 // Register stores a Go object and returns a handle ID.
@@ -26,11 +27,9 @@ var (
 //
 // Thread-safe.
 func Register(v any) uintptr {
-	mu.Lock()
-	defer mu.Unlock()
-	id := nextID
-	nextID++
-	handles[id] = v
+	id := nextID.Add(1)
+	registry.Store(id, v)
+	count.Add(1)
 	return id
 }
 
@@ -39,9 +38,8 @@ func Register(v any) uintptr {
 //
 // Thread-safe.
 func Lookup(id uintptr) any {
-	mu.RLock()
-	defer mu.RUnlock()
-	return handles[id]
+	v, _ := registry.Load(id)
+	return v
 }
 
 // Unregister removes a handle and allows the Go object to be garbage collected.
@@ -49,9 +47,9 @@ func Lookup(id uintptr) any {
 //
 // Thread-safe.
 func Unregister(id uintptr) {
-	mu.Lock()
-	defer mu.Unlock()
-	delete(handles, id)
+	if _, loaded := registry.LoadAndDelete(id); loaded {
+		count.Add(-1)
+	}
 }
 
 // Take retrieves and unregisters an object in one atomic operation.
@@ -59,10 +57,10 @@ func Unregister(id uintptr) {
 //
 // Thread-safe.
 func Take(id uintptr) any {
-	mu.Lock()
-	defer mu.Unlock()
-	v := handles[id]
-	delete(handles, id)
+	v, loaded := registry.LoadAndDelete(id)
+	if loaded {
+		count.Add(-1)
+	}
 	return v
 }
 
@@ -71,7 +69,5 @@ func Take(id uintptr) any {
 //
 // Thread-safe.
 func Count() int {
-	mu.RLock()
-	defer mu.RUnlock()
-	return len(handles)
+	return int(count.Load())
 }
