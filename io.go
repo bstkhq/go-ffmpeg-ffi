@@ -681,10 +681,10 @@ func NewDecoderFromIOWithOptionsContext(ctx context.Context, callbacks *IOCallba
 			avutil.DictFree(&avDict)
 		}
 		interrupt.release(formatCtx)
-		_ = ioCtx.Close()
 		if formatCtx != nil {
-			avformat.FreeContext(formatCtx)
+			avformat.CloseInput(&formatCtx)
 		}
+		_ = ioCtx.Close()
 		return nil, err
 	}
 
