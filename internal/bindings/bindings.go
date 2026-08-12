@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/abi"
+	"github.com/bstkhq/go-ffmpeg-ffi/internal/dynlib"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/platform"
 	"github.com/ebitengine/purego"
 )
@@ -46,7 +47,7 @@ type dynamicLoader struct {
 
 var systemLoader = dynamicLoader{
 	open:    tryOpen,
-	close:   purego.Dlclose,
+	close:   dynlib.Close,
 	version: registerVersionFunction,
 }
 
@@ -278,10 +279,9 @@ func libraryCandidates(name string, versions []int, includeUnversioned bool) []s
 	return candidates
 }
 
-// tryOpen attempts to open a library with RTLD_NOW | RTLD_GLOBAL.
-// RTLD_GLOBAL is required because FFmpeg libraries reference one another.
+// tryOpen delegates shared-library loading to the current operating system.
 func tryOpen(path string) (uintptr, error) {
-	return purego.Dlopen(path, purego.RTLD_NOW|purego.RTLD_GLOBAL)
+	return dynlib.Open(path)
 }
 
 func registerVersionFunction(handle uintptr, name string) (fn func() uint32, err error) {
