@@ -229,9 +229,21 @@ SwiftShader and is correctness evidence only. Stable EOF, a frame-accurate seek
 to one second, cancellation, and successful decoder reuse after cancellation
 also pass. The probe cancels and closes its FFmpeg/audio resources on Android
 `onStop`, then completes the full audiovisual path again after `onStart` in the
-same process. Three short full runs increased process RSS from 182,404 KiB to
-183,480 KiB (1,076 KiB); this is a smoke check, not a sustained leak verdict.
-Long-duration resource-growth checks remain open before phase B is complete.
+same process.
+
+The reproducible prolonged/stress runner completed 20 full lifecycle cycles in
+one process followed by a separate 30-cycle rapid-cancellation run and a full
+recovery. All 20 prolonged cycles completed the H.264/AAC scenario. The rapid
+run interrupted video 16 times and audio 14 times; all 30 shutdowns completed,
+and the final audiovisual recovery passed. The prolonged run grew from 73,848
+to 84,444 KiB PSS and from 173,188 to 186,432 KiB RSS as the process warmed, but
+cycles 10 through 20 added only 134 KiB PSS and 308 KiB RSS. Threads finished
+at 37 from 33 and file descriptors returned to their baseline of 124. Across
+the rapid run and recovery, PSS grew 967 KiB, RSS 1,668 KiB, threads by four,
+and file descriptors by one. The PID remained stable and the retained logs
+contain no probe failure, app ANR, or native crash. This closes the emulator
+resource-growth gate for phase B; it remains correctness and lifecycle
+evidence, not GPU, MediaCodec, audible-audio, thermal, or frame-rate evidence.
 
 ### Android phase C: Galaxy Tab A9+ qualification
 

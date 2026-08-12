@@ -90,3 +90,26 @@ older Android version by mistake.
 The headless emulator validates audio decoding, resampling, and Ebitengine
 player startup. Because it runs without an audio device, audible output and
 latency remain physical-device gates for the Galaxy Tab A9+.
+
+## Prolonged and lifecycle stress test
+
+After installing and launching the APK, wait for the first
+`FFmpeg/H.264/AAC: OK` result and run:
+
+```bash
+ADB_BIN="$ANDROID_SDK_ROOT/platform-tools/adb" \
+  ../../scripts/android-emulator-stress.sh
+```
+
+The default workload performs 20 complete background/foreground cycles and
+then 30 rapid cancellations. Every complete cycle decodes video and audio,
+checks seek/EOF/cancellation, stops the Activity, releases its resources, and
+repeats in the same process. Every rapid cycle resumes active native work,
+waits one second, and stops it again. A final complete run proves recovery.
+
+The runner fails on a process restart, timeout, probe error, app ANR, excessive
+PSS/RSS growth, or excessive thread/file-descriptor growth. It writes CSV
+metrics, filtered `logcat`, and a summary below `.build/android-artifacts/`.
+The APK must be debuggable so `run-as` can read its own `/proc` metrics without
+root. Cycle counts, timeouts, and resource limits can be overridden with the
+`FFGO_ANDROID_*` environment variables declared at the top of the script.
