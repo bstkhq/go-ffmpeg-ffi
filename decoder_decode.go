@@ -110,7 +110,7 @@ func (d *Decoder) activateFlushLocked(mediaType MediaType) bool {
 
 func (d *Decoder) readPacketLocked() (*Packet, error) {
 	avcodec.PacketUnref(d.packet)
-	if len(d.packetQueue) > 0 {
+	if d.packetQueue.len() > 0 {
 		_, packet := d.popFirstQueuedPacketLocked()
 		err := avcodec.PacketRef(d.packet, packet)
 		avcodec.PacketFree(&packet)

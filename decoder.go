@@ -43,7 +43,7 @@ type Decoder struct {
 	audioDecoderOpen bool
 	videoState       decoderCodecState
 	audioState       decoderCodecState
-	packetQueue      []decoderQueuedPacket
+	packetQueue      decoderPacketQueue
 	demuxEOF         bool
 	activeMedia      MediaType
 	prefetchedFrame  avutil.Frame

@@ -29,36 +29,51 @@ func TestDecoderPacketQueuePreservesDemuxOrder(t *testing.T) {
 		avutil.FrameFree(&d.frame)
 	})
 
-	for _, streamIndex := range []int32{0, 1, 0} {
-		avcodec.SetPacketStreamIndex(d.packet, streamIndex)
+	for _, packet := range []struct {
+		streamIndex int32
+		pts         int64
+	}{
+		{streamIndex: 0, pts: 10},
+		{streamIndex: 1, pts: 20},
+		{streamIndex: 0, pts: 30},
+		{streamIndex: 1, pts: 40},
+	} {
+		avcodec.SetPacketStreamIndex(d.packet, packet.streamIndex)
+		avcodec.SetPacketPTS(d.packet, packet.pts)
 		queued, err := d.queueCurrentPacketLocked()
 		if err != nil {
 			t.Fatal(err)
 		}
 		if !queued {
-			t.Fatalf("stream %d was not queued", streamIndex)
+			t.Fatalf("stream %d was not queued", packet.streamIndex)
 		}
 	}
 
-	mediaType, packet := d.popFirstQueuedPacketLocked()
-	if mediaType != MediaTypeVideo || avcodec.GetPacketStreamIndex(packet) != 0 {
-		t.Fatalf("first packet = (%v, %d), want video stream 0", mediaType, avcodec.GetPacketStreamIndex(packet))
+	packet := d.popQueuedPacketLocked(MediaTypeVideo)
+	if packet == nil || avcodec.GetPacketPTS(packet) != 10 {
+		t.Fatal("targeted video pop did not return the first video packet")
 	}
 	avcodec.PacketFree(&packet)
 
-	packet = d.popQueuedPacketLocked(MediaTypeVideo)
-	if packet == nil || avcodec.GetPacketStreamIndex(packet) != 0 {
-		t.Fatal("targeted video pop did not return the remaining video packet")
+	mediaType, packet := d.popFirstQueuedPacketLocked()
+	if mediaType != MediaTypeAudio || avcodec.GetPacketPTS(packet) != 20 {
+		t.Fatalf("first remaining packet = (%v, %d), want audio PTS 20", mediaType, avcodec.GetPacketPTS(packet))
 	}
 	avcodec.PacketFree(&packet)
 
 	mediaType, packet = d.popFirstQueuedPacketLocked()
-	if mediaType != MediaTypeAudio || avcodec.GetPacketStreamIndex(packet) != 1 {
-		t.Fatalf("remaining packet = (%v, %d), want audio stream 1", mediaType, avcodec.GetPacketStreamIndex(packet))
+	if mediaType != MediaTypeVideo || avcodec.GetPacketPTS(packet) != 30 {
+		t.Fatalf("second remaining packet = (%v, %d), want video PTS 30", mediaType, avcodec.GetPacketPTS(packet))
 	}
 	avcodec.PacketFree(&packet)
 
-	if len(d.packetQueue) != 0 {
-		t.Fatalf("queue length = %d, want 0", len(d.packetQueue))
+	packet = d.popQueuedPacketLocked(MediaTypeAudio)
+	if packet == nil || avcodec.GetPacketPTS(packet) != 40 {
+		t.Fatal("targeted audio pop did not return the remaining audio packet")
+	}
+	avcodec.PacketFree(&packet)
+
+	if d.packetQueue.len() != 0 {
+		t.Fatalf("queue length = %d, want 0", d.packetQueue.len())
 	}
 }

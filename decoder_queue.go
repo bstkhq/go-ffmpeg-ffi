@@ -10,8 +10,110 @@ import (
 )
 
 type decoderQueuedPacket struct {
-	mediaType MediaType
-	packet    avcodec.Packet
+	sequence uint64
+	packet   avcodec.Packet
+}
+
+type decoderPacketFIFO struct {
+	packets []decoderQueuedPacket
+	head    int
+}
+
+func (q *decoderPacketFIFO) push(packet decoderQueuedPacket) {
+	q.packets = append(q.packets, packet)
+}
+
+func (q *decoderPacketFIFO) peek() (decoderQueuedPacket, bool) {
+	if q.head >= len(q.packets) {
+		return decoderQueuedPacket{}, false
+	}
+	return q.packets[q.head], true
+}
+
+func (q *decoderPacketFIFO) pop() avcodec.Packet {
+	if q.head >= len(q.packets) {
+		return nil
+	}
+
+	packet := q.packets[q.head].packet
+	q.packets[q.head] = decoderQueuedPacket{}
+	q.head++
+	if q.head == len(q.packets) {
+		q.packets = q.packets[:0]
+		q.head = 0
+	}
+	return packet
+}
+
+func (q *decoderPacketFIFO) len() int {
+	return len(q.packets) - q.head
+}
+
+func (q *decoderPacketFIFO) clear() {
+	for i := q.head; i < len(q.packets); i++ {
+		avcodec.PacketFree(&q.packets[i].packet)
+	}
+	q.packets = nil
+	q.head = 0
+}
+
+type decoderPacketQueue struct {
+	video        decoderPacketFIFO
+	audio        decoderPacketFIFO
+	nextSequence uint64
+}
+
+func (q *decoderPacketQueue) push(mediaType MediaType, packet avcodec.Packet) bool {
+	queued := decoderQueuedPacket{
+		sequence: q.nextSequence,
+		packet:   packet,
+	}
+
+	switch mediaType {
+	case MediaTypeVideo:
+		q.video.push(queued)
+	case MediaTypeAudio:
+		q.audio.push(queued)
+	default:
+		return false
+	}
+	q.nextSequence++
+	return true
+}
+
+func (q *decoderPacketQueue) pop(mediaType MediaType) avcodec.Packet {
+	switch mediaType {
+	case MediaTypeVideo:
+		return q.video.pop()
+	case MediaTypeAudio:
+		return q.audio.pop()
+	default:
+		return nil
+	}
+}
+
+func (q *decoderPacketQueue) popFirst() (MediaType, avcodec.Packet) {
+	video, hasVideo := q.video.peek()
+	audio, hasAudio := q.audio.peek()
+
+	switch {
+	case !hasVideo && !hasAudio:
+		return MediaTypeUnknown, nil
+	case !hasAudio || hasVideo && video.sequence < audio.sequence:
+		return MediaTypeVideo, q.video.pop()
+	default:
+		return MediaTypeAudio, q.audio.pop()
+	}
+}
+
+func (q *decoderPacketQueue) len() int {
+	return q.video.len() + q.audio.len()
+}
+
+func (q *decoderPacketQueue) clear() {
+	q.video.clear()
+	q.audio.clear()
+	q.nextSequence = 0
 }
 
 func cloneRawPacket(packet avcodec.Packet) (avcodec.Packet, error) {
@@ -31,10 +133,10 @@ func (d *Decoder) queuePacketRefLocked(packet avcodec.Packet, mediaType MediaTyp
 	if err != nil {
 		return err
 	}
-	d.packetQueue = append(d.packetQueue, decoderQueuedPacket{
-		mediaType: mediaType,
-		packet:    clone,
-	})
+	if !d.packetQueue.push(mediaType, clone) {
+		avcodec.PacketFree(&clone)
+		return errors.New("ffgo: cannot queue unsupported decoder media type")
+	}
 	return nil
 }
 
@@ -70,38 +172,17 @@ func (d *Decoder) readPacketIntoQueueLocked() (bool, error) {
 }
 
 func (d *Decoder) popQueuedPacketLocked(mediaType MediaType) avcodec.Packet {
-	for i := range d.packetQueue {
-		if d.packetQueue[i].mediaType != mediaType {
-			continue
-		}
-		return d.removeQueuedPacketLocked(i)
-	}
-	return nil
+	return d.packetQueue.pop(mediaType)
 }
 
 func (d *Decoder) popFirstQueuedPacketLocked() (MediaType, avcodec.Packet) {
-	if len(d.packetQueue) == 0 {
-		return MediaTypeUnknown, nil
-	}
-	mediaType := d.packetQueue[0].mediaType
-	return mediaType, d.removeQueuedPacketLocked(0)
-}
-
-func (d *Decoder) removeQueuedPacketLocked(index int) avcodec.Packet {
-	packet := d.packetQueue[index].packet
-	copy(d.packetQueue[index:], d.packetQueue[index+1:])
-	d.packetQueue[len(d.packetQueue)-1] = decoderQueuedPacket{}
-	d.packetQueue = d.packetQueue[:len(d.packetQueue)-1]
-	return packet
+	return d.packetQueue.popFirst()
 }
 
 func (d *Decoder) clearDecodeStateLocked() {
 	d.videoState.reset()
 	d.audioState.reset()
-	for i := range d.packetQueue {
-		avcodec.PacketFree(&d.packetQueue[i].packet)
-	}
-	d.packetQueue = nil
+	d.packetQueue.clear()
 	d.demuxEOF = false
 	d.activeMedia = MediaTypeUnknown
 	if d.prefetchedFrame != nil {
