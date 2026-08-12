@@ -5,6 +5,7 @@ package ffgo
 import (
 	"errors"
 	"reflect"
+	"sync"
 	"testing"
 	"unsafe"
 
@@ -276,5 +277,78 @@ func TestFrameWrapBuffer_MemoryLimit(t *testing.T) {
 	if err := f.WrapBuffer(buf, 8, 4, PixelFormatRGB24); err == nil {
 		_ = FrameFree(&f)
 		t.Fatalf("expected WrapBuffer to fail due to memory limit")
+	}
+}
+
+func TestFrameWrapBufferConcurrentMemoryLimit(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+
+	const (
+		workers       = 32
+		allowedFrames = 4
+		width         = 8
+		height        = 4
+		frameBytes    = width * height * 3
+	)
+	baseline := WrappedBufferMemoryUsage()
+	SetWrappedBufferMemoryLimit(baseline.PinnedBytes + allowedFrames*frameBytes)
+	t.Cleanup(func() { SetWrappedBufferMemoryLimit(0) })
+
+	start := make(chan struct{})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseAll := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(releaseAll)
+	results := make(chan error, workers)
+	var group sync.WaitGroup
+	group.Add(workers)
+	for range workers {
+		go func() {
+			defer group.Done()
+			<-start
+			var frame Frame
+			err := frame.WrapBuffer(make([]byte, frameBytes), width, height, PixelFormatRGB24)
+			results <- err
+			if err == nil {
+				<-release
+				if err := FrameFree(&frame); err != nil {
+					results <- err
+				}
+			}
+		}()
+	}
+	close(start)
+
+	succeeded := 0
+	for range workers {
+		if err := <-results; err == nil {
+			succeeded++
+		} else if !errors.Is(err, errWrappedBufferMemoryLimit) {
+			t.Fatalf("WrapBuffer returned unexpected error: %v", err)
+		}
+	}
+	if succeeded != allowedFrames {
+		t.Fatalf("successful concurrent wraps = %d, want %d", succeeded, allowedFrames)
+	}
+	usage := WrappedBufferMemoryUsage()
+	if usage.PinnedBytes != baseline.PinnedBytes+allowedFrames*frameBytes {
+		t.Fatalf("pinned bytes under contention = %d, want %d", usage.PinnedBytes, baseline.PinnedBytes+allowedFrames*frameBytes)
+	}
+	if usage.PinnedBuffers != baseline.PinnedBuffers+allowedFrames {
+		t.Fatalf("pinned buffers under contention = %d, want %d", usage.PinnedBuffers, baseline.PinnedBuffers+allowedFrames)
+	}
+
+	releaseAll()
+	group.Wait()
+	close(results)
+	for err := range results {
+		if err != nil {
+			t.Errorf("FrameFree failed: %v", err)
+		}
+	}
+	if final := WrappedBufferMemoryUsage(); final != baseline {
+		t.Fatalf("pinned usage after concurrent release = %v, want %v", final, baseline)
 	}
 }

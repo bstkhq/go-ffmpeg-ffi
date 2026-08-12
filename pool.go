@@ -142,8 +142,9 @@ var (
 	wrapLimitBytes  atomic.Int64
 	wrapPinnedBytes atomic.Int64
 	wrapPinnedCount atomic.Int64
-	wrapMu          sync.Mutex
 )
+
+var errWrappedBufferMemoryLimit = errors.New("ffgo: WrapBuffer exceeds configured memory limit")
 
 // SetWrappedBufferMemoryLimit sets a best-effort limit for total bytes pinned by Frame.WrapBuffer.
 // A limit <= 0 disables enforcement.
@@ -156,6 +157,26 @@ func WrappedBufferMemoryUsage() WrappedBufferUsage {
 	return WrappedBufferUsage{
 		PinnedBuffers: int(wrapPinnedCount.Load()),
 		PinnedBytes:   wrapPinnedBytes.Load(),
+	}
+}
+
+func reserveWrappedBufferBytes(size int64) bool {
+	if size <= 0 {
+		return false
+	}
+	const maxInt64 = int64(^uint64(0) >> 1)
+	for {
+		current := wrapPinnedBytes.Load()
+		if current < 0 || current > maxInt64-size {
+			return false
+		}
+		next := current + size
+		if limit := wrapLimitBytes.Load(); limit > 0 && next > limit {
+			return false
+		}
+		if wrapPinnedBytes.CompareAndSwap(current, next) {
+			return true
+		}
 	}
 }
 
@@ -192,6 +213,8 @@ type wrappedBufferHold struct {
 // is pinned until FFmpeg releases the final reference. The caller must not
 // resize, reuse, or mutate data concurrently with native access and must release
 // the frame with Frame.Free or FrameFree.
+// WrapBuffer may run concurrently for independent frames. Calls that target the
+// same Frame must be synchronized by the caller.
 //
 // Supported formats:
 // - PixelFormatRGB24
@@ -233,13 +256,8 @@ func (f *Frame) WrapBuffer(data []byte, width, height int, format PixelFormat) e
 
 	initWrapCallback()
 
-	wrapMu.Lock()
-	defer wrapMu.Unlock()
-
-	if lim := wrapLimitBytes.Load(); lim > 0 {
-		if wrapPinnedBytes.Load()+int64(need) > lim {
-			return errors.New("ffgo: WrapBuffer exceeds configured memory limit")
-		}
+	if !reserveWrappedBufferBytes(int64(need)) {
+		return errWrappedBufferMemoryLimit
 	}
 
 	// Clear existing refs/buffers.
@@ -249,7 +267,6 @@ func (f *Frame) WrapBuffer(data []byte, width, height int, format PixelFormat) e
 	pinner := new(runtime.Pinner)
 	pinner.Pin(&data[0])
 	h := handles.Register(wrappedBufferHold{data: data[:need], size: int64(need), pinner: pinner})
-	wrapPinnedBytes.Add(int64(need))
 	wrapPinnedCount.Add(1)
 
 	bufRef := avutil.BufferCreate(unsafe.Pointer(&data[0]), need, wrapFreeCBPtr, h, 0)
