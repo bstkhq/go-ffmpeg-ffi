@@ -148,10 +148,7 @@ func (g *FilterGraph) setupVideoFilters(cfg FilterGraphConfig) error {
 		return errors.New("ffgo: buffer filter not found")
 	}
 
-	srcArgs := fmt.Sprintf("video_size=%dx%d:pix_fmt=%d:time_base=%d/%d:pixel_aspect=%d/%d",
-		cfg.Width, cfg.Height, int(cfg.PixelFmt),
-		timeBase.Num, timeBase.Den,
-		sar.Num, sar.Den)
+	srcArgs := videoBufferSourceArgs(cfg, timeBase, sar)
 
 	var err error
 	g.bufferSrc, err = avfilter.GraphCreateFilter(g.graph, bufferSrc, "in", srcArgs)
@@ -190,6 +187,17 @@ func (g *FilterGraph) setupVideoFilters(cfg FilterGraphConfig) error {
 	}
 
 	return nil
+}
+
+func videoBufferSourceArgs(cfg FilterGraphConfig, timeBase, sar Rational) string {
+	args := fmt.Sprintf("video_size=%dx%d:pix_fmt=%d:time_base=%d/%d:pixel_aspect=%d/%d",
+		cfg.Width, cfg.Height, int(cfg.PixelFmt),
+		timeBase.Num, timeBase.Den,
+		sar.Num, sar.Den)
+	if cfg.FrameRate.Num > 0 && cfg.FrameRate.Den > 0 {
+		args += fmt.Sprintf(":frame_rate=%d/%d", cfg.FrameRate.Num, cfg.FrameRate.Den)
+	}
+	return args
 }
 
 // linkFilterChain parses a filter string and creates/links filters manually.
@@ -313,24 +321,7 @@ func (g *FilterGraph) setupAudioFilters(cfg FilterGraphConfig) error {
 		return errors.New("ffgo: abuffer filter not found")
 	}
 
-	// Get channel layout string
-	layoutStr := "stereo"
-	switch cfg.Channels {
-	case 1:
-		layoutStr = "mono"
-	case 2:
-		layoutStr = "stereo"
-	case 6:
-		layoutStr = "5.1"
-	case 8:
-		layoutStr = "7.1"
-	}
-
-	// Note: sample_fmt format string uses name like "fltp", "s16", etc.
-	sampleFmtName := getSampleFormatName(cfg.SampleFmt)
-
-	srcArgs := fmt.Sprintf("sample_rate=%d:sample_fmt=%s:channel_layout=%s",
-		cfg.SampleRate, sampleFmtName, layoutStr)
+	srcArgs := audioBufferSourceArgs(cfg)
 
 	var err error
 	g.bufferSrc, err = avfilter.GraphCreateFilter(g.graph, abufferSrc, "in", srcArgs)
@@ -393,6 +384,15 @@ func (g *FilterGraph) setupAudioFilters(cfg FilterGraphConfig) error {
 	}
 
 	return nil
+}
+
+func audioBufferSourceArgs(cfg FilterGraphConfig) string {
+	layout := fmt.Sprintf("%dc", cfg.Channels)
+	if cfg.ChannelLayout != 0 {
+		layout = fmt.Sprintf("0x%x", uint64(cfg.ChannelLayout))
+	}
+	return fmt.Sprintf("sample_rate=%d:sample_fmt=%s:channel_layout=%s",
+		cfg.SampleRate, getSampleFormatName(cfg.SampleFmt), layout)
 }
 
 func getSampleFormatName(fmt SampleFormat) string {
