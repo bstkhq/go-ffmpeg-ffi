@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/abi"
@@ -187,10 +188,10 @@ func TestBuildInstructions(t *testing.T) {
 func TestStatus_BeforeLoad(t *testing.T) {
 	// Create a fresh state by resetting (this is just for testing)
 	loadMu.Lock()
-	wasLoaded := loaded
+	wasLoaded := loaded.Load()
 	wasErr := loadErr
 	wasPath := shimPath
-	loaded = false
+	loaded.Store(false)
 	loadErr = nil
 	shimPath = ""
 	loadMu.Unlock()
@@ -198,7 +199,7 @@ func TestStatus_BeforeLoad(t *testing.T) {
 	// Restore after test
 	defer func() {
 		loadMu.Lock()
-		loaded = wasLoaded
+		loaded.Store(wasLoaded)
 		loadErr = wasErr
 		shimPath = wasPath
 		loadMu.Unlock()
@@ -218,16 +219,16 @@ func TestIsLoaded_Initial(t *testing.T) {
 func TestPath_WhenNotLoaded(t *testing.T) {
 	// If shim is not loaded, Path should return empty string
 	loadMu.Lock()
-	wasLoaded := loaded
+	wasLoaded := loaded.Load()
 	wasPath := shimPath
-	if !loaded {
+	if !loaded.Load() {
 		shimPath = ""
 	}
 	loadMu.Unlock()
 
 	defer func() {
 		loadMu.Lock()
-		loaded = wasLoaded
+		loaded.Store(wasLoaded)
 		shimPath = wasPath
 		loadMu.Unlock()
 	}()
@@ -243,13 +244,13 @@ func TestPath_WhenNotLoaded(t *testing.T) {
 func TestSetLogCallback_WithoutShim(t *testing.T) {
 	// Test that calling SetLogCallback without shim returns appropriate error
 	loadMu.Lock()
-	wasLoaded := loaded
-	loaded = false
+	wasLoaded := loaded.Load()
+	loaded.Store(false)
 	loadMu.Unlock()
 
 	defer func() {
 		loadMu.Lock()
-		loaded = wasLoaded
+		loaded.Store(wasLoaded)
 		loadMu.Unlock()
 	}()
 
@@ -264,13 +265,13 @@ func TestSetLogCallback_WithoutShim(t *testing.T) {
 
 func TestSetLogLevel_WithoutShim(t *testing.T) {
 	loadMu.Lock()
-	wasLoaded := loaded
-	loaded = false
+	wasLoaded := loaded.Load()
+	loaded.Store(false)
 	loadMu.Unlock()
 
 	defer func() {
 		loadMu.Lock()
-		loaded = wasLoaded
+		loaded.Store(wasLoaded)
 		loadMu.Unlock()
 	}()
 
@@ -282,13 +283,13 @@ func TestSetLogLevel_WithoutShim(t *testing.T) {
 
 func TestLog_WithoutShim(t *testing.T) {
 	loadMu.Lock()
-	wasLoaded := loaded
-	loaded = false
+	wasLoaded := loaded.Load()
+	loaded.Store(false)
 	loadMu.Unlock()
 
 	defer func() {
 		loadMu.Lock()
-		loaded = wasLoaded
+		loaded.Store(wasLoaded)
 		loadMu.Unlock()
 	}()
 
@@ -300,13 +301,13 @@ func TestLog_WithoutShim(t *testing.T) {
 
 func TestNewChapter_WithoutShim(t *testing.T) {
 	loadMu.Lock()
-	wasLoaded := loaded
-	loaded = false
+	wasLoaded := loaded.Load()
+	loaded.Store(false)
 	loadMu.Unlock()
 
 	defer func() {
 		loadMu.Lock()
-		loaded = wasLoaded
+		loaded.Store(wasLoaded)
 		loadMu.Unlock()
 	}()
 
@@ -318,13 +319,13 @@ func TestNewChapter_WithoutShim(t *testing.T) {
 
 func TestAVDeviceListInputSources_WithoutShim(t *testing.T) {
 	loadMu.Lock()
-	wasLoaded := loaded
-	loaded = false
+	wasLoaded := loaded.Load()
+	loaded.Store(false)
 	loadMu.Unlock()
 
 	defer func() {
 		loadMu.Lock()
-		loaded = wasLoaded
+		loaded.Store(wasLoaded)
 		loadMu.Unlock()
 	}()
 
@@ -336,19 +337,76 @@ func TestAVDeviceListInputSources_WithoutShim(t *testing.T) {
 
 func TestAVFrameColorOffsets_WithoutShim(t *testing.T) {
 	loadMu.Lock()
-	wasLoaded := loaded
-	loaded = false
+	wasLoaded := loaded.Load()
+	loaded.Store(false)
 	loadMu.Unlock()
 
 	defer func() {
 		loadMu.Lock()
-		loaded = wasLoaded
+		loaded.Store(wasLoaded)
 		loadMu.Unlock()
 	}()
 
 	_, _, _, _, err := AVFrameColorOffsets()
 	if err == nil {
 		t.Error("AVFrameColorOffsets should fail when shim is not loaded")
+	}
+}
+
+func TestConcurrentLoadAndFunctionCalls(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping shim load test in short mode")
+	}
+
+	const readerCount = 16
+	start := make(chan struct{})
+	stop := make(chan struct{})
+	var ready sync.WaitGroup
+	var readers sync.WaitGroup
+	ready.Add(readerCount)
+	readers.Add(readerCount)
+
+	callShim := func() {
+		_ = IsLoaded()
+		_ = SetLogLevel(32)
+	}
+
+	for range readerCount {
+		go func() {
+			defer readers.Done()
+			<-start
+			callShim()
+			ready.Done()
+			for {
+				select {
+				case <-stop:
+					callShim()
+					return
+				default:
+					callShim()
+				}
+			}
+		}()
+	}
+
+	close(start)
+	ready.Wait()
+	err := Load()
+	close(stop)
+	readers.Wait()
+
+	if err != nil {
+		t.Fatalf("loading shim: %v", err)
+	}
+	if !IsLoaded() {
+		t.Log("shim not available; concurrent calls stayed in the unloaded path")
+		return
+	}
+	if err := SetLogLevel(32); err != nil {
+		t.Fatalf("calling published shim function: %v", err)
+	}
+	if info := Info(); info.API == 0 || info.FFmpegMajor == 0 {
+		t.Fatalf("successful load did not publish shim version info: %+v", info)
 	}
 }
 
