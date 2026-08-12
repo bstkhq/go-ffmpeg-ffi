@@ -1,4 +1,4 @@
-//go:build !ios && !android && (amd64 || arm64)
+//go:build !ios && (amd64 || arm64)
 
 // Package ffgo provides high-level bindings to FFmpeg for media processing.
 // It enables decoding, encoding, muxing, demuxing, and scaling of audio/video

@@ -1,4 +1,4 @@
-//go:build !ios && !android && (amd64 || arm64)
+//go:build !ios && (amd64 || arm64)
 
 // Package avutil provides bindings to FFmpeg's libavutil library.
 // It includes frame management, error handling, dictionary operations,

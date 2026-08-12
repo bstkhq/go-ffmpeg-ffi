@@ -1,4 +1,4 @@
-//go:build !ios && !android && (amd64 || arm64)
+//go:build !ios && (amd64 || arm64)
 
 package platform
 
@@ -71,6 +71,8 @@ func TestFormatLibraryName(t *testing.T) {
 		{"avcodec", 0, "darwin", "libavcodec.dylib"},
 		{"avcodec", 60, "windows", "avcodec-60.dll"},
 		{"avcodec", 0, "windows", "avcodec.dll"},
+		{"avcodec", 60, "android", "libavcodec.so"},
+		{"avcodec", 0, "android", "libavcodec.so"},
 	}
 
 	for _, tt := range tests {
