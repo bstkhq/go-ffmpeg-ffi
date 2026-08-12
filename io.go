@@ -69,8 +69,6 @@ type CustomIOContext struct {
 	activeCallback int
 	callbacksDone  bool
 	avioCtx        avformat.IOContext
-	buffer         unsafe.Pointer // Allocated with av_malloc, owned by FFmpeg
-	bufferGo       []byte         // Go slice view of buffer (for callbacks)
 	callbacks      *IOCallbacks
 	handle         uintptr
 	callbackErr    error
@@ -499,7 +497,7 @@ func NewCustomIOContextWithSize(callbacks *IOCallbacks, writable bool, bufferSiz
 		return nil, err
 	}
 
-	// Allocate buffer with av_malloc (required by FFmpeg - it will free it)
+	// Allocate the buffer with av_malloc as required by avio_alloc_context.
 	buffer := avutil.Malloc(uintptr(bufferSize))
 	if buffer == nil {
 		return nil, errors.New("ffgo: failed to allocate I/O buffer")
@@ -507,8 +505,6 @@ func NewCustomIOContextWithSize(callbacks *IOCallbacks, writable bool, bufferSiz
 
 	lifetimeCtx, lifetimeCancel := context.WithCancel(context.Background())
 	ctx := &CustomIOContext{
-		buffer:         buffer,
-		bufferGo:       unsafe.Slice((*byte)(buffer), bufferSize),
 		callbacks:      callbacks,
 		lifetimeCtx:    lifetimeCtx,
 		lifetimeCancel: lifetimeCancel,
@@ -551,7 +547,6 @@ func NewCustomIOContextWithSize(callbacks *IOCallbacks, writable bool, bufferSiz
 
 // Close releases the I/O context. It cancels context-aware callbacks and waits
 // for active callback trampolines before releasing native memory.
-// Note: avio_context_free also frees the buffer, so we don't free it manually.
 func (c *CustomIOContext) Close() error {
 	c.cancelPending()
 	c.waitForCallbacks()
@@ -563,14 +558,11 @@ func (c *CustomIOContext) Close() error {
 	}
 	c.closed = true
 
-	// Free AVIOContext (this also frees the buffer)
+	// Free the AVIOContext and whichever buffer FFmpeg currently stores in it.
 	if c.avioCtx != nil {
 		avformat.IOContextFree(&c.avioCtx)
 	}
 
-	// Clear buffer references (buffer is freed by IOContextFree)
-	c.buffer = nil
-	c.bufferGo = nil
 	c.callbacks = nil
 	c.errorMu.Lock()
 	c.callbackErr = nil
@@ -689,10 +681,10 @@ func NewDecoderFromIOWithOptionsContext(ctx context.Context, callbacks *IOCallba
 			avutil.DictFree(&avDict)
 		}
 		interrupt.release(formatCtx)
-		_ = ioCtx.Close()
 		if formatCtx != nil {
-			avformat.FreeContext(formatCtx)
+			avformat.CloseInput(&formatCtx)
 		}
+		_ = ioCtx.Close()
 		return nil, err
 	}
 

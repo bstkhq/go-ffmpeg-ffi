@@ -54,6 +54,9 @@ func TestDetectSupportedLayouts(t *testing.T) {
 			if layout.FormatContext.InterruptCallback != tt.interruptCallback {
 				t.Fatalf("interrupt_callback offset = %d, want %d", layout.FormatContext.InterruptCallback, tt.interruptCallback)
 			}
+			if layout.IOContext.Buffer != 8 {
+				t.Fatalf("AVIOContext buffer offset = %d, want 8", layout.IOContext.Buffer)
+			}
 			if layout.Frame.SampleRate != tt.frameSampleRate {
 				t.Fatalf("frame sample_rate offset = %d, want %d", layout.Frame.SampleRate, tt.frameSampleRate)
 			}

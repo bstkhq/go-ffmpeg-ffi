@@ -418,6 +418,7 @@ func PacketUnref(pkt avcodec.Packet) {
 // AVFormatContext field offsets are selected from the runtime FFmpeg ABI.
 var (
 	offsetIOContext, offsetInputFormat, offsetOformat uintptr
+	offsetIOContextBuffer                             uintptr
 	offsetNumStreams, offsetStreams                   uintptr
 	offsetDuration, offsetBitRate, offsetFlags        uintptr
 	offsetNbPrograms, offsetPrograms                  uintptr
@@ -672,6 +673,7 @@ var (
 
 func setABIOffsets() {
 	layout := bindings.ABI()
+	offsetIOContextBuffer = layout.IOContext.Buffer
 	format := layout.FormatContext
 	offsetIOContext = format.IOContext
 	offsetInputFormat = format.InputFormat
@@ -977,7 +979,7 @@ func GetStreamTimeBase(stream Stream) (num, den int32) {
 }
 
 // IOAllocContext allocates and initializes an AVIOContext for custom I/O.
-// buffer should be allocated with av_malloc and will be freed by avio_context_free.
+// buffer should be allocated with av_malloc and is owned by the returned context.
 // bufferSize is the size of buffer.
 // writeFlag is 1 if the buffer should be writable, 0 if readable.
 // opaque is an integer token passed unchanged to all callbacks.
@@ -993,11 +995,17 @@ func IOAllocContext(buffer unsafe.Pointer, bufferSize int, writeFlag bool, opaqu
 	return unsafe.Pointer(avioAllocContext(uintptr(buffer), int32(bufferSize), wf, opaque, readPacket, writePacket, seek))
 }
 
-// IOContextFree frees an AVIOContext allocated with IOAllocContext.
+// IOContextFree frees an AVIOContext and its current buffer.
+// FFmpeg may replace the original buffer while probing an input, so the buffer
+// stored in the context at close time must be released rather than the pointer
+// originally passed to IOAllocContext.
 func IOContextFree(ctx *IOContext) {
 	if ctx == nil || *ctx == nil || avioContextFree == nil {
 		return
 	}
+	buffer := (*unsafe.Pointer)(unsafe.Pointer(uintptr(*ctx) + offsetIOContextBuffer))
+	avutil.Free(*buffer)
+	*buffer = nil
 	avioContextFree(ctx)
 	*ctx = nil
 }
