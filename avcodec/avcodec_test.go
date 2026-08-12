@@ -5,6 +5,7 @@ package avcodec
 import (
 	"os"
 	"testing"
+	"unsafe"
 
 	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/bindings"
@@ -130,6 +131,114 @@ func TestFreeContext(t *testing.T) {
 
 	// Double free should be safe
 	FreeContext(&ctx)
+}
+
+func TestFreeContextPropagatesNativePointerUpdate(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+
+	originalFreeContext := avcodecFreeContext
+	t.Cleanup(func() { avcodecFreeContext = originalFreeContext })
+
+	nativeContext := allocNativeTestPointer(t)
+
+	avcodecFreeContext = func(slot *unsafe.Pointer) {
+		if slot == nil {
+			t.Fatal("avcodec_free_context received a nil slot")
+		}
+		if *slot != nativeContext {
+			t.Fatalf("avcodec_free_context received %p, want %p", *slot, nativeContext)
+		}
+		*slot = nil
+	}
+
+	ctx := Context(nativeContext)
+	FreeContext(&ctx)
+	if ctx != nil {
+		t.Fatalf("FreeContext left context at %p", ctx)
+	}
+}
+
+func TestOpen2PropagatesDictionaryUpdate(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+
+	originalOpen2 := avcodecOpen2
+	t.Cleanup(func() { avcodecOpen2 = originalOpen2 })
+
+	initial := allocNativeTestPointer(t)
+	replacement := allocNativeTestPointer(t)
+
+	avcodecOpen2 = func(_, _ uintptr, slot *unsafe.Pointer) int32 {
+		if slot == nil {
+			t.Fatal("avcodec_open2 received a nil options slot")
+		}
+		if *slot != initial {
+			t.Fatalf("avcodec_open2 received %p, want %p", *slot, initial)
+		}
+		*slot = replacement
+		return 0
+	}
+
+	options := avutil.Dictionary(initial)
+	if err := Open2(nil, nil, &options); err != nil {
+		t.Fatalf("Open2 returned error: %v", err)
+	}
+	if options != replacement {
+		t.Fatalf("Open2 left options at %p, want %p", options, replacement)
+	}
+}
+
+func BenchmarkFreeContextPointerStaging(b *testing.B) {
+	if !ffmpegAvailable {
+		b.Skip("FFmpeg not available")
+	}
+
+	originalFreeContext := avcodecFreeContext
+	b.Cleanup(func() { avcodecFreeContext = originalFreeContext })
+
+	nativeContext := allocNativeTestPointer(b)
+
+	avcodecFreeContext = func(slot *unsafe.Pointer) { *slot = nil }
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		ctx := Context(nativeContext)
+		FreeContext(&ctx)
+	}
+}
+
+func BenchmarkOpen2PointerStaging(b *testing.B) {
+	if !ffmpegAvailable {
+		b.Skip("FFmpeg not available")
+	}
+
+	originalOpen2 := avcodecOpen2
+	b.Cleanup(func() { avcodecOpen2 = originalOpen2 })
+
+	nativeOptions := allocNativeTestPointer(b)
+
+	avcodecOpen2 = func(_, _ uintptr, _ *unsafe.Pointer) int32 { return 0 }
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		options := avutil.Dictionary(nativeOptions)
+		if err := Open2(nil, nil, &options); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func allocNativeTestPointer(tb testing.TB) unsafe.Pointer {
+	tb.Helper()
+	ptr := avutil.Malloc(1)
+	if ptr == nil {
+		tb.Fatal("avutil.Malloc returned nil")
+	}
+	tb.Cleanup(func() { avutil.Free(ptr) })
+	return ptr
 }
 
 func TestPacketAllocFree(t *testing.T) {

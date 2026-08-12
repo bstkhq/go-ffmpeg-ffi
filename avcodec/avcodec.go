@@ -160,23 +160,11 @@ func FreeContext(ctx *Context) {
 		return
 	}
 
-	// On some platforms (notably macOS), passing a pointer-to-pointer that points
-	// into Go memory to foreign code can trigger runtime/libffi aborts. Avoid
-	// passing Go memory by staging the pointer in FFmpeg-allocated memory.
-	//
-	// This keeps the public API unchanged while making cleanup reliable across
-	// platforms and purego backends.
-	tmp := avutil.Malloc(unsafe.Sizeof(uintptr(0)))
-	if tmp != nil {
-		*(*unsafe.Pointer)(tmp) = *ctx
-		avcodecFreeContext((*unsafe.Pointer)(tmp))
-		avutil.Free(tmp)
-		*ctx = nil
-		return
-	}
-
-	// Fallback: best-effort free. If tmp allocation failed, use the direct call.
-	avcodecFreeContext(ctx)
+	// Passing ctx directly would expose Go memory containing a Go pointer to
+	// foreign code. Use an integer slot instead: FFmpeg may update it during the
+	// call, but the Go memory itself contains no pointer visible to the runtime.
+	slot := uintptr(*ctx)
+	avcodecFreeContext((*unsafe.Pointer)(unsafe.Pointer(&slot)))
 	*ctx = nil
 }
 
@@ -186,23 +174,20 @@ func Open2(ctx Context, codec Codec, options *avutil.Dictionary) error {
 		return bindings.ErrNotLoaded
 	}
 
-	// Avoid passing a pointer-to-pointer that points into Go memory to foreign code
-	// (purego/libffi can abort on macOS). Stage the pointer in FFmpeg-allocated memory.
-	var tmp unsafe.Pointer
-	if options != nil {
-		tmp = avutil.Malloc(unsafe.Sizeof(uintptr(0)))
-		if tmp != nil {
-			*(*unsafe.Pointer)(tmp) = *options
-		}
-	}
-
 	var ret int32
-	if options != nil && tmp != nil {
-		ret = avcodecOpen2(uintptr(ctx), uintptr(codec), (*unsafe.Pointer)(tmp))
-		*options = *(*unsafe.Pointer)(tmp)
-		avutil.Free(tmp)
+	if options != nil {
+		// avcodec_open2 may replace the dictionary pointer. An integer slot keeps
+		// that writable pointer value out of Go's pointer graph while avoiding a
+		// native allocation solely for the pointer-to-pointer argument.
+		slot := uintptr(*options)
+		ret = avcodecOpen2(
+			uintptr(ctx),
+			uintptr(codec),
+			(*unsafe.Pointer)(unsafe.Pointer(&slot)),
+		)
+		*options = *(*unsafe.Pointer)(unsafe.Pointer(&slot))
 	} else {
-		ret = avcodecOpen2(uintptr(ctx), uintptr(codec), options)
+		ret = avcodecOpen2(uintptr(ctx), uintptr(codec), nil)
 	}
 
 	if ret < 0 {
