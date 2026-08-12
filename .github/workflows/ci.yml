@@ -75,6 +75,39 @@ jobs:
             -o "$output" .
           test -s "$output"
 
+  # Keep the complete desktop package and test surface buildable without CGO.
+  # Native runtime jobs below qualify the architectures for which GitHub
+  # provides runners; Windows ARM64 remains a compile-only target.
+  desktop-compile:
+    runs-on: ubuntu-latest
+    name: Compile (${{ matrix.goos }}/${{ matrix.goarch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: windows
+            goarch: amd64
+          - goos: windows
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Compile packages and tests
+        run: go test -exec /bin/true -run '^$' ./...
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+
   # Test every supported FFmpeg release line on one pinned platform.
   test-with-ffmpeg-linux:
     runs-on: ubuntu-latest
@@ -177,6 +210,119 @@ jobs:
           CGO_ENABLED: "0"
           FFGO_SHIM_DIR: ${{ github.workspace }}/shim
 
+  # Test with FFmpeg (Windows amd64). Windows ARM64 has no public native
+  # GitHub-hosted runner, so it is covered by the compile matrix above.
+  test-with-ffmpeg-windows-amd64:
+    runs-on: windows-latest
+    name: Test (Windows amd64)
+    timeout-minutes: 45
+    env:
+      WINDOWS_FFMPEG_VERSION: "8.0.3"
+      WINDOWS_FFMPEG_SHA256: "6136812ea6d4e68bdba27e33c2a94382711cdf4f8602ffef056ff792bd6f9818"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Install MinGW toolchain and codec dependencies
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            curl
+            make
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-nasm
+            mingw-w64-x86_64-x264
+            mingw-w64-x86_64-zlib
+            pkg-config
+
+      - name: Restore pinned FFmpeg build
+        id: ffmpeg-cache
+        uses: actions/cache@v4
+        with:
+          path: .work/ffmpeg-windows-${{ env.WINDOWS_FFMPEG_VERSION }}
+          key: ffmpeg-windows-amd64-${{ env.WINDOWS_FFMPEG_VERSION }}-v1
+
+      - name: Build FFmpeg ${{ env.WINDOWS_FFMPEG_VERSION }}
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        shell: msys2 {0}
+        run: |
+          workspace="$(cygpath -u "$GITHUB_WORKSPACE")"
+          prefix="$workspace/.work/ffmpeg-windows-$WINDOWS_FFMPEG_VERSION"
+          source_dir="$workspace/.work/ffmpeg-windows-source"
+          archive="$workspace/.work/ffmpeg-$WINDOWS_FFMPEG_VERSION.tar.xz"
+          mkdir -p "$prefix" "$source_dir"
+          curl --fail --location --retry 3 \
+            --output "$archive" \
+            "https://ffmpeg.org/releases/ffmpeg-$WINDOWS_FFMPEG_VERSION.tar.xz"
+          printf '%s  %s\n' "$WINDOWS_FFMPEG_SHA256" "$archive" | sha256sum --check --strict
+          tar -xf "$archive" --strip-components=1 -C "$source_dir"
+          cd "$source_dir"
+          ./configure \
+            --prefix="$prefix" \
+            --enable-shared \
+            --disable-static \
+            --disable-doc \
+            --disable-debug \
+            --disable-autodetect \
+            --disable-network \
+            --disable-ffplay \
+            --enable-gpl \
+            --enable-libx264 \
+            --enable-zlib
+          make -j2
+          make install
+
+      - name: Expose FFmpeg and shim to native Windows processes
+        shell: msys2 {0}
+        run: |
+          github_path="$(cygpath -u "$GITHUB_PATH")"
+          github_env="$(cygpath -u "$GITHUB_ENV")"
+          workspace="$(cygpath -u "$GITHUB_WORKSPACE")"
+          prefix="$workspace/.work/ffmpeg-windows-$WINDOWS_FFMPEG_VERSION"
+          printf '%s\n' "$(cygpath -w "$prefix/bin")" >> "$github_path"
+          printf '%s\n' "$(cygpath -w /mingw64/bin)" >> "$github_path"
+          printf 'FFGO_SHIM_DIR=%s\n' "$(cygpath -w "$workspace/shim")" >> "$github_env"
+
+      - name: Verify installed FFmpeg
+        shell: pwsh
+        run: ffmpeg -version | Select-Object -First 1 | Select-String "ffmpeg version $env:WINDOWS_FFMPEG_VERSION "
+
+      - name: Probe FFmpeg ABI layout
+        shell: msys2 {0}
+        run: |
+          workspace="$(cygpath -u "$GITHUB_WORKSPACE")"
+          export PKG_CONFIG_PATH="$workspace/.work/ffmpeg-windows-$WINDOWS_FFMPEG_VERSION/lib/pkgconfig"
+          mkdir -p .work
+          gcc -std=c11 -Wall -Wextra -Werror \
+            $(pkg-config --cflags libavutil libavcodec libavformat libavfilter libavdevice libswscale libswresample) \
+            internal/abi/testdata/layout_probe.c \
+            -o .work/layout-probe.exe
+          ./.work/layout-probe.exe > .work/layout.txt
+
+      - name: Verify FFmpeg ABI layout
+        shell: pwsh
+        run: Get-Content .work\layout.txt | go run ./internal/abi/cmd/check-layout
+
+      - name: Build shim
+        shell: msys2 {0}
+        working-directory: shim
+        run: |
+          workspace="$(cygpath -u "$GITHUB_WORKSPACE")"
+          export PKG_CONFIG_PATH="$workspace/.work/ffmpeg-windows-$WINDOWS_FFMPEG_VERSION/lib/pkgconfig"
+          make native
+
+      - name: Run unit and integration tests
+        shell: pwsh
+        run: go test -count=1 -v ./...
+        env:
+          CGO_ENABLED: "0"
+
   # Test with FFmpeg (macOS Intel)
   test-with-ffmpeg-macos-intel:
     runs-on: macos-15-intel
@@ -191,6 +337,15 @@ jobs:
 
       - name: Install FFmpeg
         run: brew install ffmpeg
+
+      - name: Verify FFmpeg ABI layout
+        run: |
+          mkdir -p .work
+          cc -std=c11 -Wall -Wextra -Werror \
+            $(pkg-config --cflags libavutil libavcodec libavformat libavfilter libavdevice libswscale libswresample) \
+            internal/abi/testdata/layout_probe.c \
+            -o .work/layout-probe
+          .work/layout-probe | go run ./internal/abi/cmd/check-layout
 
       - name: Build shim
         working-directory: shim
@@ -225,6 +380,15 @@ jobs:
 
       - name: Install FFmpeg
         run: brew install ffmpeg
+
+      - name: Verify FFmpeg ABI layout
+        run: |
+          mkdir -p .work
+          cc -std=c11 -Wall -Wextra -Werror \
+            $(pkg-config --cflags libavutil libavcodec libavformat libavfilter libavdevice libswscale libswresample) \
+            internal/abi/testdata/layout_probe.c \
+            -o .work/layout-probe
+          .work/layout-probe | go run ./internal/abi/cmd/check-layout
 
       - name: Build shim
         working-directory: shim

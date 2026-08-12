@@ -48,6 +48,27 @@ Legacy FFmpeg 5 support is justified only while a relevant supported operating
 system requires it. It must have a pinned CI job and an explicit sunset date;
 otherwise it is removed rather than silently left untested.
 
+## Desktop platform boundary
+
+PureGo exposes the same function-registration API on macOS and Windows, but the
+operating-system loaders are different. macOS opens `.dylib` files with
+`dlopen`/`dlclose`; Windows opens `.dll` files with
+`LoadLibrary`/`FreeLibrary`, while PureGo resolves registered functions with
+`GetProcAddress`. This boundary belongs below the FFmpeg library-family
+selection so version validation and the public API remain platform-independent.
+
+macOS `amd64` and `arm64` are qualified on native runners. Windows `amd64` is
+qualified on a native runner; Windows `arm64` is compile-qualified until a
+native runner is available. Compile qualification covers every package and test
+binary but is not runtime, codec, or hardware-acceleration evidence.
+
+The desktop application remains CGO-free. FFmpeg and the optional C shim are
+native shared libraries supplied separately. CI verifies the selected FFmpeg
+headers against the Go ABI layout before running the shim and integration
+suite. D3D11VA, DXVA2, and VideoToolbox remain runtime capabilities of the exact
+FFmpeg build and device; desktop support does not imply that they are present or
+meet a particular frame rate.
+
 ## Layering
 
 ```text

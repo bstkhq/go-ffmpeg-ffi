@@ -296,15 +296,23 @@ and `RTLD_*` API, which is intentionally unavailable on Windows. Windows needs
 a platform loader using `LoadLibrary`, `GetProcAddress`, and `FreeLibrary`; this
 is a go-ffmpeg-ffi integration gap, not a lack of Windows support in PureGo.
 
-After the mobile phases:
+Desktop closure adds one platform-neutral loader boundary while keeping library
+family selection and PureGo symbol registration shared:
 
-- add Windows `amd64` and `arm64` compile gates and native `amd64` runtime
-  coverage;
+- compile every package and test binary for Windows and macOS `amd64`/`arm64`;
+- run the complete FFmpeg and shim suite natively on Windows `amd64`;
+- verify the C-header ABI layout and rerun the complete suite natively on macOS
+  Intel and Apple Silicon after the loader refactor;
 - extend native runtime coverage to Windows ARM64 when a runner is available;
-- rerun the existing macOS Intel and Apple Silicon FFmpeg jobs after every
-  loader refactor; and
+  and
 - keep hardware acceleration capability-driven: D3D11VA/DXVA2 and
   VideoToolbox are not implied by successful compilation.
+
+Complete when Windows `amd64` loads a coherent FFmpeg family and compatible
+shim through the Windows loader, both Windows architectures pass the complete
+compile gate, and both macOS architectures retain native ABI/runtime evidence.
+Windows ARM64 remains compile-qualified, not runtime-qualified, until a native
+runner is available.
 
 ### Unscheduled ecosystems
 
