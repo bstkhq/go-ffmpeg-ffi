@@ -3,11 +3,55 @@
 package ffgo
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 
 	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 )
+
+func TestEstimateFrameRateStopsAfterFramesWithoutPTS(t *testing.T) {
+	calls := 0
+	_, err := estimateFrameRateFromPTS(func() (int64, bool, error) {
+		calls++
+		return avutil.NoPTSValue, true, nil
+	}, NewRational(1, 1000))
+	if err == nil {
+		t.Fatal("expected missing PTS error")
+	}
+	if calls != frameRateDetectionSampleSize {
+		t.Fatalf("decoded frames = %d, want %d", calls, frameRateDetectionSampleSize)
+	}
+}
+
+func TestEstimateFrameRateIgnoresMissingPTS(t *testing.T) {
+	pts := []int64{avutil.NoPTSValue, 0, 40, 80}
+	next := 0
+	fps, err := estimateFrameRateFromPTS(func() (int64, bool, error) {
+		if next == len(pts) {
+			return 0, false, nil
+		}
+		value := pts[next]
+		next++
+		return value, true, nil
+	}, NewRational(1, 1000))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fps != 25 {
+		t.Fatalf("frame rate = %v, want 25", fps)
+	}
+}
+
+func TestEstimateFrameRatePropagatesDecodeError(t *testing.T) {
+	want := errors.New("decode failed")
+	_, err := estimateFrameRateFromPTS(func() (int64, bool, error) {
+		return 0, false, want
+	}, NewRational(1, 1000))
+	if !errors.Is(err, want) {
+		t.Fatalf("error = %v, want %v", err, want)
+	}
+}
 
 func TestGenerateTimestamps(t *testing.T) {
 	tb := NewRational(1, 30)

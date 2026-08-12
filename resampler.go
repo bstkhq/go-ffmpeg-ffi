@@ -2,6 +2,7 @@ package ffgo
 
 import (
 	"fmt"
+	"math/bits"
 
 	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 	"github.com/bstkhq/go-ffmpeg-ffi/swresample"
@@ -285,12 +286,5 @@ func (cl ChannelLayout) String() string {
 
 // NumChannels returns the number of channels in this layout
 func (cl ChannelLayout) NumChannels() int {
-	// Count bits set in the layout
-	count := 0
-	layout := int64(cl)
-	for layout > 0 {
-		count += int(layout & 1)
-		layout >>= 1
-	}
-	return count
+	return bits.OnesCount64(uint64(cl))
 }

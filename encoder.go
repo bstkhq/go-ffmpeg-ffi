@@ -1362,8 +1362,12 @@ func (e *Encoder) cleanup() {
 
 // guessFormatFromPath determines the output format from filename extension.
 func guessFormatFromPath(path string) string {
-	// Check for image sequence pattern (contains %d, %04d, etc.)
-	if isImageSequencePattern(path) {
+	// A pattern in a parent directory is part of the path, not the output name.
+	base := path
+	if separator := strings.LastIndexAny(path, `/\`); separator >= 0 {
+		base = path[separator+1:]
+	}
+	if isImageSequencePattern(base) {
 		return "image2"
 	}
 
@@ -1378,6 +1382,7 @@ func guessFormatFromPath(path string) string {
 			break
 		}
 	}
+	ext = strings.ToLower(ext)
 
 	// Map common extensions to FFmpeg format names
 	switch ext {
@@ -1401,11 +1406,11 @@ func guessFormatFromPath(path string) string {
 		return "ogg"
 	case "gif":
 		return "gif"
-	case "png", "PNG":
+	case "png":
 		return "image2"
-	case "jpg", "jpeg", "JPG", "JPEG":
+	case "jpg", "jpeg":
 		return "image2"
-	case "bmp", "BMP":
+	case "bmp":
 		return "image2"
 	default:
 		return ""
