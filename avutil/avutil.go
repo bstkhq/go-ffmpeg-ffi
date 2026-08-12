@@ -58,6 +58,7 @@ var (
 	avOptSet       func(obj uintptr, name, val string, searchFlags int32) int32
 	avOptSetInt    func(obj uintptr, name string, val int64, searchFlags int32) int32
 	avOptSetDouble func(obj uintptr, name string, val float64, searchFlags int32) int32
+	avOptGetInt    func(obj uintptr, name string, searchFlags int32, outVal *int64) int32
 
 	// Hardware context functions
 	avHWDeviceCtxCreate      func(deviceCtx *unsafe.Pointer, deviceType int32, device string, opts uintptr, flags int32) int32
@@ -123,6 +124,7 @@ func registerBindings() {
 	purego.RegisterLibFunc(&avOptSet, lib, "av_opt_set")
 	purego.RegisterLibFunc(&avOptSetInt, lib, "av_opt_set_int")
 	purego.RegisterLibFunc(&avOptSetDouble, lib, "av_opt_set_double")
+	purego.RegisterLibFunc(&avOptGetInt, lib, "av_opt_get_int")
 
 	// Hardware context functions
 	purego.RegisterLibFunc(&avHWDeviceCtxCreate, lib, "av_hwdevice_ctx_create")
@@ -640,6 +642,22 @@ func OptSetDouble(obj unsafe.Pointer, name string, val float64, searchFlags int3
 		return NewError(ret, "av_opt_set_double")
 	}
 	return nil
+}
+
+// OptGetInt reads an integer option from an AVOptions-enabled object.
+func OptGetInt(obj unsafe.Pointer, name string, searchFlags int32) (int64, error) {
+	if avOptGetInt == nil {
+		return 0, bindings.ErrNotLoaded
+	}
+	if obj == nil {
+		return 0, NewError(-22, "av_opt_get_int: nil object")
+	}
+	var value int64
+	ret := avOptGetInt(uintptr(obj), name, searchFlags, &value)
+	if ret < 0 {
+		return 0, NewError(ret, "av_opt_get_int")
+	}
+	return value, nil
 }
 
 // HWDeviceType represents a hardware accelerator type.
