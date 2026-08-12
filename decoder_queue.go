@@ -173,18 +173,6 @@ func (p *decoderPacketPool) len() int {
 	return len(p.packets)
 }
 
-func cloneRawPacket(source avcodec.Packet) (avcodec.Packet, error) {
-	packet := avcodec.PacketAlloc()
-	if packet == nil {
-		return nil, ErrOutOfMemory
-	}
-	if err := avcodec.PacketRef(packet, source); err != nil {
-		avcodec.PacketFree(&packet)
-		return nil, err
-	}
-	return packet, nil
-}
-
 func (d *Decoder) clonePacketLocked(source avcodec.Packet) (avcodec.Packet, error) {
 	return d.packetPool.clone(source, !d.closed)
 }

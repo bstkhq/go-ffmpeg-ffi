@@ -134,6 +134,7 @@ type HWDecoder struct {
 	hwDevice            *HWDevice
 	outputSoftwareFrame bool
 	decodeState         decoderCodecState
+	packetPool          decoderPacketPool
 	demuxEOF            bool
 	closed              bool
 }
@@ -301,6 +302,9 @@ func (d *HWDecoder) ReadHWFrame() (Frame, error) {
 }
 
 func (d *HWDecoder) nextVideoFrameLocked(outputSoftware bool) (Frame, error) {
+	if d.decodeState.freePacket == nil {
+		d.decodeState.freePacket = d.recyclePacketLocked
+	}
 	for {
 		ready, err := d.decodeState.next(d.videoCodecCtx, d.frame)
 		if err != nil {
@@ -335,15 +339,23 @@ func (d *HWDecoder) nextVideoFrameLocked(outputSoftware bool) (Frame, error) {
 		if int(avcodec.GetPacketStreamIndex(d.packet)) != d.videoStreamIdx {
 			continue
 		}
-		packet, err := cloneRawPacket(d.packet)
+		packet, err := d.clonePacketLocked(d.packet)
 		if err != nil {
 			return Frame{}, err
 		}
 		if err := d.decodeState.enqueueOwned(packet); err != nil {
-			avcodec.PacketFree(&packet)
+			d.recyclePacketLocked(&packet)
 			return Frame{}, err
 		}
 	}
+}
+
+func (d *HWDecoder) clonePacketLocked(source avcodec.Packet) (avcodec.Packet, error) {
+	return d.packetPool.clone(source, !d.closed)
+}
+
+func (d *HWDecoder) recyclePacketLocked(packet *avcodec.Packet) {
+	d.packetPool.recycle(packet, !d.closed)
 }
 
 // TransferToSystem transfers a hardware frame to a software frame in CPU memory.
@@ -384,6 +396,7 @@ func (d *HWDecoder) Close() error {
 	}
 	d.closed = true
 	d.decodeState.reset()
+	d.packetPool.clear()
 
 	if d.swFrame != nil {
 		avutil.FrameFree(&d.swFrame)
