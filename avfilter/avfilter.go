@@ -368,8 +368,7 @@ func InOutSetFilterCtx(inout InOut, ctx Context) {
 	if inout == nil {
 		return
 	}
-	ptr := uintptr(inout) + offsetInOutFilterCtx
-	*(*unsafe.Pointer)(unsafe.Pointer(ptr)) = ctx
+	*(*unsafe.Pointer)(unsafe.Add(inout, offsetInOutFilterCtx)) = ctx
 }
 
 // InOutSetPadIdx sets the pad_idx field of an AVFilterInOut.
@@ -377,8 +376,7 @@ func InOutSetPadIdx(inout InOut, padIdx int32) {
 	if inout == nil {
 		return
 	}
-	ptr := uintptr(inout) + offsetInOutPadIdx
-	*(*int32)(unsafe.Pointer(ptr)) = padIdx
+	*(*int32)(unsafe.Add(inout, offsetInOutPadIdx)) = padIdx
 }
 
 // InOutSetNext sets the next field of an AVFilterInOut.
@@ -386,8 +384,7 @@ func InOutSetNext(inout InOut, next InOut) {
 	if inout == nil {
 		return
 	}
-	ptr := uintptr(inout) + offsetInOutNext
-	*(*unsafe.Pointer)(unsafe.Pointer(ptr)) = next
+	*(*unsafe.Pointer)(unsafe.Add(inout, offsetInOutNext)) = next
 }
 
 // InOutGetFilterCtx gets the filter_ctx from an AVFilterInOut.
@@ -395,8 +392,7 @@ func InOutGetFilterCtx(inout InOut) Context {
 	if inout == nil {
 		return nil
 	}
-	ptr := uintptr(inout) + offsetInOutFilterCtx
-	return *(*unsafe.Pointer)(unsafe.Pointer(ptr))
+	return *(*unsafe.Pointer)(unsafe.Add(inout, offsetInOutFilterCtx))
 }
 
 // InOutGetPadIdx gets the pad_idx from an AVFilterInOut.
@@ -404,8 +400,7 @@ func InOutGetPadIdx(inout InOut) int32 {
 	if inout == nil {
 		return 0
 	}
-	ptr := uintptr(inout) + offsetInOutPadIdx
-	return *(*int32)(unsafe.Pointer(ptr))
+	return *(*int32)(unsafe.Add(inout, offsetInOutPadIdx))
 }
 
 // InOutGetNext gets the next pointer from an AVFilterInOut.
@@ -413,6 +408,5 @@ func InOutGetNext(inout InOut) InOut {
 	if inout == nil {
 		return nil
 	}
-	ptr := uintptr(inout) + offsetInOutNext
-	return *(*unsafe.Pointer)(unsafe.Pointer(ptr))
+	return *(*unsafe.Pointer)(unsafe.Add(inout, offsetInOutNext))
 }

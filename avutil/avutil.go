@@ -503,19 +503,18 @@ func ConfigureFrameBuffer(frame Frame, buffer AVBufferRef) {
 	if frame == nil {
 		return
 	}
-	base := uintptr(frame)
-	data := (*[8]unsafe.Pointer)(unsafe.Pointer(base + offsetData))
-	linesize := (*[8]int32)(unsafe.Pointer(base + offsetLinesize))
-	buffers := (*[8]unsafe.Pointer)(unsafe.Pointer(base + offsetBuffer))
+	data := (*[8]unsafe.Pointer)(unsafe.Add(frame, offsetData))
+	linesize := (*[8]int32)(unsafe.Add(frame, offsetLinesize))
+	buffers := (*[8]unsafe.Pointer)(unsafe.Add(frame, offsetBuffer))
 	for i := 0; i < 8; i++ {
 		data[i] = nil
 		linesize[i] = 0
 		buffers[i] = nil
 	}
-	*(*unsafe.Pointer)(unsafe.Pointer(base + offsetExtendedData)) = unsafe.Pointer(base + offsetData)
+	*(*unsafe.Pointer)(unsafe.Add(frame, offsetExtendedData)) = unsafe.Add(frame, offsetData)
 	buffers[0] = buffer
-	*(*unsafe.Pointer)(unsafe.Pointer(base + offsetExtendedBuffer)) = nil
-	*(*int32)(unsafe.Pointer(base + offsetNbExtendedBuffer)) = 0
+	*(*unsafe.Pointer)(unsafe.Add(frame, offsetExtendedBuffer)) = nil
+	*(*int32)(unsafe.Add(frame, offsetNbExtendedBuffer)) = 0
 }
 
 // SetFrameDataPlane sets a frame data pointer and its linesize.
