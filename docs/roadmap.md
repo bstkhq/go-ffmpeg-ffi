@@ -194,6 +194,10 @@ Complete when `go list ./...`, package builds, and test compilation succeed for
 both Android targets with the intended public surface and without an Ebitengine
 dependency.
 
+Current branch evidence (12 August 2026): this compile gate passes for API 33
+`arm64` and `amd64`, including every root package and test binary. The external
+Ebitengine fixture remains a separate module.
+
 ### Android phase B: emulator integration
 
 - Maintain the external-module fixture in
@@ -215,6 +219,15 @@ dependency.
 
 Complete when a reproducible APK runs through the audiovisual scenario without
 crashes, missing symbols, growing resources, or unexplained output differences.
+
+Current branch evidence (12 August 2026): the API 33 x86-64 APK loads FFmpeg
+8.0.3, software-decodes all 60 H.264 frames, converts and presents RGBA through
+Ebitengine, software-decodes all 87 AAC frames, resamples them to 96,967 S16
+stereo samples at 48 kHz, and starts an Ebitengine audio player. The current
+host exposes neither `/dev/kvm` nor `/dev/dri`, so this run uses TCG and
+SwiftShader and is correctness evidence only. Seek, cancellation, explicit EOF
+assertions, clean shutdown, and resource-growth checks remain open before phase
+B is complete.
 
 ### Android phase C: Galaxy Tab A9+ qualification
 

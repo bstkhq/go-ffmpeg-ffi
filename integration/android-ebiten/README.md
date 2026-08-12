@@ -5,7 +5,7 @@ This is an intentionally separate Go module that consumes the local
 bind the complete public package without making Ebitengine a dependency of the
 library.
 
-The fixture displays three independent facts:
+The fixture displays four independent facts:
 
 1. Ebitengine created and rendered the Android surface.
 2. go-ffmpeg-ffi attempted to load the packaged FFmpeg libraries and reported
@@ -13,6 +13,9 @@ The fixture displays three independent facts:
 3. FFmpeg demuxed and software-decoded the repository's two-second H.264/AAC
    fixture, swscale converted its video frames to RGBA, and Ebitengine presented
    the decoded image.
+4. FFmpeg decoded the AAC track, swresample converted it to 48 kHz interleaved
+   signed 16-bit stereo PCM, and an Ebitengine audio player accepted and started
+   the resulting stream.
 
 Until Android FFmpeg shared libraries are added to the APK, a red
 `FFmpeg load: FAILED` result is expected. Once they are packaged, the same APK
@@ -70,3 +73,7 @@ the emulator integration gate and is not a production target. The
 `apk_with_ffmpeg` target changes the generated application manifest floor to
 API 33 so an APK containing API-33 native libraries cannot be installed on an
 older Android version by mistake.
+
+The headless emulator validates audio decoding, resampling, and Ebitengine
+player startup. Because it runs without an audio device, audible output and
+latency remain physical-device gates for the Galaxy Tab A9+.

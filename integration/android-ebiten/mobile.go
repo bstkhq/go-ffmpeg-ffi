@@ -4,6 +4,7 @@
 package mobile
 
 import (
+	"bytes"
 	"fmt"
 	"image/color"
 	"log"
@@ -14,6 +15,7 @@ import (
 	ffgo "github.com/bstkhq/go-ffmpeg-ffi"
 	"github.com/bstkhq/go-ffmpeg-ffi-android-ebiten-test/internal/rgba"
 	"github.com/hajimehoshi/ebiten/v2"
+	"github.com/hajimehoshi/ebiten/v2/audio"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/mobile"
 )
@@ -21,6 +23,7 @@ import (
 const (
 	logicalWidth  = 640
 	logicalHeight = 360
+	audioRate     = 48_000
 )
 
 type probeGame struct {
@@ -36,6 +39,10 @@ type probeGame struct {
 	// The following fields are touched only by Ebitengine's render goroutine.
 	videoImage          *ebiten.Image
 	presentedGeneration uint64
+
+	// Retain the audio objects after the decoding goroutine returns.
+	audioContext *audio.Context
+	audioPlayer  *audio.Player
 }
 
 func newProbeGame() *probeGame {
@@ -84,16 +91,154 @@ func (g *probeGame) start(mediaPath string) {
 				return
 			}
 
-			status := fmt.Sprintf(
+			g.setStatus(fmt.Sprintf(
 				"Ebitengine + go-ffmpeg-ffi Android probe\n"+
 					"FFmpeg load: OK | H.264 decode: OK\n"+
-					"Video: %dx%d, %d frames -> RGBA -> Ebitengine",
+					"Video: %dx%d, %d frames -> RGBA -> Ebitengine\n"+
+					"Decoding AAC fixture...",
 				width, height, frames,
+			), false)
+
+			audioFrames, audioSamples, audioErr := g.decodeAndPlayAudio(mediaPath)
+			if audioErr != nil {
+				status := fmt.Sprintf(
+					"Ebitengine + go-ffmpeg-ffi Android probe\n"+
+						"FFmpeg load: OK | H.264 decode: OK\n"+
+						"Video: %dx%d, %d frames -> RGBA -> Ebitengine\n"+
+						"AAC decode/resample/playback: FAILED\n%s",
+					width, height, frames, audioErr,
+				)
+				log.Print(status)
+				g.setStatus(status, false)
+				return
+			}
+
+			status := fmt.Sprintf(
+				"Ebitengine + go-ffmpeg-ffi Android probe\n"+
+					"FFmpeg load: OK | H.264 decode: OK | AAC audio: OK\n"+
+					"Video: %dx%d, %d frames -> RGBA -> Ebitengine\n"+
+					"Audio: %d frames, %d samples -> S16 stereo 48 kHz -> Ebitengine",
+				width, height, frames, audioFrames, audioSamples,
 			)
 			log.Print(status)
 			g.setStatus(status, true)
 		}()
 	})
+}
+
+func (g *probeGame) decodeAndPlayAudio(mediaPath string) (frames, samples int, err error) {
+	decoder, err := ffgo.NewDecoder(mediaPath, ffgo.WithStreams(ffgo.MediaTypeAudio))
+	if err != nil {
+		return 0, 0, fmt.Errorf("open media fixture: %w", err)
+	}
+	defer func() { _ = decoder.Close() }()
+
+	stream := decoder.AudioStream()
+	if stream == nil {
+		return 0, 0, fmt.Errorf("media fixture has no audio stream")
+	}
+	if stream.CodecID != ffgo.CodecIDAAC {
+		return 0, 0, fmt.Errorf("audio codec is %s, want AAC", stream.CodecName)
+	}
+
+	var pcm bytes.Buffer
+	var resampler *ffgo.Resampler
+	defer func() {
+		if resampler != nil {
+			_ = resampler.Close()
+		}
+	}()
+
+	appendPCM := func(frame ffgo.Frame) error {
+		wrapper := ffgo.WrapFrame(frame, ffgo.MediaTypeAudio)
+		if wrapper == nil {
+			return fmt.Errorf("resampler returned a nil frame")
+		}
+		data := wrapper.Data(0)
+		if wrapper.NumSamples() > 0 && len(data) == 0 {
+			return fmt.Errorf("resampler returned %d samples without packed PCM data", wrapper.NumSamples())
+		}
+		samples += wrapper.NumSamples()
+		_, writeErr := pcm.Write(data)
+		return writeErr
+	}
+
+	for {
+		frame, decodeErr := decoder.DecodeAudio()
+		if decodeErr != nil {
+			return frames, samples, fmt.Errorf("decode audio frame %d: %w", frames, decodeErr)
+		}
+		if frame.IsNil() {
+			break
+		}
+
+		wrapper := ffgo.WrapFrame(frame, ffgo.MediaTypeAudio)
+		if resampler == nil {
+			sampleRate := wrapper.SampleRate()
+			if sampleRate == 0 {
+				sampleRate = stream.SampleRate
+			}
+			resampler, err = ffgo.NewResampler(
+				ffgo.AudioFormat{
+					SampleRate:   sampleRate,
+					Channels:     stream.Channels,
+					SampleFormat: wrapper.SampleFormat(),
+				},
+				ffgo.AudioFormat{
+					SampleRate:    audioRate,
+					Channels:      2,
+					ChannelLayout: ffgo.ChannelLayoutStereo,
+					SampleFormat:  ffgo.SampleFormatS16,
+				},
+			)
+			if err != nil {
+				return frames, samples, fmt.Errorf("create AAC-to-PCM resampler: %w", err)
+			}
+		}
+
+		resampled, resampleErr := resampler.Resample(frame)
+		if resampleErr != nil {
+			return frames, samples, fmt.Errorf("resample audio frame %d: %w", frames, resampleErr)
+		}
+		if !resampled.IsNil() {
+			if appendErr := appendPCM(resampled); appendErr != nil {
+				_ = ffgo.FrameFree(&resampled)
+				return frames, samples, appendErr
+			}
+			_ = ffgo.FrameFree(&resampled)
+		}
+		frames++
+	}
+
+	if resampler == nil || frames == 0 {
+		return 0, 0, fmt.Errorf("decoder produced no audio frames")
+	}
+	flushed, flushErr := resampler.Flush()
+	if flushErr != nil {
+		return frames, samples, fmt.Errorf("flush audio resampler: %w", flushErr)
+	}
+	if !flushed.IsNil() {
+		if appendErr := appendPCM(flushed); appendErr != nil {
+			_ = ffgo.FrameFree(&flushed)
+			return frames, samples, appendErr
+		}
+		_ = ffgo.FrameFree(&flushed)
+	}
+	if pcm.Len() == 0 {
+		return frames, samples, fmt.Errorf("resampler produced no PCM data")
+	}
+
+	g.audioContext = audio.NewContext(audioRate)
+	g.audioPlayer, err = g.audioContext.NewPlayer(bytes.NewReader(pcm.Bytes()))
+	if err != nil {
+		return frames, samples, fmt.Errorf("create Ebitengine audio player: %w", err)
+	}
+	g.audioPlayer.Play()
+	log.Printf(
+		"AAC audio accepted by Ebitengine: frames=%d samples=%d pcm_bytes=%d rate=%d channels=2 format=s16",
+		frames, samples, pcm.Len(), audioRate,
+	)
+	return frames, samples, nil
 }
 
 func (g *probeGame) decodeVideo(mediaPath string) (frames, width, height int, err error) {
