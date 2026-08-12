@@ -6,6 +6,7 @@ package mobile
 import (
 	"fmt"
 	"image/color"
+	"log"
 	"runtime"
 	"strings"
 	"sync"
@@ -39,22 +40,26 @@ func (g *probeGame) start() {
 			err := ffgo.Init()
 			diagnostic := ffgo.Diagnose()
 			if err != nil {
-				g.setStatus(fmt.Sprintf(
+				status := fmt.Sprintf(
 					"Ebitengine + go-ffmpeg-ffi Android probe\n\n"+
 						"Platform: %s/%s\n"+
 						"FFmpeg load: FAILED\n%s\n\n"+
 						"This is expected until the FFmpeg .so files are packaged.\n\n%s",
 					runtime.GOOS, runtime.GOARCH, err, diagnostic.String(),
-				), false)
+				)
+				log.Print(status)
+				g.setStatus(status, false)
 				return
 			}
 
-			g.setStatus(fmt.Sprintf(
+			status := fmt.Sprintf(
 				"Ebitengine + go-ffmpeg-ffi Android probe\n\n"+
 					"Platform: %s/%s\n"+
 					"FFmpeg load: OK\n\n%s",
 				runtime.GOOS, runtime.GOARCH, diagnostic.String(),
-			), true)
+			)
+			log.Print(status)
+			g.setStatus(status, true)
 		}()
 	})
 }

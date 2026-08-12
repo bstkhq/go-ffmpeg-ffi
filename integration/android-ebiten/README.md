@@ -9,7 +9,7 @@ The first milestone displays two independent facts:
 
 1. Ebitengine created and rendered the Android surface.
 2. go-ffmpeg-ffi attempted to load the packaged FFmpeg libraries and reported
-   complete diagnostics on screen.
+   complete diagnostics on screen and in Android `logcat`.
 
 Until Android FFmpeg shared libraries are added to the APK, a red
 `FFmpeg load: FAILED` result is expected. Once they are packaged, the same APK
