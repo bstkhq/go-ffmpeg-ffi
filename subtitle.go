@@ -17,7 +17,7 @@ import (
 type SubtitleRenderer struct {
 	graph        *FilterGraph
 	subtitlePath string
-	filterStr    string
+	filterSpec   filterSpec
 	width        int
 	height       int
 }
@@ -76,29 +76,44 @@ func NewSubtitleRendererWithOptions(subtitlePath string, width, height int, opts
 		return nil, errors.New("ffgo: width and height must be positive")
 	}
 
-	// Build subtitles filter string
-	// FFmpeg subtitles filter syntax: subtitles=filename:options
-	// The filename needs to be escaped for the filter string
-	escapedPath := escapeFilterPath(subtitlePath)
-	filterStr := fmt.Sprintf("subtitles=%s", escapedPath)
+	spec := subtitleFilterSpec(subtitlePath, width, height, opts)
 
-	// Add options if provided
-	var filterOpts []string
+	graph, err := newVideoFilterGraphWithSpecs([]filterSpec{spec}, width, height, PixelFormatYUV420P)
+	if err != nil {
+		return nil, fmt.Errorf("ffgo: failed to create subtitle filter: %w", err)
+	}
+
+	return &SubtitleRenderer{
+		graph:        graph,
+		subtitlePath: subtitlePath,
+		filterSpec:   spec,
+		width:        width,
+		height:       height,
+	}, nil
+}
+
+func subtitleFilterSpec(subtitlePath string, width, height int, opts *SubtitleRendererOptions) filterSpec {
+	absPath, err := filepath.Abs(subtitlePath)
+	if err != nil {
+		absPath = subtitlePath
+	}
+	filterOpts := []filterOption{{name: "filename", value: absPath}}
 	if opts != nil {
 		if opts.OriginalSize {
-			filterOpts = append(filterOpts, "original_size=true")
+			filterOpts = append(filterOpts, filterOption{name: "original_size", value: fmt.Sprintf("%dx%d", width, height)})
 		}
 		if opts.CharEncoding != "" {
-			filterOpts = append(filterOpts, fmt.Sprintf("charenc=%s", opts.CharEncoding))
+			filterOpts = append(filterOpts, filterOption{name: "charenc", value: opts.CharEncoding})
 		}
 		if opts.FontsDir != "" {
-			escapedFontsDir := escapeFilterPath(opts.FontsDir)
-			filterOpts = append(filterOpts, fmt.Sprintf("fontsdir=%s", escapedFontsDir))
+			fontsDir, err := filepath.Abs(opts.FontsDir)
+			if err != nil {
+				fontsDir = opts.FontsDir
+			}
+			filterOpts = append(filterOpts, filterOption{name: "fontsdir", value: fontsDir})
 		}
 
-		// Force_style option for SRT/text subtitles
-		// In libass/ASS format, styles are comma-separated
-		// For FFmpeg filter, we need to escape commas inside the force_style value
+		// force_style uses libass' comma-separated key/value format.
 		var styleOpts []string
 		if opts.FontName != "" {
 			styleOpts = append(styleOpts, fmt.Sprintf("FontName=%s", opts.FontName))
@@ -120,30 +135,10 @@ func NewSubtitleRendererWithOptions(subtitlePath string, width, height int, opts
 		}
 
 		if len(styleOpts) > 0 {
-			// Join with comma, then quote the entire force_style value with single quotes
-			// to allow commas inside (ASS style uses comma-separated options)
-			forceStyle := strings.Join(styleOpts, ",")
-			filterOpts = append(filterOpts, fmt.Sprintf("force_style='%s'", forceStyle))
+			filterOpts = append(filterOpts, filterOption{name: "force_style", value: strings.Join(styleOpts, ",")})
 		}
 	}
-
-	if len(filterOpts) > 0 {
-		filterStr += ":" + strings.Join(filterOpts, ":")
-	}
-
-	// Create video filter graph with subtitles filter
-	graph, err := NewVideoFilterGraph(filterStr, width, height, PixelFormatYUV420P)
-	if err != nil {
-		return nil, fmt.Errorf("ffgo: failed to create subtitle filter: %w", err)
-	}
-
-	return &SubtitleRenderer{
-		graph:        graph,
-		subtitlePath: subtitlePath,
-		filterStr:    filterStr,
-		width:        width,
-		height:       height,
-	}, nil
+	return filterSpec{name: "subtitles", options: filterOpts}
 }
 
 // Render burns the subtitle at the current frame's PTS onto the frame.
@@ -174,7 +169,7 @@ func (r *SubtitleRenderer) Render(frame Frame) (Frame, error) {
 	if r.graph.srcPixFmt != inFmt {
 		_ = r.graph.Close()
 
-		graph, err := NewVideoFilterGraph(r.filterStr, r.width, r.height, inFmt)
+		graph, err := newVideoFilterGraphWithSpecs([]filterSpec{r.filterSpec}, r.width, r.height, inFmt)
 		if err != nil {
 			return Frame{}, fmt.Errorf("ffgo: failed to recreate subtitle filter: %w", err)
 		}
@@ -212,29 +207,6 @@ func (r *SubtitleRenderer) Close() error {
 // SubtitlePath returns the path to the subtitle file being used.
 func (r *SubtitleRenderer) SubtitlePath() string {
 	return r.subtitlePath
-}
-
-// escapeFilterPath escapes a file path for use in FFmpeg filter strings.
-// Special characters like : and \ need to be escaped.
-func escapeFilterPath(path string) string {
-	// Convert to absolute path if relative
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		absPath = path
-	}
-
-	// Escape special characters used in FFmpeg filter syntax
-	// : is used as option separator, so escape it
-	// ' is used to quote values, so escape it
-	// \ is escape character, so escape it first
-	result := absPath
-	result = strings.ReplaceAll(result, "\\", "\\\\")
-	result = strings.ReplaceAll(result, ":", "\\:")
-	result = strings.ReplaceAll(result, "'", "\\'")
-	result = strings.ReplaceAll(result, "[", "\\[")
-	result = strings.ReplaceAll(result, "]", "\\]")
-
-	return result
 }
 
 // SubtitleFormat represents subtitle file formats.

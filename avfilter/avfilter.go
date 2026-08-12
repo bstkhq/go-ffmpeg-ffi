@@ -37,7 +37,9 @@ var (
 	avfilter_graph_free          func(graph *Graph)
 	avfilter_graph_config        func(graphctx, log_ctx uintptr) int32
 	avfilter_graph_parse2        func(graph uintptr, filters *byte, inputs, outputs *InOut) int32
+	avfilter_graph_alloc_filter  func(graphctx, filter, namePtr uintptr) uintptr
 	avfilter_graph_create_filter func(filt_ctx *Context, filt, namePtr, argsPtr, opaque, graphCtx uintptr) int32
+	avfilter_init_str            func(filterctx, argsPtr uintptr) int32
 
 	// Filter lookup
 	avfilter_get_by_name func(name *byte) uintptr
@@ -103,7 +105,9 @@ func initLibrary() error {
 	purego.RegisterLibFunc(&avfilter_graph_free, libAVFilter, "avfilter_graph_free")
 	purego.RegisterLibFunc(&avfilter_graph_config, libAVFilter, "avfilter_graph_config")
 	purego.RegisterLibFunc(&avfilter_graph_parse2, libAVFilter, "avfilter_graph_parse2")
+	purego.RegisterLibFunc(&avfilter_graph_alloc_filter, libAVFilter, "avfilter_graph_alloc_filter")
 	purego.RegisterLibFunc(&avfilter_graph_create_filter, libAVFilter, "avfilter_graph_create_filter")
+	purego.RegisterLibFunc(&avfilter_init_str, libAVFilter, "avfilter_init_str")
 	purego.RegisterLibFunc(&avfilter_get_by_name, libAVFilter, "avfilter_get_by_name")
 	purego.RegisterLibFunc(&avfilter_link, libAVFilter, "avfilter_link")
 	purego.RegisterLibFunc(&avfilter_inout_alloc, libAVFilter, "avfilter_inout_alloc")
@@ -222,6 +226,44 @@ func GraphCreateFilter(graph Graph, filter Filter, name, args string) (Context, 
 		return nil, fmt.Errorf("avfilter_graph_create_filter failed: %d", ret)
 	}
 	return ctx, nil
+}
+
+// GraphAllocFilter adds an uninitialized filter context to a graph. Callers
+// may set AVOptions on the returned context before calling InitFilter.
+func GraphAllocFilter(graph Graph, filter Filter, name string) (Context, error) {
+	if graph == nil {
+		return nil, fmt.Errorf("avfilter: nil graph")
+	}
+	if filter == nil {
+		return nil, fmt.Errorf("avfilter: nil filter")
+	}
+	if err := Init(); err != nil {
+		return nil, err
+	}
+
+	ctx := avfilter_graph_alloc_filter(
+		uintptr(graph),
+		uintptr(filter),
+		uintptr(unsafe.Pointer(cString(name))),
+	)
+	if ctx == 0 {
+		return nil, fmt.Errorf("avfilter_graph_alloc_filter failed")
+	}
+	return unsafe.Pointer(ctx), nil
+}
+
+// InitFilter initializes a filter after its AVOptions have been set.
+func InitFilter(ctx Context) error {
+	if ctx == nil {
+		return fmt.Errorf("avfilter: nil filter context")
+	}
+	if err := Init(); err != nil {
+		return err
+	}
+	if ret := avfilter_init_str(uintptr(ctx), 0); ret < 0 {
+		return fmt.Errorf("avfilter_init_str failed: %d", ret)
+	}
+	return nil
 }
 
 // GetByName finds a filter by name (e.g., "buffer", "buffersink", "scale").

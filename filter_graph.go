@@ -77,6 +77,18 @@ func NewVideoFilterGraph(filters string, width, height int, pixFmt PixelFormat) 
 
 // NewFilterGraph creates a filter graph from the given configuration.
 func NewFilterGraph(cfg FilterGraphConfig) (*FilterGraph, error) {
+	return newFilterGraph(cfg, nil)
+}
+
+func newVideoFilterGraphWithSpecs(specs []filterSpec, width, height int, pixFmt PixelFormat) (*FilterGraph, error) {
+	return newFilterGraph(FilterGraphConfig{
+		Width:    width,
+		Height:   height,
+		PixelFmt: pixFmt,
+	}, specs)
+}
+
+func newFilterGraph(cfg FilterGraphConfig, videoSpecs []filterSpec) (*FilterGraph, error) {
 	if err := avfilter.Init(); err != nil {
 		return nil, fmt.Errorf("ffgo: failed to initialize avfilter: %w", err)
 	}
@@ -108,7 +120,7 @@ func NewFilterGraph(cfg FilterGraphConfig) (*FilterGraph, error) {
 
 	var err error
 	if isVideo {
-		err = g.setupVideoFilters(cfg)
+		err = g.setupVideoFilters(cfg, videoSpecs)
 	} else {
 		err = g.setupAudioFilters(cfg)
 	}
@@ -129,7 +141,7 @@ func NewFilterGraph(cfg FilterGraphConfig) (*FilterGraph, error) {
 	return g, nil
 }
 
-func (g *FilterGraph) setupVideoFilters(cfg FilterGraphConfig) error {
+func (g *FilterGraph) setupVideoFilters(cfg FilterGraphConfig, filterSpecs []filterSpec) error {
 	// Default time base
 	timeBase := cfg.TimeBase
 	if timeBase.Num == 0 {
@@ -168,7 +180,11 @@ func (g *FilterGraph) setupVideoFilters(cfg FilterGraphConfig) error {
 	}
 
 	// Link filters - use manual linking approach which is more reliable
-	if cfg.Filters == "" || cfg.Filters == "null" {
+	if filterSpecs != nil {
+		if err := g.linkFilterSpecs(filterSpecs); err != nil {
+			return err
+		}
+	} else if cfg.Filters == "" || cfg.Filters == "null" {
 		// No filters or null filter - link src directly to sink
 		if err := avfilter.Link(g.bufferSrc, 0, g.bufferSink, 0); err != nil {
 			return fmt.Errorf("ffgo: failed to link src to sink: %w", err)
@@ -203,9 +219,10 @@ func videoBufferSourceArgs(cfg FilterGraphConfig, timeBase, sar Rational) string
 // linkFilterChain parses a filter string and creates/links filters manually.
 // Filter string format: "filter1=args1,filter2=args2,..."
 func (g *FilterGraph) linkFilterChain(filters string) error {
-	// Parse filters - split by comma (simple parsing, doesn't handle nested commas)
-	filterList := parseFilterChain(filters)
+	return g.linkFilterSpecs(parseFilterChain(filters))
+}
 
+func (g *FilterGraph) linkFilterSpecs(filterList []filterSpec) error {
 	if len(filterList) == 0 {
 		// Empty filter list, link src to sink directly
 		return avfilter.Link(g.bufferSrc, 0, g.bufferSink, 0)
@@ -219,7 +236,7 @@ func (g *FilterGraph) linkFilterChain(filters string) error {
 			return fmt.Errorf("ffgo: filter %q not found", f.name)
 		}
 
-		ctx, err := avfilter.GraphCreateFilter(g.graph, filter, fmt.Sprintf("f%d", i), f.args)
+		ctx, err := g.createFilter(filter, fmt.Sprintf("f%d", i), f)
 		if err != nil {
 			return fmt.Errorf("ffgo: failed to create filter %q: %w", f.name, err)
 		}
@@ -243,10 +260,37 @@ func (g *FilterGraph) linkFilterChain(filters string) error {
 	return nil
 }
 
-// filterSpec represents a parsed filter specification
+func (g *FilterGraph) createFilter(filter avfilter.Filter, name string, spec filterSpec) (avfilter.Context, error) {
+	if spec.options == nil {
+		return avfilter.GraphCreateFilter(g.graph, filter, name, spec.args)
+	}
+
+	ctx, err := avfilter.GraphAllocFilter(g.graph, filter, name)
+	if err != nil {
+		return nil, err
+	}
+	for _, option := range spec.options {
+		if err := avutil.OptSet(ctx, option.name, option.value, avutil.AV_OPT_SEARCH_CHILDREN); err != nil {
+			return nil, fmt.Errorf("set filter option %q: %w", option.name, err)
+		}
+	}
+	if err := avfilter.InitFilter(ctx); err != nil {
+		return nil, err
+	}
+	return ctx, nil
+}
+
+// filterSpec describes a filter using either textual arguments or structured options.
 type filterSpec struct {
-	name string
-	args string
+	name    string
+	args    string
+	options []filterOption
+}
+
+// filterOption is passed directly to an AVFilterContext without graph parsing.
+type filterOption struct {
+	name  string
+	value string
 }
 
 // parseFilterChain parses a filter chain string like "scale=320:240,format=yuv420p"
