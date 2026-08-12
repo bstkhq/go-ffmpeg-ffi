@@ -94,7 +94,7 @@ func SetLogCallback(cb LogCallback) error {
 
 	// Create a purego callback if we haven't yet
 	if logCBHandle == 0 {
-		logCBHandle = purego.NewCallback(logCallbackTrampoline)
+		logCBHandle = purego.NewCallback(nativeLogCallbackTrampoline)
 	}
 
 	return shim.SetLogCallback(logCBHandle)

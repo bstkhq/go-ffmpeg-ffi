@@ -34,7 +34,7 @@ var (
 
 func initDecoderInterruptCallback() {
 	decoderInterruptOnce.Do(func() {
-		decoderInterruptPtr = purego.NewCallback(decoderInterruptCallback)
+		decoderInterruptPtr = purego.NewCallback(nativeDecoderInterruptCallback)
 	})
 }
 

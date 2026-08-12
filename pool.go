@@ -182,7 +182,7 @@ func reserveWrappedBufferBytes(size int64) bool {
 
 func initWrapCallback() {
 	wrapOnce.Do(func() {
-		wrapFreeCBPtr = purego.NewCallback(wrappedBufferFreeCallback)
+		wrapFreeCBPtr = purego.NewCallback(nativeWrappedBufferFreeCallback)
 	})
 }
 
