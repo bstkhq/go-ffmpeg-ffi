@@ -905,6 +905,7 @@ func newEncoderStreamCopy(path string, opts *EncoderOptions) (*Encoder, error) {
 // The packet's stream index should match the source stream.
 // For video packets, set streamIndex to match the source video stream.
 // For audio packets, set streamIndex to match the source audio stream.
+// WritePacket retains its own packet reference and leaves packet unchanged.
 func (e *Encoder) WritePacket(packet *Packet) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -935,12 +936,18 @@ func (e *Encoder) WritePacket(packet *Packet) error {
 		}
 	}
 
+	avcodec.PacketUnref(e.videoPacket)
+	if err := avcodec.PacketRef(e.videoPacket, packet.ptr); err != nil {
+		return err
+	}
+	defer avcodec.PacketUnref(e.videoPacket)
+
 	dstNum, dstDen := avformat.GetStreamTimeBase(target.stream)
-	avcodec.RescalePacketTS(packet.ptr, target.sourceTimeBase, NewRational(dstNum, dstDen))
+	avcodec.RescalePacketTS(e.videoPacket, target.sourceTimeBase, NewRational(dstNum, dstDen))
 
-	avcodec.SetPacketStreamIndex(packet.ptr, avformat.GetStreamIndex(target.stream))
+	avcodec.SetPacketStreamIndex(e.videoPacket, avformat.GetStreamIndex(target.stream))
 
-	return e.writeOutputPacketLocked(packet.ptr)
+	return e.writeOutputPacketLocked(e.videoPacket)
 }
 
 // applyVideoOptions applies advanced video encoding options via av_opt_set.

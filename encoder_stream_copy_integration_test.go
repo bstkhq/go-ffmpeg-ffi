@@ -119,12 +119,20 @@ func copySourcePackets(t *testing.T, source *Decoder, output *Encoder, videoStre
 		}
 
 		streamIndex := packet.StreamIndex()
+		pts := packet.PTS()
+		dts := packet.DTS()
+		duration := avcodec.GetPacketDuration(packet.ptr)
+		size := packet.Size()
 		if streamIndex == videoStreamIndex {
 			videoPackets++
 		}
 
 		if err := output.WritePacket(packet); err != nil {
 			t.Fatal(err)
+		}
+		if packet.StreamIndex() != streamIndex || packet.PTS() != pts || packet.DTS() != dts ||
+			avcodec.GetPacketDuration(packet.ptr) != duration || packet.Size() != size {
+			t.Fatal("WritePacket mutated a borrowed source packet")
 		}
 	}
 }
