@@ -1097,6 +1097,8 @@ func TestChannelLayoutNumChannels(t *testing.T) {
 		{ChannelLayoutStereo, 2},
 		{ChannelLayout5Point1, 6},
 		{ChannelLayout7Point1, 8},
+		{ChannelLayout(-1 << 63), 1},
+		{ChannelLayout((-1 << 63) | 3), 3},
 	}
 
 	for _, tt := range tests {
