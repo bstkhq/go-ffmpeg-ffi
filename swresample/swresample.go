@@ -1,3 +1,5 @@
+//go:build !ios && !android && (amd64 || arm64)
+
 // Package swresample provides audio resampling and format conversion using FFmpeg's libswresample.
 package swresample
 

@@ -1,3 +1,5 @@
+//go:build !ios && !android && (amd64 || arm64)
+
 // Package avdevice provides minimal bindings to FFmpeg's libavdevice.
 //
 // ffgo uses avdevice for device/screen capture input formats (v4l2, x11grab, dshow, avfoundation, ...).
