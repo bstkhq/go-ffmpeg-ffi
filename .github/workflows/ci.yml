@@ -32,7 +32,7 @@ jobs:
   android-compile:
     runs-on: ubuntu-latest
     name: Compile (Android API 33, ${{ matrix.arch }})
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -46,7 +46,9 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: ${{ env.GO_VERSION }}
+          # Ebitengine 2.9.9 declares Go 1.24. The binding itself retains its
+          # older language floor and is compiled by the other jobs as well.
+          go-version: '1.24'
 
       - name: Install pinned Android NDK
         run: |
@@ -58,6 +60,20 @@ jobs:
 
       - name: Compile packages and tests
         run: ./scripts/verify-android-build.sh "${{ matrix.arch }}"
+
+      - name: Install pinned Ebitengine mobile binder
+        run: go install github.com/hajimehoshi/ebiten/v2/cmd/ebitenmobile@v2.9.9
+
+      - name: Bind downstream Ebitengine fixture
+        run: |
+          output="$GITHUB_WORKSPACE/.build/android-ebiten/${{ matrix.arch }}/game.aar"
+          mkdir -p "$(dirname "$output")"
+          cd integration/android-ebiten
+          ebitenmobile bind \
+            -target "android/${{ matrix.arch }}" \
+            -javapkg dev.bstk.ffgo.probe.corelib \
+            -o "$output" .
+          test -s "$output"
 
   # Test every supported FFmpeg release line on one pinned platform.
   test-with-ffmpeg-linux:

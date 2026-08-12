@@ -196,7 +196,8 @@ dependency.
 
 ### Android phase B: emulator integration
 
-- Maintain an external Ebitengine test application and build it with
+- Maintain the external-module fixture in
+  [`integration/android-ebiten`](../integration/android-ebiten) and build it with
   [`apk-ebiten-builder`](https://github.com/bstkhq/apk-ebiten-builder). Packaging
   FFmpeg `.so` files belongs to that fixture or its builder, not to the Go
   binding.

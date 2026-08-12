@@ -2,7 +2,8 @@
 
 // Package ffgo provides high-level bindings to FFmpeg for media processing.
 // It enables decoding, encoding, muxing, demuxing, and scaling of audio/video
-// without CGO using purego.
+// through PureGo. Desktop application builds can remain CGO-free; Android and
+// iOS builds require CGO and their native mobile toolchains.
 //
 // For most use cases, use the high-level types: Decoder, Encoder, and Scaler.
 // For advanced use cases, the low-level packages (avutil, avcodec, avformat, swscale)
@@ -15,10 +16,13 @@ import (
 	"runtime"
 
 	"github.com/bstkhq/go-ffmpeg-ffi/avcodec"
+	"github.com/bstkhq/go-ffmpeg-ffi/avdevice"
+	"github.com/bstkhq/go-ffmpeg-ffi/avfilter"
 	"github.com/bstkhq/go-ffmpeg-ffi/avformat"
 	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/bindings"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/shim"
+	"github.com/bstkhq/go-ffmpeg-ffi/swresample"
 )
 
 // Init initializes FFmpeg libraries. This is called automatically when using
@@ -137,10 +141,9 @@ func Diagnose() DiagnosticInfo {
 
 	// Feature availability
 	info.SWScaleAvailable = bindings.HasSWScale()
-	// These would need additional checks
-	info.SWResampleAvailable = true // Assume available if FFmpeg is loaded
-	info.AVFilterAvailable = true   // Assume available if FFmpeg is loaded
-	info.AVDeviceAvailable = false  // Requires shim with avdevice support
+	info.SWResampleAvailable = swresample.Init() == nil
+	info.AVFilterAvailable = avfilter.Init() == nil
+	info.AVDeviceAvailable = avdevice.Init() == nil
 
 	return info
 }
