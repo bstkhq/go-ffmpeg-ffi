@@ -227,8 +227,11 @@ stereo samples at 48 kHz, and starts an Ebitengine audio player. The current
 host exposes neither `/dev/kvm` nor `/dev/dri`, so this run uses TCG and
 SwiftShader and is correctness evidence only. Stable EOF, a frame-accurate seek
 to one second, cancellation, and successful decoder reuse after cancellation
-also pass. Android lifecycle shutdown and sustained resource-growth checks
-remain open before phase B is complete.
+also pass. The probe cancels and closes its FFmpeg/audio resources on Android
+`onStop`, then completes the full audiovisual path again after `onStart` in the
+same process. Three short full runs increased process RSS from 182,404 KiB to
+183,480 KiB (1,076 KiB); this is a smoke check, not a sustained leak verdict.
+Long-duration resource-growth checks remain open before phase B is complete.
 
 ### Android phase C: Galaxy Tab A9+ qualification
 

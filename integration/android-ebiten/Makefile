@@ -61,9 +61,17 @@ package_media: generate
 	$(Q)install -m 644 "$(MEDIA_FIXTURE)" "$(ANDROID_ASSET_DIR)/test.mp4"
 	$(Q)install -m 644 "$(MEDIA_BRIDGE_SRC)" "$(MEDIA_BRIDGE_DST)"
 	$(Q)perl -0777 -i $(PERL_SUBS) "$(MEDIA_BRIDGE_DST)"
-	$(Q)grep -q 'MediaFixture.prepare(this)' "$(MAIN_ACTIVITY_DST)" || \
+	$(Q)grep -q 'Mobile.shutdown();' "$(MAIN_ACTIVITY_DST)" || \
 		perl -0777 -i -pe \
-		's/(Seq\.setContext\(getApplicationContext\(\)\);)/$$1\n      MediaFixture.prepare(this);/' \
+		's/(protected void onDestroy\(\) \{\n)/$$1    Mobile.shutdown();\n    Log.i(TAG, "onDestroy: Mobile.shutdown ok");\n/' \
+		"$(MAIN_ACTIVITY_DST)"
+	$(Q)grep -q 'onStop: Mobile.shutdown ok' "$(MAIN_ACTIVITY_DST)" || \
+		perl -0777 -i -pe \
+		's/(protected void onStop\(\) \{\n)/$$1    Mobile.shutdown();\n    Log.i(TAG, "onStop: Mobile.shutdown ok");\n/' \
+		"$(MAIN_ACTIVITY_DST)"
+	$(Q)grep -q 'onStart: MediaFixture.prepare ok' "$(MAIN_ACTIVITY_DST)" || \
+		perl -0777 -i -pe \
+		's/(protected void onStart\(\) \{\n[\s\S]*?super\.onStart\(\);)/$$1\n    MediaFixture.prepare(this);\n    Log.i(TAG, "onStart: MediaFixture.prepare ok");/' \
 		"$(MAIN_ACTIVITY_DST)"
 
 apk_with_ffmpeg: configure_android_floor compile package_ffmpeg package_media

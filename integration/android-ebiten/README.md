@@ -21,6 +21,12 @@ The video path also asserts stable EOF, performs a frame-accurate seek to one
 second, checks cancellation through `DecodeVideoContext`, and verifies that the
 decoder remains usable after that canceled operation.
 
+`MainActivity.onStop` calls the fixture's `Shutdown` hook and `onStart` starts a
+fresh run; `onDestroy` repeats shutdown as an idempotent safety net. The hook
+cancels an in-flight probe, waits for FFmpeg objects to close, releases the
+Ebitengine player, and leaves the process ready for Activity recreation with
+the existing Ebitengine audio context.
+
 Until Android FFmpeg shared libraries are added to the APK, a red
 `FFmpeg load: FAILED` result is expected. Once they are packaged, the same APK
 must show a green `FFmpeg load: OK` result before decode tests are enabled.
@@ -71,6 +77,9 @@ binary is committed to the Go binding.
 assets. A small Java bridge copies it into application-private storage because
 FFmpeg requires a real seekable path for this integration scenario. Neither
 the media file nor the bridge becomes part of the go-ffmpeg-ffi API.
+The bridge stages each copy under a unique temporary name and atomically
+replaces the cache path, so Activity restarts cannot truncate a file already
+open in FFmpeg.
 
 The Android floor is API 33. ARM64 is the only shipping ABI; x86-64 exists for
 the emulator integration gate and is not a production target. The
