@@ -340,6 +340,12 @@ func parseSubtitle(sub unsafe.Pointer) *Subtitle {
 
 // HasSubtitle returns true if the decoder has a subtitle stream.
 func (d *Decoder) HasSubtitle() bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.formatCtx == nil {
+		return false
+	}
 	numStreams := avformat.GetNumStreams(d.formatCtx)
 	for i := 0; i < numStreams; i++ {
 		stream := avformat.GetStream(d.formatCtx, i)
@@ -354,6 +360,12 @@ func (d *Decoder) HasSubtitle() bool {
 
 // SubtitleStream returns information about the first subtitle stream, or nil if none.
 func (d *Decoder) SubtitleStream() *StreamInfo {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.formatCtx == nil {
+		return nil
+	}
 	numStreams := avformat.GetNumStreams(d.formatCtx)
 	for i := 0; i < numStreams; i++ {
 		stream := avformat.GetStream(d.formatCtx, i)

@@ -56,7 +56,13 @@ func ProbeFormat(path string) (*FormatProbeResult, error) {
 
 // ProbeScore returns FFmpeg's probe confidence score for the decoder's selected input format.
 func (d *Decoder) ProbeScore() int {
-	if d == nil || d.formatCtx == nil {
+	if d == nil {
+		return 0
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.formatCtx == nil {
 		return 0
 	}
 	return avformat.GetProbeScore(d.formatCtx)

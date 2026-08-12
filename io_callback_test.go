@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"sync"
 	"testing"
 	"time"
 
@@ -256,4 +257,43 @@ func TestCustomIOCloseCancelsActiveCallback(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("CustomIOContext.Close did not cancel the callback")
 	}
+}
+
+func TestCustomIOCancellationStateConcurrentAccess(t *testing.T) {
+	ctx := &CustomIOContext{}
+	ctx.resetCancellation()
+
+	const iterations = 500
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		<-start
+		for range iterations {
+			ctx.beginOperationContext(context.Background())
+			_ = ctx.callbackContext()
+			ctx.endOperation()
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		<-start
+		for range iterations {
+			ctx.resetCancellation()
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		<-start
+		for range iterations {
+			_ = ctx.callbackContext()
+			ctx.cancelPending()
+		}
+	}()
+
+	close(start)
+	wg.Wait()
+	ctx.cancelPending()
+	ctx.endOperation()
 }
