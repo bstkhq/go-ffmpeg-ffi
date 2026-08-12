@@ -752,13 +752,10 @@ func fastRemux(input, output string) error {
     defer decoder.Close()
 
     // Create encoder in copy mode
-    encoder, _ := ffgo.NewEncoder(output, &ffgo.EncoderOptions{
-        CopyVideo: true,
-        CopyAudio: true,
-        SourceStreams: &ffgo.StreamCopySource{
-            VideoParams: decoder.VideoStream().CodecParameters(),
-            AudioParams: decoder.AudioStream().CodecParameters(),
-        },
+    encoder, _ := ffgo.NewEncoderWithOptions(output, &ffgo.EncoderOptions{
+        CopyVideo:     true,
+        CopyAudio:     true,
+        SourceStreams: ffgo.NewStreamCopySource(decoder.VideoStream(), decoder.AudioStream()),
     })
     defer encoder.Close()
 
@@ -778,11 +775,9 @@ func fastRemux(input, output string) error {
 ### Copy Video, Re-encode Audio
 
 ```go
-encoder, _ := ffgo.NewEncoder("output.mp4", &ffgo.EncoderOptions{
-    CopyVideo: true,
-    SourceStreams: &ffgo.StreamCopySource{
-        VideoParams: decoder.VideoStream().CodecParameters(),
-    },
+encoder, _ := ffgo.NewEncoderWithOptions("output.mp4", &ffgo.EncoderOptions{
+    CopyVideo:     true,
+    SourceStreams: ffgo.NewStreamCopySource(decoder.VideoStream(), nil),
     Audio: &ffgo.AudioEncoderConfig{
         Codec:      ffgo.CodecAAC,
         SampleRate: 48000,
@@ -1613,13 +1608,10 @@ if err != nil {
 Use stream copy mode for fast remuxing:
 
 ```go
-encoder, _ := ffgo.NewEncoder("output.mkv", &ffgo.EncoderOptions{
-    CopyVideo: true,
-    CopyAudio: true,
-    SourceStreams: &ffgo.StreamCopySource{
-        VideoParams: decoder.VideoStream().CodecParameters(),
-        AudioParams: decoder.AudioStream().CodecParameters(),
-    },
+encoder, _ := ffgo.NewEncoderWithOptions("output.mkv", &ffgo.EncoderOptions{
+    CopyVideo:     true,
+    CopyAudio:     true,
+    SourceStreams: ffgo.NewStreamCopySource(decoder.VideoStream(), decoder.AudioStream()),
 })
 ```
 
