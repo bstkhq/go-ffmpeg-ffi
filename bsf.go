@@ -27,7 +27,7 @@ type bsfContext = unsafe.Pointer
 
 // BSF function bindings
 var (
-	avBsfGetByName     func(name string) uintptr
+	avBsfGetByName     func(name string) unsafe.Pointer
 	avBsfAllocContext  func(filter uintptr, ctx *unsafe.Pointer) int32
 	avBsfInit          func(ctx uintptr) int32
 	avBsfFree          func(ctx *unsafe.Pointer)
@@ -106,7 +106,7 @@ func NewBitstreamFilter(filterName string) (*BitstreamFilter, error) {
 	}
 
 	// Find the filter
-	filter := unsafe.Pointer(avBsfGetByName(filterName))
+	filter := avBsfGetByName(filterName)
 	if filter == nil {
 		return nil, errors.New("ffgo: bitstream filter not found: " + filterName)
 	}
@@ -306,7 +306,7 @@ func BitstreamFilterExists(name string) bool {
 		return false
 	}
 
-	return unsafe.Pointer(avBsfGetByName(name)) != nil
+	return avBsfGetByName(name) != nil
 }
 
 // ListBitstreamFilters returns a list of common bitstream filter names.

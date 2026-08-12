@@ -84,7 +84,7 @@ var (
 	shimLogSetCallback func(cb uintptr)
 	shimLogSetLevel    func(level int32)
 	shimLog            func(avcl uintptr, level int32, msg string)
-	shimNewChapter     func(ctx uintptr, id int64, tbNum, tbDen int32, start, end int64, metadata uintptr) uintptr
+	shimNewChapter     func(ctx uintptr, id int64, tbNum, tbDen int32, start, end int64, metadata uintptr) unsafe.Pointer
 
 	// Device enumeration helpers (libavdevice wrappers)
 	shimAVDeviceListInputSources func(formatName, deviceName string, avdictOpts uintptr, outCount *int32, outNames, outDescs *unsafe.Pointer) int32
@@ -114,29 +114,29 @@ var (
 	shimCodecCtxFramerate    func(ctx uintptr, outNum, outDen *int32)
 	shimCodecCtxSetFramerate func(ctx uintptr, num, den int32)
 	shimCodecCtxSetChLayout  func(ctx uintptr, nbChannels int32)
-	shimCodecCtxHWDeviceCtx  func(ctx uintptr) uintptr
+	shimCodecCtxHWDeviceCtx  func(ctx uintptr) unsafe.Pointer
 	shimCodecCtxSetHWDevice  func(ctx uintptr, ref uintptr)
-	shimCodecCtxHWFramesCtx  func(ctx uintptr) uintptr
+	shimCodecCtxHWFramesCtx  func(ctx uintptr) unsafe.Pointer
 	shimCodecCtxSetHWFrames  func(ctx uintptr, ref uintptr)
 
 	// AVFormatContext / chapter / program helpers (optional)
 	shimFormatCtxDuration   func(ctx uintptr) int64
 	shimFormatCtxBitRate    func(ctx uintptr) int64
 	shimFormatCtxNbChapters func(ctx uintptr) uint32
-	shimFormatCtxChapter    func(ctx uintptr, index int32) uintptr
+	shimFormatCtxChapter    func(ctx uintptr, index int32) unsafe.Pointer
 	shimFormatCtxNbPrograms func(ctx uintptr) uint32
-	shimFormatCtxProgram    func(ctx uintptr, index int32) uintptr
+	shimFormatCtxProgram    func(ctx uintptr, index int32) unsafe.Pointer
 
 	shimChapterID       func(ch uintptr) int64
 	shimChapterTimeBase func(ch uintptr, outNum, outDen *int32)
 	shimChapterStart    func(ch uintptr) int64
 	shimChapterEnd      func(ch uintptr) int64
-	shimChapterMetadata func(ch uintptr) uintptr
+	shimChapterMetadata func(ch uintptr) unsafe.Pointer
 
 	shimProgramID             func(p uintptr) int32
 	shimProgramNbStreamIdx    func(p uintptr) uint32
-	shimProgramStreamIndexPtr func(p uintptr) uintptr
-	shimProgramMetadata       func(p uintptr) uintptr
+	shimProgramStreamIndexPtr func(p uintptr) unsafe.Pointer
+	shimProgramMetadata       func(p uintptr) unsafe.Pointer
 )
 
 // Load attempts to load the ffshim library.
@@ -516,7 +516,7 @@ func NewChapter(ctx unsafe.Pointer, id int64, tbNum, tbDen int32, start, end int
 	if shimNewChapter == nil {
 		return nil, errors.New("ffgo: shimNewChapter symbol not available in shim")
 	}
-	ch := unsafe.Pointer(shimNewChapter(uintptr(ctx), id, tbNum, tbDen, start, end, uintptr(metadata)))
+	ch := shimNewChapter(uintptr(ctx), id, tbNum, tbDen, start, end, uintptr(metadata))
 	if ch == nil {
 		return nil, errors.New("ffgo: failed to create chapter")
 	}
@@ -772,7 +772,7 @@ func CodecCtxHWDeviceCtx(ctx unsafe.Pointer) (unsafe.Pointer, error) {
 	if !loaded.Load() || shimCodecCtxHWDeviceCtx == nil {
 		return nil, ErrShimNotLoaded
 	}
-	return unsafe.Pointer(shimCodecCtxHWDeviceCtx(uintptr(ctx))), nil
+	return shimCodecCtxHWDeviceCtx(uintptr(ctx)), nil
 }
 
 func CodecCtxSetHWDeviceCtx(ctx unsafe.Pointer, ref unsafe.Pointer) error {
@@ -793,7 +793,7 @@ func CodecCtxHWFramesCtx(ctx unsafe.Pointer) (unsafe.Pointer, error) {
 	if !loaded.Load() || shimCodecCtxHWFramesCtx == nil {
 		return nil, ErrShimNotLoaded
 	}
-	return unsafe.Pointer(shimCodecCtxHWFramesCtx(uintptr(ctx))), nil
+	return shimCodecCtxHWFramesCtx(uintptr(ctx)), nil
 }
 
 func CodecCtxSetHWFramesCtx(ctx unsafe.Pointer, ref unsafe.Pointer) error {
@@ -844,7 +844,7 @@ func FormatCtxChapter(ctx unsafe.Pointer, index int) (unsafe.Pointer, error) {
 	if !loaded.Load() || shimFormatCtxChapter == nil {
 		return nil, ErrShimNotLoaded
 	}
-	return unsafe.Pointer(shimFormatCtxChapter(uintptr(ctx), int32(index))), nil
+	return shimFormatCtxChapter(uintptr(ctx), int32(index)), nil
 }
 
 func FormatCtxNbPrograms(ctx unsafe.Pointer) (int, error) {
@@ -864,7 +864,7 @@ func FormatCtxProgram(ctx unsafe.Pointer, index int) (unsafe.Pointer, error) {
 	if !loaded.Load() || shimFormatCtxProgram == nil {
 		return nil, ErrShimNotLoaded
 	}
-	return unsafe.Pointer(shimFormatCtxProgram(uintptr(ctx), int32(index))), nil
+	return shimFormatCtxProgram(uintptr(ctx), int32(index)), nil
 }
 
 func ChapterID(ch unsafe.Pointer) (int64, error) {
@@ -915,7 +915,7 @@ func ChapterMetadata(ch unsafe.Pointer) (unsafe.Pointer, error) {
 	if !loaded.Load() || shimChapterMetadata == nil {
 		return nil, ErrShimNotLoaded
 	}
-	return unsafe.Pointer(shimChapterMetadata(uintptr(ch))), nil
+	return shimChapterMetadata(uintptr(ch)), nil
 }
 
 func ProgramID(p unsafe.Pointer) (int32, error) {
@@ -945,7 +945,7 @@ func ProgramStreamIndexPtr(p unsafe.Pointer) (unsafe.Pointer, error) {
 	if !loaded.Load() || shimProgramStreamIndexPtr == nil {
 		return nil, ErrShimNotLoaded
 	}
-	return unsafe.Pointer(shimProgramStreamIndexPtr(uintptr(p))), nil
+	return shimProgramStreamIndexPtr(uintptr(p)), nil
 }
 
 func ProgramMetadata(p unsafe.Pointer) (unsafe.Pointer, error) {
@@ -955,7 +955,7 @@ func ProgramMetadata(p unsafe.Pointer) (unsafe.Pointer, error) {
 	if !loaded.Load() || shimProgramMetadata == nil {
 		return nil, ErrShimNotLoaded
 	}
-	return unsafe.Pointer(shimProgramMetadata(uintptr(p))), nil
+	return shimProgramMetadata(uintptr(p)), nil
 }
 
 // findShimLibrary looks for the shim library in standard locations.

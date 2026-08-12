@@ -37,7 +37,7 @@ type HWFramesContext = unsafe.Pointer
 
 // Function bindings - registered when init() is called
 var (
-	avFrameAlloc          func() uintptr
+	avFrameAlloc          func() unsafe.Pointer
 	avFrameFree           func(frame *unsafe.Pointer)
 	avFrameRef            func(dst, src uintptr) int32
 	avFrameUnref          func(frame uintptr)
@@ -47,12 +47,12 @@ var (
 	avSampleFmtIsPlanar   func(sampleFmt int32) int32
 	avGetBytesPerSample   func(sampleFmt int32) int32
 
-	avMalloc func(size uintptr) uintptr
+	avMalloc func(size uintptr) unsafe.Pointer
 	avFree   func(ptr uintptr)
 	avFreep  func(ptr *unsafe.Pointer)
 
 	avDictSet  func(pm *unsafe.Pointer, key, value string, flags int32) int32
-	avDictGet  func(m uintptr, key string, prev uintptr, flags int32) uintptr
+	avDictGet  func(m uintptr, key string, prev uintptr, flags int32) unsafe.Pointer
 	avDictFree func(pm *unsafe.Pointer)
 
 	avStrerror func(errnum int32, errbuf *byte, errbufSize uintptr) int32
@@ -70,12 +70,12 @@ var (
 	// Hardware context functions
 	avHWDeviceCtxCreate      func(deviceCtx *unsafe.Pointer, deviceType int32, device string, opts uintptr, flags int32) int32
 	avHWDeviceFindTypeByName func(name string) int32
-	avHWDeviceGetTypeName    func(deviceType int32) uintptr
+	avHWDeviceGetTypeName    func(deviceType int32) unsafe.Pointer
 	avHWFrameTransferData    func(dst, src uintptr, flags int32) int32
 
 	// Buffer reference functions
-	avBufferCreate func(data uintptr, size int32, freeCb uintptr, opaque uintptr, flags int32) uintptr
-	avBufferRef    func(buf uintptr) uintptr
+	avBufferCreate func(data uintptr, size int32, freeCb uintptr, opaque uintptr, flags int32) unsafe.Pointer
+	avBufferRef    func(buf uintptr) unsafe.Pointer
 	avBufferUnref  func(buf *unsafe.Pointer)
 
 	// Frame field accessors (using getter/setter pattern since we can't access struct fields)
@@ -153,7 +153,7 @@ func FrameAlloc() Frame {
 	if avFrameAlloc == nil {
 		return nil
 	}
-	return unsafe.Pointer(avFrameAlloc())
+	return avFrameAlloc()
 }
 
 // FrameFree frees an AVFrame and sets the pointer to nil.
@@ -534,7 +534,7 @@ func Malloc(size uintptr) unsafe.Pointer {
 	if avMalloc == nil {
 		return nil
 	}
-	return unsafe.Pointer(avMalloc(size))
+	return avMalloc(size)
 }
 
 // Free frees memory allocated by Malloc.
@@ -725,7 +725,7 @@ func HWDeviceGetTypeName(deviceType HWDeviceType) string {
 	if avHWDeviceGetTypeName == nil {
 		return ""
 	}
-	ptr := unsafe.Pointer(avHWDeviceGetTypeName(int32(deviceType)))
+	ptr := avHWDeviceGetTypeName(int32(deviceType))
 	if ptr == nil {
 		return ""
 	}
@@ -753,7 +753,7 @@ func BufferCreate(data unsafe.Pointer, size int, freeCb uintptr, opaque uintptr,
 	if avBufferCreate == nil || data == nil || size <= 0 {
 		return nil
 	}
-	return unsafe.Pointer(avBufferCreate(uintptr(data), int32(size), freeCb, opaque, flags))
+	return avBufferCreate(uintptr(data), int32(size), freeCb, opaque, flags)
 }
 
 // NewBufferRef creates a new reference to a buffer.
@@ -761,7 +761,7 @@ func NewBufferRef(buf AVBufferRef) AVBufferRef {
 	if avBufferRef == nil || buf == nil {
 		return nil
 	}
-	return unsafe.Pointer(avBufferRef(uintptr(buf)))
+	return avBufferRef(uintptr(buf))
 }
 
 // FreeBufferRef unreferences a buffer and sets the pointer to nil.
