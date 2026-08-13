@@ -75,6 +75,54 @@ jobs:
             -o "$output" .
           test -s "$output"
 
+  # PureGo requires CGO on iOS. Compile the complete module for the physical
+  # device and both simulator architectures, then bind a downstream
+  # Ebitengine fixture into the same XCFramework shape consumed by Xcode apps.
+  ios-compile:
+    runs-on: macos-14
+    name: Compile (iOS 13, device + simulator)
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          # Ebitengine 2.9.9 declares Go 1.24.
+          go-version: '1.24'
+          cache-dependency-path: |
+            go.sum
+            integration/ios-ebiten/go.sum
+
+      - name: Record Xcode toolchain
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          xcrun --sdk iphonesimulator --show-sdk-version
+
+      - name: Compile packages and tests for iPhone ARM64
+        run: ./scripts/verify-ios-build.sh iphoneos arm64
+
+      - name: Compile packages and tests for simulator ARM64
+        run: ./scripts/verify-ios-build.sh iphonesimulator arm64
+
+      - name: Compile packages and tests for simulator x86-64
+        run: ./scripts/verify-ios-build.sh iphonesimulator amd64
+
+      - name: Install pinned Ebitengine mobile binder
+        run: go install github.com/hajimehoshi/ebiten/v2/cmd/ebitenmobile@v2.9.9
+
+      - name: Bind downstream Ebitengine fixture
+        working-directory: integration/ios-ebiten
+        run: make compile
+
+      - name: Verify XCFramework slices
+        run: |
+          info=integration/ios-ebiten/.build/FFGoProbe.xcframework/Info.plist
+          plutil -lint "$info"
+          plutil -convert json -o - "$info" | grep -q 'ios-arm64'
+          plutil -convert json -o - "$info" | grep -q 'ios-arm64_x86_64-simulator'
+
   # Keep the complete desktop package and test surface buildable without CGO.
   # Native runtime jobs below qualify the architectures for which GitHub
   # provides runners; Windows ARM64 remains a compile-only target.

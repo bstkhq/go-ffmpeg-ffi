@@ -6,5 +6,8 @@ ffshim.dll
 # Downstream Android integration fixture artifacts.
 /integration/android-ebiten/.build/
 
+# Downstream iOS integration fixture artifacts.
+/integration/ios-ebiten/.build/
+
 # Reproducible local build outputs (Android sources, native libraries, APKs).
 /.build/

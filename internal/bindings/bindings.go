@@ -1,4 +1,4 @@
-//go:build !ios && (amd64 || arm64)
+//go:build amd64 || arm64
 
 // Package bindings handles loading FFmpeg shared libraries and registering
 // function bindings using purego.
@@ -242,6 +242,16 @@ func openLibrary(loader dynamicLoader, name string, versions []int, includeUnver
 	for _, candidate := range candidates {
 		handle, err := loader.open(candidate)
 		if err == nil {
+			if candidate == dynlib.ProcessImage {
+				// RTLD_DEFAULT itself always exists. Treat it as a match only when
+				// this specific FFmpeg library is actually linked or already loaded;
+				// otherwise an absent optional library such as swscale would look
+				// present and turn initialization into a false failure.
+				if _, versionErr := loader.version(handle, name+"_version"); versionErr != nil {
+					_ = loader.close(handle)
+					continue
+				}
+			}
 			return loadedLibrary{handle: handle, path: candidate}, nil
 		}
 	}
@@ -275,6 +285,18 @@ func libraryCandidates(name string, versions []int, includeUnversioned bool) []s
 			appendCandidate(filepath.Join(searchPath, name))
 		}
 		appendCandidate(name)
+	}
+	if runtime.GOOS == "ios" {
+		// App Store applications may embed signed dynamic frameworks, but must
+		// not rely on desktop library locations or executable code downloaded at
+		// runtime. Accept the two framework naming conventions used by FFmpeg
+		// distributors, then fall back to FFmpeg symbols already linked into the
+		// process image (for example by a static XCFramework).
+		for _, prefix := range []string{"@rpath", "@executable_path/Frameworks"} {
+			appendCandidate(filepath.Join(prefix, "lib"+name+".framework", "lib"+name))
+			appendCandidate(filepath.Join(prefix, name+".framework", name))
+		}
+		appendCandidate(dynlib.ProcessImage)
 	}
 	return candidates
 }
@@ -336,6 +358,12 @@ func LibrarySearchPaths() []string {
 			"/opt/homebrew/opt/ffmpeg/lib",
 			"/usr/local/opt/ffmpeg/lib",
 		)
+	case "ios":
+		// Embedded frameworks normally resolve through @rpath. Also try the
+		// concrete Frameworks directory for hosts that do not add that rpath.
+		if exe, err := os.Executable(); err == nil {
+			paths = append(paths, filepath.Join(filepath.Dir(exe), "Frameworks"))
+		}
 	case "windows":
 		if winPath := os.Getenv("PATH"); winPath != "" {
 			paths = append(paths, filepath.SplitList(winPath)...)

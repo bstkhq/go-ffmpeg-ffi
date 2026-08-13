@@ -1,4 +1,4 @@
-//go:build !ios && (amd64 || arm64)
+//go:build amd64 || arm64
 
 // Package avcodec provides bindings to FFmpeg's libavcodec library.
 // It includes codec discovery, encoding, and decoding functionality.

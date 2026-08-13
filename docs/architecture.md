@@ -9,7 +9,8 @@ API remains transitional until the first hard-fork release.
 
 ## Goals
 
-- Provide a safe Go API over dynamically loaded FFmpeg libraries without CGO.
+- Provide a safe Go API over FFmpeg through PureGo. Desktop consumers remain
+  CGO-free; mobile consumers use the CGO runtime required by PureGo.
 - Officially support FFmpeg 6, 7, 8, and 9.
 - Fail closed when a library set or structure layout is unsupported or mixed.
 - Keep native artifacts small, auditable, versioned, and optional where
@@ -22,7 +23,8 @@ API remains transitional until the first hard-fork release.
 - FFmpeg 4 and older.
 - FFmpeg 10 or current FFmpeg `master` before the next major ABI is released
   and qualified.
-- Static linking of FFmpeg.
+- Redistributing or choosing a native FFmpeg build for consumers. On iOS a
+  consumer may link complete static FFmpeg archives into its signed app image.
 - Hiding features that are absent from the installed FFmpeg build.
 - Claiming complete FFmpeg API coverage.
 
@@ -70,6 +72,23 @@ suite. D3D11VA, DXVA2, and VideoToolbox remain runtime capabilities of the exact
 FFmpeg build and device; desktop support does not imply that they are present or
 meet a particular frame rate.
 
+## Mobile platform boundary
+
+Android and iOS keep the same PureGo registration layer and coherent FFmpeg
+family validation, but require `CGO_ENABLED=1`. Android loads unversioned
+`libav*.so` files from the APK linker namespace. iOS accepts signed
+`libav*.framework` or `av*.framework` bundles embedded in the application and
+can also resolve complete FFmpeg symbols that the application already linked
+into its process image. It never searches desktop package-manager paths or
+downloads executable code.
+
+The library does not own AAR, APK, IPA, application-signing, or native FFmpeg
+packaging. Ebitengine fixtures are downstream modules used to prove that the
+public package can be bound into the artifact shape consumed by an application.
+The minimum iOS deployment target is 13.0. Device/simulator compilation is not
+evidence for VideoToolbox, audible audio, thermal stability, or sustained frame
+rate; those claims require a named physical device and exact FFmpeg build.
+
 ## Layering
 
 ```text
@@ -83,7 +102,7 @@ Capabilities, ownership, and error translation
 | PureGo functions  | Go ABI layouts    | Versioned C shim  |
 +-------------------+-------------------+-------------------+
     |
-Runtime-selected FFmpeg shared libraries
+Runtime-selected FFmpeg native libraries/frameworks
 ```
 
 ### Public API
@@ -154,9 +173,9 @@ The shim must obey these rules:
 - expose an explicit capability set;
 - never use an unversioned prebuilt shim as a cross-version fallback.
 
-End users may consume prebuilt shims and still build the Go module with
-`CGO_ENABLED=0`. Building or regenerating a shim requires a C compiler and the
-matching FFmpeg development headers.
+Desktop users may consume prebuilt shims and still build the Go module with
+`CGO_ENABLED=0`. Mobile PureGo builds require CGO. Building or regenerating a
+shim requires a C compiler and the matching FFmpeg development headers.
 
 ## Runtime initialization
 
