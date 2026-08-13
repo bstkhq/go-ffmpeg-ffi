@@ -83,8 +83,15 @@ func TestFramePool_GetPutAndLimit(t *testing.T) {
 	if !f1.IsNil() {
 		t.Fatalf("expected Put to clear frame")
 	}
-	if _, err := p.Get(); err != nil {
+	f2, err := p.Get()
+	if err != nil {
 		t.Fatalf("Get after Put failed: %v", err)
+	}
+	if err := p.Put(&f2); err != nil {
+		t.Fatalf("Put after reuse failed: %v", err)
+	}
+	if p.inUse != 0 {
+		t.Fatalf("in-use frames = %d, want 0", p.inUse)
 	}
 }
 
