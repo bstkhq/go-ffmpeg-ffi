@@ -180,21 +180,29 @@ jobs:
       matrix:
         include:
           - ffmpeg: '6.0.1'
+            major: '6'
             sha256: '9b16b8731d78e596b4be0d720428ca42df642bb2d78342881ff7f5bc29fc9623'
           - ffmpeg: '6.1.6'
+            major: '6'
             sha256: 'd4fcb164028dd3beee5d92c0ac72e46aac6973c75ea12dc14de07bf8f407370a'
           - ffmpeg: '7.0.3'
+            major: '7'
             sha256: 'bbb18f3cc5c1c34b21cf176c0168c4d9aa97697542a97f60d491a58a814dea65'
           - ffmpeg: '7.1.5'
+            major: '7'
             sha256: 'de668509caf9e35e3cd162473441fdb29538c6d96ed080292b3cf9e6fc5d558f'
           - ffmpeg: '8.0.3'
+            major: '8'
             sha256: '6136812ea6d4e68bdba27e33c2a94382711cdf4f8602ffef056ff792bd6f9818'
           - ffmpeg: '8.1.2'
+            major: '8'
             sha256: '464beb5e7bf0c311e68b45ae2f04e9cc2af88851abb4082231742a74d97b524c'
           - ffmpeg: '9.0.1'
+            major: '9'
             sha256: 'cf38e0e28c7e5605942c4a77755349b0145804a397af37eb1fb4c77cb237f635'
     env:
       FFMPEG_PREFIX: ${{ github.workspace }}/.ffmpeg/${{ matrix.ffmpeg }}
+      FFMPEG_EXPECTED_MAJOR: ${{ matrix.major }}
     steps:
       - uses: actions/checkout@v4
 
@@ -253,6 +261,11 @@ jobs:
 
       - name: Verify selected FFmpeg release
         run: ffmpeg -version | head -n 1 | grep -F "ffmpeg version ${{ matrix.ffmpeg }} "
+
+      - name: Verify selected FFmpeg runtime
+        run: go test -count=1 -run '^TestConfiguredFFmpegFamily$' -v ./internal/bindings
+        env:
+          CGO_ENABLED: "0"
 
       - name: Verify FFmpeg ABI layout
         run: |

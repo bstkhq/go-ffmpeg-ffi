@@ -129,7 +129,44 @@ func doLoad() error {
 }
 
 func selectCoreLibraries(loader dynamicLoader) (coreLibraries, error) {
+	return selectCoreLibrariesFromSearchPaths(loader, LibrarySearchPaths())
+}
+
+// selectCoreLibrariesFromSearchPaths first looks for a complete FFmpeg family
+// in each search directory, in order. It is important that the directory is
+// the outer loop: users set LD_LIBRARY_PATH, DYLD_LIBRARY_PATH, or PATH to
+// select an application-bundled runtime, and a newer system FFmpeg must not
+// pre-empt an older supported family from that higher-priority directory.
+//
+// The final name-based fallback preserves support for platforms whose loader
+// resolves libraries without a filesystem path (notably Android and static or
+// framework-linked iOS builds), and for unusual installations split across
+// directories.
+func selectCoreLibrariesFromSearchPaths(loader dynamicLoader, paths []string) (coreLibraries, error) {
 	var failures []string
+	seenPaths := make(map[string]struct{}, len(paths))
+	for _, path := range paths {
+		if path == "" {
+			continue
+		}
+		if _, seen := seenPaths[path]; seen {
+			continue
+		}
+		seenPaths[path] = struct{}{}
+
+		for _, layout := range abi.Supported() {
+			core, err := openCoreFamilyAtPath(loader, layout, path)
+			if err == nil {
+				return core, nil
+			}
+		}
+		failures = append(failures, fmt.Sprintf("no complete supported FFmpeg family in %s", path))
+	}
+
+	return selectCoreLibrariesByName(loader, failures)
+}
+
+func selectCoreLibrariesByName(loader dynamicLoader, failures []string) (coreLibraries, error) {
 	for _, layout := range abi.Supported() {
 		core, err := openCoreFamily(loader, layout, false)
 		if err == nil {
@@ -156,6 +193,24 @@ func selectCoreLibraries(loader dynamicLoader) (coreLibraries, error) {
 }
 
 func openCoreFamily(loader dynamicLoader, wanted abi.Layout, unversioned bool) (coreLibraries, error) {
+	return openCoreFamilyWith(loader, wanted, unversioned, func(name string, versions []int, includeUnversioned bool) (loadedLibrary, error) {
+		return openLibrary(loader, name, versions, includeUnversioned)
+	})
+}
+
+func openCoreFamilyAtPath(loader dynamicLoader, wanted abi.Layout, path string) (coreLibraries, error) {
+	return openCoreFamilyWith(loader, wanted, false, func(name string, versions []int, includeUnversioned bool) (loadedLibrary, error) {
+		if includeUnversioned || len(versions) != 1 {
+			return loadedLibrary{}, fmt.Errorf("invalid versioned core library request for %s", name)
+		}
+		filename := platform.FormatLibraryName(name, versions[0])
+		return openExactLibrary(loader, filepath.Join(path, filename))
+	})
+}
+
+type coreLibraryOpener func(name string, versions []int, includeUnversioned bool) (loadedLibrary, error)
+
+func openCoreFamilyWith(loader dynamicLoader, wanted abi.Layout, unversioned bool, open coreLibraryOpener) (coreLibraries, error) {
 	versions := func(major int) []int {
 		if unversioned {
 			return nil
@@ -165,7 +220,7 @@ func openCoreFamily(loader dynamicLoader, wanted abi.Layout, unversioned bool) (
 
 	var core coreLibraries
 	var err error
-	core.avutil, err = openLibrary(loader, "avutil", versions(wanted.AVUtilMajor), unversioned)
+	core.avutil, err = open("avutil", versions(wanted.AVUtilMajor), unversioned)
 	if err != nil {
 		return coreLibraries{}, fmt.Errorf("loading libavutil: %w", err)
 	}
@@ -175,11 +230,11 @@ func openCoreFamily(loader dynamicLoader, wanted abi.Layout, unversioned bool) (
 		}
 	}()
 
-	core.avcodec, err = openLibrary(loader, "avcodec", versions(wanted.AVCodecMajor), unversioned)
+	core.avcodec, err = open("avcodec", versions(wanted.AVCodecMajor), unversioned)
 	if err != nil {
 		return coreLibraries{}, fmt.Errorf("loading libavcodec: %w", err)
 	}
-	core.avformat, err = openLibrary(loader, "avformat", versions(wanted.AVFormatMajor), unversioned)
+	core.avformat, err = open("avformat", versions(wanted.AVFormatMajor), unversioned)
 	if err != nil {
 		return coreLibraries{}, fmt.Errorf("loading libavformat: %w", err)
 	}
@@ -214,6 +269,14 @@ func openCoreFamily(loader dynamicLoader, wanted abi.Layout, unversioned bool) (
 	}
 
 	return core, nil
+}
+
+func openExactLibrary(loader dynamicLoader, path string) (loadedLibrary, error) {
+	handle, err := loader.open(path)
+	if err != nil {
+		return loadedLibrary{}, fmt.Errorf("%w: %s", ErrLibraryNotFound, path)
+	}
+	return loadedLibrary{handle: handle, path: path}, nil
 }
 
 func closeCoreLibraries(loader dynamicLoader, core coreLibraries) {

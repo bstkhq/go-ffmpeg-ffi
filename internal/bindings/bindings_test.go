@@ -5,12 +5,15 @@ package bindings
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"sync"
 	"testing"
 
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/abi"
+	"github.com/bstkhq/go-ffmpeg-ffi/internal/platform"
 )
 
 func TestLibrarySearchPaths(t *testing.T) {
@@ -82,6 +85,53 @@ func TestSelectCoreLibrariesRejectsMixedUnversionedTuple(t *testing.T) {
 	}
 }
 
+func TestSelectCoreLibrariesPrefersFirstCompleteSearchPath(t *testing.T) {
+	bundled := filepath.Join("application", "ffmpeg-6")
+	system := filepath.Join("system", "ffmpeg-9")
+	fake := newFakeDynamicLoader(map[string]uint32{
+		libraryPath(bundled, "avutil", 58):   version(58, 1, 0),
+		libraryPath(bundled, "avcodec", 60):  version(60, 1, 0),
+		libraryPath(bundled, "avformat", 60): version(60, 1, 0),
+		libraryPath(system, "avutil", 61):    version(61, 1, 0),
+		libraryPath(system, "avcodec", 63):   version(63, 1, 0),
+		libraryPath(system, "avformat", 63):  version(63, 1, 0),
+	})
+
+	core, err := selectCoreLibrariesFromSearchPaths(fake.loader(), []string{bundled, system})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if core.layout.FFmpegMajor != 6 {
+		t.Fatalf("selected FFmpeg %d, want bundled FFmpeg 6", core.layout.FFmpegMajor)
+	}
+	if fake.wasOpened(libraryPath(system, "avutil", 61)) {
+		t.Fatal("opened the lower-priority system FFmpeg before completing the bundled family")
+	}
+}
+
+func TestSelectCoreLibrariesSkipsPartialSearchPath(t *testing.T) {
+	partial := filepath.Join("application", "partial")
+	fallback := filepath.Join("system", "ffmpeg-7")
+	partialAVUtil := libraryPath(partial, "avutil", 58)
+	fake := newFakeDynamicLoader(map[string]uint32{
+		partialAVUtil:                         version(58, 1, 0),
+		libraryPath(fallback, "avutil", 59):   version(59, 1, 0),
+		libraryPath(fallback, "avcodec", 61):  version(61, 1, 0),
+		libraryPath(fallback, "avformat", 61): version(61, 1, 0),
+	})
+
+	core, err := selectCoreLibrariesFromSearchPaths(fake.loader(), []string{partial, fallback})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if core.layout.FFmpegMajor != 7 {
+		t.Fatalf("selected FFmpeg %d, want complete fallback FFmpeg 7", core.layout.FFmpegMajor)
+	}
+	if !fake.wasClosed(partialAVUtil) {
+		t.Fatal("partial higher-priority FFmpeg library was not closed")
+	}
+}
+
 func TestLibraryCandidatesTryUnversionedLast(t *testing.T) {
 	versioned := platformLibraryName("avutil", 60)
 	unversioned := platformLibraryName("avutil", 0)
@@ -135,9 +185,14 @@ func platformLibraryName(name string, major int) string {
 	return filepath.Base(libraryCandidates(name, []int{major}, major == 0)[0])
 }
 
+func libraryPath(dir, name string, major int) string {
+	return filepath.Join(dir, platform.FormatLibraryName(name, major))
+}
+
 type fakeDynamicLoader struct {
 	versions   map[string]uint32
 	handles    map[uintptr]string
+	opened     map[string]bool
 	closed     map[string]bool
 	nextHandle uintptr
 }
@@ -146,6 +201,7 @@ func newFakeDynamicLoader(versions map[string]uint32) *fakeDynamicLoader {
 	return &fakeDynamicLoader{
 		versions: versions,
 		handles:  make(map[uintptr]string),
+		opened:   make(map[string]bool),
 		closed:   make(map[string]bool),
 	}
 }
@@ -153,12 +209,16 @@ func newFakeDynamicLoader(versions map[string]uint32) *fakeDynamicLoader {
 func (f *fakeDynamicLoader) loader() dynamicLoader {
 	return dynamicLoader{
 		open: func(path string) (uintptr, error) {
-			name := filepath.Base(path)
+			name := path
+			if _, ok := f.versions[name]; !ok {
+				name = filepath.Base(path)
+			}
 			if _, ok := f.versions[name]; !ok {
 				return 0, fmt.Errorf("not found: %s", name)
 			}
 			f.nextHandle++
 			f.handles[f.nextHandle] = name
+			f.opened[name] = true
 			return f.nextHandle, nil
 		},
 		close: func(handle uintptr) error {
@@ -180,6 +240,10 @@ func (f *fakeDynamicLoader) loader() dynamicLoader {
 
 func (f *fakeDynamicLoader) wasClosed(name string) bool {
 	return f.closed[name]
+}
+
+func (f *fakeDynamicLoader) wasOpened(name string) bool {
+	return f.opened[name]
 }
 
 func TestErrNotLoaded(t *testing.T) {
@@ -284,4 +348,30 @@ func TestLoadFFmpeg(t *testing.T) {
 
 	t.Logf("FFmpeg loaded: avutil version %d.%d.%d",
 		ver>>16, (ver>>8)&0xFF, ver&0xFF)
+}
+
+// TestConfiguredFFmpegFamily turns an explicit CI expectation into a check of
+// the libraries PureGo actually loaded. It is inactive for users and normal
+// test runs; CI sets FFMPEG_EXPECTED_MAJOR for its supported-version matrix.
+func TestConfiguredFFmpegFamily(t *testing.T) {
+	expectedText := os.Getenv("FFMPEG_EXPECTED_MAJOR")
+	if expectedText == "" {
+		t.Skip("FFMPEG_EXPECTED_MAJOR is not set")
+	}
+	expected, err := strconv.Atoi(expectedText)
+	if err != nil || expected <= 0 {
+		t.Fatalf("invalid FFMPEG_EXPECTED_MAJOR=%q", expectedText)
+	}
+	if err := Load(); err != nil {
+		t.Fatalf("loading configured FFmpeg runtime: %v", err)
+	}
+	if got := ABI().FFmpegMajor; got != expected {
+		t.Fatalf("loaded FFmpeg %d, want configured FFmpeg %d", got, expected)
+	}
+	avutil, avcodec, avformat := AVUtilVersion(), AVCodecVersion(), AVFormatVersion()
+	t.Logf("loaded configured FFmpeg %d: avutil=%d.%d.%d avcodec=%d.%d.%d avformat=%d.%d.%d",
+		expected,
+		avutil>>16, (avutil>>8)&0xFF, avutil&0xFF,
+		avcodec>>16, (avcodec>>8)&0xFF, avcodec&0xFF,
+		avformat>>16, (avformat>>8)&0xFF, avformat&0xFF)
 }
