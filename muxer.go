@@ -519,6 +519,10 @@ func (m *Muxer) WriteTrailer() error {
 		return errors.New("ffgo: trailer already written")
 	}
 
+	return m.writeTrailerLocked()
+}
+
+func (m *Muxer) writeTrailerLocked() error {
 	var trailerErrors []error
 	for _, ms := range m.streams {
 		if ms.encoder != nil && ms.codecCtx != nil {
@@ -565,6 +569,11 @@ func (m *Muxer) Close() error {
 	if m.closed {
 		return nil
 	}
+
+	var closeErr error
+	if m.headerWritten && !m.trailerWritten {
+		closeErr = m.writeTrailerLocked()
+	}
 	m.closed = true
 
 	// Free encoder resources
@@ -593,7 +602,7 @@ func (m *Muxer) Close() error {
 		m.formatCtx = nil
 	}
 
-	return nil
+	return closeErr
 }
 
 // Streams returns all streams in the muxer.
