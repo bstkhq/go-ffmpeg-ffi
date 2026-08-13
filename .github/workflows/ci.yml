@@ -243,7 +243,7 @@ jobs:
 
       - name: Restore pinned FFmpeg build
         id: ffmpeg-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: .work/ffmpeg-windows-${{ env.WINDOWS_FFMPEG_VERSION }}
           key: ffmpeg-windows-amd64-${{ env.WINDOWS_FFMPEG_VERSION }}-v1
@@ -277,6 +277,13 @@ jobs:
             --enable-zlib
           make -j2
           make install
+
+      - name: Save pinned FFmpeg build
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .work/ffmpeg-windows-${{ env.WINDOWS_FFMPEG_VERSION }}
+          key: ffmpeg-windows-amd64-${{ env.WINDOWS_FFMPEG_VERSION }}-v1
 
       - name: Expose FFmpeg and shim to native Windows processes
         shell: msys2 {0}
