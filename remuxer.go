@@ -4,6 +4,7 @@ package ffgo
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 
 	"github.com/bstkhq/go-ffmpeg-ffi/avcodec"
@@ -29,7 +30,8 @@ type Remuxer struct {
 	outputTimeBases map[int]avutil.Rational
 
 	// Reusable packet
-	packet avcodec.Packet
+	packet    avcodec.Packet
+	packetRef func(dst, src avcodec.Packet) error
 
 	headerWritten bool
 	closed        bool
@@ -70,56 +72,19 @@ func NewRemuxer(outputPath string, decoder *Decoder, cfg *RemuxerConfig) (*Remux
 		return nil, err
 	}
 
-	// Determine which streams to copy
+	// Copy the requested slice so caller mutation cannot change stream selection
+	// while the decoder snapshot is being built.
 	var streamsToCopy []int
 	if cfg != nil && len(cfg.InputStreams) > 0 {
-		streamsToCopy = cfg.InputStreams
-	} else {
-		// Copy all streams
-		numStreams := avformat.GetNbStreams(decoder.formatCtx)
-		streamsToCopy = make([]int, numStreams)
-		for i := 0; i < numStreams; i++ {
-			streamsToCopy[i] = i
-		}
+		streamsToCopy = append([]int(nil), cfg.InputStreams...)
 	}
 
-	// Create output streams
-	outputStreamIdx := 0
-	for _, inputIdx := range streamsToCopy {
-		inputStream := avformat.GetStream(decoder.formatCtx, inputIdx)
-		if inputStream == nil {
-			r.cleanup()
-			return nil, errors.New("ffgo: invalid input stream index")
-		}
-
-		// Create output stream
-		outputStream := avformat.NewStream(r.outputCtx, nil)
-		if outputStream == nil {
-			r.cleanup()
-			return nil, errors.New("ffgo: failed to create output stream")
-		}
-
-		// Copy codec parameters from input to output
-		inputCodecPar := avformat.GetStreamCodecPar(inputStream)
-		outputCodecPar := avformat.GetStreamCodecPar(outputStream)
-		if err := avcodec.ParametersCopy(outputCodecPar, inputCodecPar); err != nil {
-			r.cleanup()
-			return nil, err
-		}
-
-		// Clear codec tag for compatibility with different containers
-		avcodec.SetCodecParTag(outputCodecPar, 0)
-
-		// Store stream mapping and time bases
-		r.streamMap[inputIdx] = outputStreamIdx
-
-		inTbNum, inTbDen := avformat.GetStreamTimeBase(inputStream)
-		r.inputTimeBases[inputIdx] = avutil.NewRational(inTbNum, inTbDen)
-
-		outTbNum, outTbDen := avformat.GetStreamTimeBase(outputStream)
-		r.outputTimeBases[inputIdx] = avutil.NewRational(outTbNum, outTbDen)
-
-		outputStreamIdx++
+	// Codec parameters are native pointers owned by the decoder. Copy them into
+	// the output context while holding the decoder lock so Close cannot free the
+	// input format context underneath this constructor.
+	if err := r.copyDecoderStreams(decoder, streamsToCopy); err != nil {
+		r.cleanup()
+		return nil, err
 	}
 
 	// Open output file if needed
@@ -139,6 +104,64 @@ func NewRemuxer(outputPath string, decoder *Decoder, cfg *RemuxerConfig) (*Remux
 	}
 
 	return r, nil
+}
+
+func (r *Remuxer) copyDecoderStreams(decoder *Decoder, requested []int) error {
+	decoder.mu.Lock()
+	defer decoder.mu.Unlock()
+
+	if decoder.closed || decoder.formatCtx == nil {
+		return errDecoderClosed
+	}
+
+	streamsToCopy := requested
+	if len(streamsToCopy) == 0 {
+		numStreams := avformat.GetNbStreams(decoder.formatCtx)
+		streamsToCopy = make([]int, numStreams)
+		for i := range streamsToCopy {
+			streamsToCopy[i] = i
+		}
+	}
+
+	seen := make(map[int]struct{}, len(streamsToCopy))
+	for _, inputIdx := range streamsToCopy {
+		if _, duplicate := seen[inputIdx]; duplicate {
+			return fmt.Errorf("ffgo: duplicate input stream index %d", inputIdx)
+		}
+		seen[inputIdx] = struct{}{}
+
+		inputStream := avformat.GetStream(decoder.formatCtx, inputIdx)
+		if inputStream == nil {
+			return fmt.Errorf("ffgo: invalid input stream index %d", inputIdx)
+		}
+
+		outputStream := avformat.NewStream(r.outputCtx, nil)
+		if outputStream == nil {
+			return errors.New("ffgo: failed to create output stream")
+		}
+
+		inputCodecPar := avformat.GetStreamCodecPar(inputStream)
+		outputCodecPar := avformat.GetStreamCodecPar(outputStream)
+		if inputCodecPar == nil || outputCodecPar == nil {
+			return errors.New("ffgo: stream has no codec parameters")
+		}
+		if err := avcodec.ParametersCopy(outputCodecPar, inputCodecPar); err != nil {
+			return err
+		}
+
+		avcodec.SetCodecParTag(outputCodecPar, 0)
+		outputIdx := int(avformat.GetStreamIndex(outputStream))
+		if outputIdx < 0 {
+			return errors.New("ffgo: output stream has no valid index")
+		}
+		r.streamMap[inputIdx] = outputIdx
+
+		inTBNum, inTBDen := avformat.GetStreamTimeBase(inputStream)
+		r.inputTimeBases[inputIdx] = avutil.NewRational(inTBNum, inTBDen)
+		outTBNum, outTBDen := avformat.GetStreamTimeBase(outputStream)
+		r.outputTimeBases[inputIdx] = avutil.NewRational(outTBNum, outTBDen)
+	}
+	return nil
 }
 
 // WriteHeader writes the output file header.
@@ -183,6 +206,9 @@ func (r *Remuxer) WritePacket(pkt avcodec.Packet, inputStreamIdx int) error {
 	if r.closed {
 		return errors.New("ffgo: remuxer is closed")
 	}
+	if pkt == nil {
+		return errors.New("ffgo: remux packet is nil")
+	}
 
 	// Check if this stream is being copied
 	outputIdx, ok := r.streamMap[inputStreamIdx]
@@ -209,8 +235,13 @@ func (r *Remuxer) WritePacket(pkt avcodec.Packet, inputStreamIdx int) error {
 		}
 	}
 
-	// Reference the packet (don't copy data, just increment refcount)
-	_ = avcodec.PacketRef(r.packet, pkt)
+	// Reference the packet (don't copy data, just increment refcount). Keep the
+	// reusable packet empty on every exit, including allocation failures.
+	avcodec.PacketUnref(r.packet)
+	if err := r.refPacket(r.packet, pkt); err != nil {
+		return err
+	}
+	defer avcodec.PacketUnref(r.packet)
 
 	// Set output stream index
 	avcodec.SetPacketStreamIndex(r.packet, int32(outputIdx))
@@ -221,12 +252,14 @@ func (r *Remuxer) WritePacket(pkt avcodec.Packet, inputStreamIdx int) error {
 	avcodec.RescalePacketTS(r.packet, inputTB, outputTB)
 
 	// Write the packet
-	err := avformat.InterleavedWriteFrame(r.outputCtx, r.packet)
+	return avformat.InterleavedWriteFrame(r.outputCtx, r.packet)
+}
 
-	// Unref the packet
-	avcodec.PacketUnref(r.packet)
-
-	return err
+func (r *Remuxer) refPacket(dst, src avcodec.Packet) error {
+	if r.packetRef != nil {
+		return r.packetRef(dst, src)
+	}
+	return avcodec.PacketRef(dst, src)
 }
 
 // Remux copies all packets from a decoder to the output.
@@ -292,10 +325,20 @@ func (r *Remuxer) cleanup() {
 
 // StreamMapping returns the mapping from input stream indices to output stream indices.
 func (r *Remuxer) StreamMapping() map[int]int {
-	return r.streamMap
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	mapping := make(map[int]int, len(r.streamMap))
+	for inputIdx, outputIdx := range r.streamMap {
+		mapping[inputIdx] = outputIdx
+	}
+	return mapping
 }
 
 // NumOutputStreams returns the number of output streams.
 func (r *Remuxer) NumOutputStreams() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	return len(r.streamMap)
 }
