@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -2623,11 +2622,7 @@ func TestNewNetworkDecoder(t *testing.T) {
 
 	// Test with protocol options using local file
 	// This tests that the options are properly passed through
-	fileURL := "file://" + filepath.ToSlash(testFile)
-	if runtime.GOOS == "windows" {
-		fileURL = "file:///" + filepath.ToSlash(testFile)
-	}
-	decoder, err := NewNetworkDecoder(fileURL, &ProtocolOptions{
+	decoder, err := NewNetworkDecoder(testFile, &ProtocolOptions{
 		Timeout:    5 * time.Second,
 		BufferSize: 32768,
 	})
