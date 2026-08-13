@@ -46,8 +46,8 @@ func (*probeGame) Layout(_, _ int) (int, int) {
 }
 
 func (g *probeGame) probe() {
-	err := ffgo.Init()
-	diagnostic := ffgo.Diagnose()
+	err := ffmpeg.Init()
+	diagnostic := ffmpeg.Diagnose()
 	result := fmt.Sprintf(
 		"Ebitengine + go-ffmpeg-ffi iOS probe\n\nPlatform: %s/%s\n",
 		runtime.GOOS,

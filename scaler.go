@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 import (
 	"errors"
@@ -82,15 +82,15 @@ func NewScalerWithConfig(cfg ScalerConfig) (*Scaler, error) {
 	}
 
 	if !bindings.HasSWScale() {
-		return nil, errors.New("ffgo: swscale library not available")
+		return nil, errors.New("ffmpeg: swscale library not available")
 	}
 
 	// Validate parameters
 	if cfg.SrcWidth <= 0 || cfg.SrcHeight <= 0 {
-		return nil, errors.New("ffgo: invalid source dimensions")
+		return nil, errors.New("ffmpeg: invalid source dimensions")
 	}
 	if cfg.DstWidth <= 0 || cfg.DstHeight <= 0 {
-		return nil, errors.New("ffgo: invalid destination dimensions")
+		return nil, errors.New("ffmpeg: invalid destination dimensions")
 	}
 
 	// Default to bilinear if no flags specified
@@ -106,7 +106,7 @@ func NewScalerWithConfig(cfg ScalerConfig) (*Scaler, error) {
 		int32(flags), nil, nil, nil,
 	)
 	if ctx == nil {
-		return nil, errors.New("ffgo: failed to create scaler context")
+		return nil, errors.New("ffmpeg: failed to create scaler context")
 	}
 
 	s := &Scaler{
@@ -123,7 +123,7 @@ func NewScalerWithConfig(cfg ScalerConfig) (*Scaler, error) {
 	s.dstFrame = avutil.FrameAlloc()
 	if s.dstFrame == nil {
 		swscale.FreeContext(ctx)
-		return nil, errors.New("ffgo: failed to allocate destination frame")
+		return nil, errors.New("ffmpeg: failed to allocate destination frame")
 	}
 
 	// Set up destination frame
@@ -197,7 +197,7 @@ func (s *Scaler) SetColorConversion(src, dst ColorSpec) error {
 		return closedError("scaler")
 	}
 	if !swscale.HasColorspaceDetails() {
-		return errors.New("ffgo: swscale colorspace details not available")
+		return errors.New("ffmpeg: swscale colorspace details not available")
 	}
 
 	var invTable unsafe.Pointer

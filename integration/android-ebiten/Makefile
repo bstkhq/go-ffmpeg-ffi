@@ -1,7 +1,7 @@
 # This fixture is a downstream module: Ebitengine is never added to the
 # go-ffmpeg-ffi module graph.
 APP_NAME ?= go-ffmpeg-ffi Android probe
-APP_ID ?= dev.bstk.ffgo.probe
+APP_ID ?= dev.bstk.ffmpeg.probe
 GO_SRC ?= $(abspath .)
 ANDROID_TARGET ?= android/arm64
 ANDROID_MIN_SDK ?= 33

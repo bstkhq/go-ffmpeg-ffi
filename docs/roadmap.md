@@ -5,7 +5,7 @@ compile/emulator phases; iOS compile and XCFramework integration; and
 Windows/macOS desktop closure are complete. Remaining integration and platform
 work includes:
 
-- migrating go-avebi from its temporary ffgo fork to go-ffmpeg-ffi and rerunning
+- migrating go-avebi from its temporary backend fork to go-ffmpeg-ffi and rerunning
   its playback and resource matrix;
 - Samsung Galaxy Tab A9+ physical runtime, MediaCodec, thermal, and sustained
   H.264/H.265 30/60 FPS qualification;

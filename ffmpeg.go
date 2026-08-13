@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-// Package ffgo provides high-level bindings to FFmpeg for media processing.
+// Package ffmpeg provides high-level bindings to FFmpeg for media processing.
 // It enables decoding, encoding, muxing, demuxing, and scaling of audio/video
 // through PureGo. Desktop application builds can remain CGO-free; Android and
 // iOS builds require CGO and their native mobile toolchains.
@@ -8,7 +8,7 @@
 // For most use cases, use the high-level types: Decoder, Encoder, and Scaler.
 // For advanced use cases, the low-level packages (avutil, avcodec, avformat, swscale)
 // are available.
-package ffgo
+package ffmpeg
 
 import (
 	"errors"
@@ -42,7 +42,7 @@ func Version() (avutil, avcodec, avformat uint32) {
 	return bindings.AVUtilVersion(), bindings.AVCodecVersion(), bindings.AVFormatVersion()
 }
 
-// DiagnosticInfo contains diagnostic information about the ffgo library state.
+// DiagnosticInfo contains diagnostic information about the ffmpeg library state.
 type DiagnosticInfo struct {
 	// Platform information
 	GOOS   string
@@ -89,7 +89,7 @@ func (d DiagnosticInfo) String() string {
 		shimStatus = fmt.Sprintf("not loaded: %s", d.ShimError)
 	}
 
-	return fmt.Sprintf(`ffgo Diagnostic Info
+	return fmt.Sprintf(`ffmpeg Diagnostic Info
 ====================
 Platform: %s/%s
 FFmpeg:   %s
@@ -106,7 +106,7 @@ Features: swscale=%v swresample=%v avfilter=%v avdevice=%v`,
 		d.AVDeviceAvailable)
 }
 
-// Diagnose returns diagnostic information about the ffgo library state.
+// Diagnose returns diagnostic information about the ffmpeg library state.
 // This is useful for debugging and understanding why certain features
 // may not be available.
 func Diagnose() DiagnosticInfo {
@@ -166,7 +166,7 @@ type (
 	// Frame is a decoded video or audio frame.
 	//
 	// Safety note:
-	// ffgo.Frame is a small wrapper around an FFmpeg AVFrame pointer that tracks ownership.
+	// ffmpeg.Frame is a small wrapper around an FFmpeg AVFrame pointer that tracks ownership.
 	// Some APIs return borrowed frames (e.g. decoder output) which MUST NOT be freed.
 	// If you need an owned frame, clone it with FrameClone / Frame.Clone.
 	Frame struct {
@@ -224,7 +224,7 @@ func (p *Packet) Free() error {
 		return nil
 	}
 	if !p.owned {
-		return errors.New("ffgo: attempted to free a borrowed packet; clone/alloc it first")
+		return errors.New("ffmpeg: attempted to free a borrowed packet; clone/alloc it first")
 	}
 	avcodec.PacketFree(&p.ptr)
 	p.ptr = nil
@@ -294,7 +294,7 @@ func PacketClone(src *Packet) (*Packet, error) {
 	}
 	dst := PacketAlloc()
 	if dst == nil || dst.ptr == nil {
-		return nil, errors.New("ffgo: failed to allocate packet")
+		return nil, errors.New("ffmpeg: failed to allocate packet")
 	}
 	if err := avcodec.PacketRef(dst.ptr, src.ptr); err != nil {
 		_ = dst.Free()
@@ -320,7 +320,7 @@ func (f Frame) useError() error {
 		return err
 	}
 	if f.ptr == nil {
-		return errors.New("ffgo: frame is nil")
+		return errors.New("ffmpeg: frame is nil")
 	}
 	return nil
 }
@@ -338,13 +338,13 @@ func (f *Frame) Free() error {
 		return nil
 	}
 	if !f.owned {
-		return errors.New("ffgo: attempted to free a borrowed frame; clone it first")
+		return errors.New("ffmpeg: attempted to free a borrowed frame; clone it first")
 	}
 	if f.poolLease != nil {
 		if f.poolLease.returned.Load() {
 			return ErrFrameLeaseReturned
 		}
-		return errors.New("ffgo: pooled frame must be returned with FramePool.Put")
+		return errors.New("ffmpeg: pooled frame must be returned with FramePool.Put")
 	}
 	avutil.FrameFree(&f.ptr)
 	f.ptr = nil
@@ -519,7 +519,7 @@ func FrameFree(frame *Frame) error {
 // FrameRef creates a reference to src in dst.
 func FrameRef(dst, src Frame) error {
 	if dst.IsNil() || src.IsNil() {
-		return errors.New("ffgo: FrameRef requires non-nil src and dst")
+		return errors.New("ffmpeg: FrameRef requires non-nil src and dst")
 	}
 	return avutil.FrameRef(dst.ptr, src.ptr)
 }

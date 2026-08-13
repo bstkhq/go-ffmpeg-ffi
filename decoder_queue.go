@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 import (
 	"errors"
@@ -193,7 +193,7 @@ func (d *Decoder) queuePacketRefLocked(packet avcodec.Packet, mediaType MediaTyp
 	}
 	if !d.packetQueue.push(mediaType, clone) {
 		d.recyclePacketLocked(&clone)
-		return errors.New("ffgo: cannot queue unsupported decoder media type")
+		return errors.New("ffmpeg: cannot queue unsupported decoder media type")
 	}
 	return nil
 }
@@ -300,7 +300,7 @@ func (d *Decoder) codecStateLocked(mediaType MediaType) (*decoderCodecState, avc
 		}
 		return &d.audioState, d.audioCodecCtx, nil
 	default:
-		return nil, nil, errors.New("ffgo: unsupported decoder media type")
+		return nil, nil, errors.New("ffmpeg: unsupported decoder media type")
 	}
 }
 

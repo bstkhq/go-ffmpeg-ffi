@@ -16,7 +16,7 @@ Frame memory leaks are the most common issue in streaming servers. A single leak
 
 ```go
 // LEAK: Frame not freed on error
-func processFrame(frame ffgo.Frame) error {
+func processFrame(frame ffmpeg.Frame) error {
     if frame == nil {
         return fmt.Errorf("nil frame")  // LEAK: frame not freed!
     }
@@ -29,8 +29,8 @@ func processFrame(frame ffgo.Frame) error {
 **Fix:** Always defer cleanup:
 
 ```go
-func processFrame(frame ffgo.Frame) error {
-    defer ffgo.FrameFree(&frame)
+func processFrame(frame ffmpeg.Frame) error {
+    defer ffmpeg.FrameFree(&frame)
 
     if frame == nil {
         return fmt.Errorf("nil frame")  // Frame freed by defer
@@ -47,12 +47,12 @@ When using FrameRef for multiple consumers, all must release properly:
 
 ```go
 // LEAK: Reference counting mismatch
-func duplicateFrame(src ffgo.Frame) ([]ffgo.Frame, error) {
-    clones := make([]ffgo.Frame, 3)
+func duplicateFrame(src ffmpeg.Frame) ([]ffmpeg.Frame, error) {
+    clones := make([]ffmpeg.Frame, 3)
 
     for i := range clones {
-        clone := ffgo.FrameAlloc()
-        if err := ffgo.FrameRef(clone, src); err != nil {
+        clone := ffmpeg.FrameAlloc()
+        if err := ffmpeg.FrameRef(clone, src); err != nil {
             return nil, err  // LEAK: allocated clones not freed!
         }
         clones[i] = clone
@@ -65,17 +65,17 @@ func duplicateFrame(src ffgo.Frame) ([]ffgo.Frame, error) {
 **Fix:** Cleanup on error:
 
 ```go
-func duplicateFrame(src ffgo.Frame) ([]ffgo.Frame, error) {
-    clones := make([]ffgo.Frame, 3)
+func duplicateFrame(src ffmpeg.Frame) ([]ffmpeg.Frame, error) {
+    clones := make([]ffmpeg.Frame, 3)
 
     for i := range clones {
-        clone := ffgo.FrameAlloc()
-        if err := ffgo.FrameRef(clone, src); err != nil {
+        clone := ffmpeg.FrameAlloc()
+        if err := ffmpeg.FrameRef(clone, src); err != nil {
             // Cleanup previous clones
             for j := 0; j < i; j++ {
-                ffgo.FrameFree(&clones[j])
+                ffmpeg.FrameFree(&clones[j])
             }
-            ffgo.FrameFree(&clone)
+            ffmpeg.FrameFree(&clone)
             return nil, err
         }
         clones[i] = clone
@@ -89,7 +89,7 @@ func duplicateFrame(src ffgo.Frame) ([]ffgo.Frame, error) {
 
 ```go
 // LEAK: Goroutine exits with pending frames
-func (p *Pipeline) processAsync(frame ffgo.Frame) {
+func (p *Pipeline) processAsync(frame ffmpeg.Frame) {
     go func() {
         // ... processing
         if err != nil {
@@ -103,9 +103,9 @@ func (p *Pipeline) processAsync(frame ffgo.Frame) {
 **Fix:** Ensure cleanup in all paths:
 
 ```go
-func (p *Pipeline) processAsync(frame ffgo.Frame) {
+func (p *Pipeline) processAsync(frame ffmpeg.Frame) {
     go func() {
-        defer ffgo.FrameFree(&frame)
+        defer ffmpeg.FrameFree(&frame)
 
         // ... processing
         if err != nil {
@@ -120,8 +120,8 @@ func (p *Pipeline) processAsync(frame ffgo.Frame) {
 
 ```go
 // LEAK: Panic prevents defer execution if wrong
-func dangerousFrame(frame ffgo.Frame) {
-    defer ffgo.FrameFree(&frame)
+func dangerousFrame(frame ffmpeg.Frame) {
+    defer ffmpeg.FrameFree(&frame)
 
     // Panic occurs BEFORE defer registration (unlikely but possible)
     panicErr := somethingFatal()
@@ -134,18 +134,18 @@ However, nested defers can cause issues:
 
 ```go
 // LEAK: Multiple frames, only some deferred
-func batchProcess(frames []ffgo.Frame) {
+func batchProcess(frames []ffmpeg.Frame) {
     for _, frame := range frames {
-        defer ffgo.FrameFree(&frame)  // Wrong! Executes in reverse order on panic
+        defer ffmpeg.FrameFree(&frame)  // Wrong! Executes in reverse order on panic
         process(frame)
     }
 }
 
 // Correct: Use explicit cleanup
-func batchProcess(frames []ffgo.Frame) {
+func batchProcess(frames []ffmpeg.Frame) {
     for _, frame := range frames {
         process(frame)
-        ffgo.FrameFree(&frame)
+        ffmpeg.FrameFree(&frame)
     }
 }
 ```
@@ -190,14 +190,14 @@ func (ft *FrameTracker) Report() {
 // Wrap allocations
 var frameTracker FrameTracker
 
-func AllocFrameTracked() ffgo.Frame {
+func AllocFrameTracked() ffmpeg.Frame {
     frameTracker.OnFrameAlloc()
-    return ffgo.FrameAlloc()
+    return ffmpeg.FrameAlloc()
 }
 
-func FreeFrameTracked(frame *ffgo.Frame) {
+func FreeFrameTracked(frame *ffmpeg.Frame) {
     frameTracker.OnFrameFree()
-    ffgo.FrameFree(frame)
+    ffmpeg.FrameFree(frame)
 }
 ```
 

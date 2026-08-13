@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 import (
 	"errors"
@@ -79,7 +79,7 @@ func (s *Scaler) SetColorspace(src, dst ColorSpace) error {
 		return closedError("scaler")
 	}
 	if !swscale.HasColorspaceDetails() {
-		return errors.New("ffgo: swscale colorspace details not available")
+		return errors.New("ffmpeg: swscale colorspace details not available")
 	}
 
 	var invTable unsafe.Pointer

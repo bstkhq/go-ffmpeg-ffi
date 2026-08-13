@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 import (
 	"errors"
@@ -225,7 +225,7 @@ func NewStreamCopySource(video, audio *StreamInfo) *StreamCopySource {
 // EncoderOptions configures encoder behavior with separate video and audio settings.
 type EncoderOptions struct {
 	// Format optionally overrides output format selection (muxer short name, e.g. "flv", "mpegts", "rtp").
-	// If empty, ffgo will attempt to guess from the output path/extension.
+	// If empty, ffmpeg will attempt to guess from the output path/extension.
 	Format string
 
 	// IOOptions are passed to avio_open2 when opening the output (useful for streaming/network outputs).
@@ -301,7 +301,7 @@ func NewEncoder(path string, opts *EncoderOptions) (*Encoder, error) {
 
 func newEncoder(path string, opts *EncoderOptions, customIO *CustomIOContext) (*Encoder, error) {
 	if opts == nil {
-		return nil, errors.New("ffgo: EncoderOptions is required")
+		return nil, errors.New("ffmpeg: EncoderOptions is required")
 	}
 	opts = cloneEncoderOptions(opts)
 
@@ -312,30 +312,30 @@ func newEncoder(path string, opts *EncoderOptions, customIO *CustomIOContext) (*
 	hasAudioCopy := opts.CopyAudio
 
 	if !hasVideoEncode && !hasAudioEncode && !hasVideoCopy && !hasAudioCopy {
-		return nil, errors.New("ffgo: must specify Video config, Audio config, CopyVideo, or CopyAudio")
+		return nil, errors.New("ffmpeg: must specify Video config, Audio config, CopyVideo, or CopyAudio")
 	}
 
 	// Validate stream copy options
 	if hasVideoCopy && (opts.SourceStreams == nil || opts.SourceStreams.VideoParams == nil) {
-		return nil, errors.New("ffgo: SourceStreams.VideoParams required when CopyVideo is true")
+		return nil, errors.New("ffmpeg: SourceStreams.VideoParams required when CopyVideo is true")
 	}
 	if hasAudioCopy && (opts.SourceStreams == nil || opts.SourceStreams.AudioParams == nil) {
-		return nil, errors.New("ffgo: SourceStreams.AudioParams required when CopyAudio is true")
+		return nil, errors.New("ffmpeg: SourceStreams.AudioParams required when CopyAudio is true")
 	}
 	if hasVideoCopy && opts.SourceStreams.VideoStreamIndex < 0 {
-		return nil, errors.New("ffgo: SourceStreams.VideoStreamIndex must be non-negative")
+		return nil, errors.New("ffmpeg: SourceStreams.VideoStreamIndex must be non-negative")
 	}
 	if hasAudioCopy && opts.SourceStreams.AudioStreamIndex < 0 {
-		return nil, errors.New("ffgo: SourceStreams.AudioStreamIndex must be non-negative")
+		return nil, errors.New("ffmpeg: SourceStreams.AudioStreamIndex must be non-negative")
 	}
 	if hasVideoCopy && (opts.SourceStreams.VideoTimeBase.Num <= 0 || opts.SourceStreams.VideoTimeBase.Den <= 0) {
-		return nil, errors.New("ffgo: SourceStreams.VideoTimeBase must be positive")
+		return nil, errors.New("ffmpeg: SourceStreams.VideoTimeBase must be positive")
 	}
 	if hasAudioCopy && (opts.SourceStreams.AudioTimeBase.Num <= 0 || opts.SourceStreams.AudioTimeBase.Den <= 0) {
-		return nil, errors.New("ffgo: SourceStreams.AudioTimeBase must be positive")
+		return nil, errors.New("ffmpeg: SourceStreams.AudioTimeBase must be positive")
 	}
 	if hasVideoCopy && hasAudioCopy && opts.SourceStreams.VideoStreamIndex == opts.SourceStreams.AudioStreamIndex {
-		return nil, errors.New("ffgo: source video and audio stream indices must differ")
+		return nil, errors.New("ffmpeg: source video and audio stream indices must differ")
 	}
 
 	// Ensure FFmpeg is loaded
@@ -355,7 +355,7 @@ func newEncoder(path string, opts *EncoderOptions, customIO *CustomIOContext) (*
 
 	// Apply defaults for encoding mode
 	if video.Width <= 0 || video.Height <= 0 {
-		return nil, errors.New("ffgo: width and height must be positive")
+		return nil, errors.New("ffmpeg: width and height must be positive")
 	}
 	pixFmt := video.PixelFormat
 	if pixFmt == PixelFormatNone {
@@ -400,7 +400,7 @@ func newEncoder(path string, opts *EncoderOptions, customIO *CustomIOContext) (*
 		formatName = guessFormatFromPath(path)
 	}
 	if formatName == "" {
-		return nil, errors.New("ffgo: cannot determine output format from filename")
+		return nil, errors.New("ffmpeg: cannot determine output format from filename")
 	}
 
 	// Create output format context
@@ -417,7 +417,7 @@ func newEncoder(path string, opts *EncoderOptions, customIO *CustomIOContext) (*
 	codec := avcodec.FindEncoder(codecID)
 	if codec == nil {
 		e.cleanup()
-		return nil, errors.New("ffgo: encoder not found")
+		return nil, errors.New("ffmpeg: encoder not found")
 	}
 
 	// Encoder-specific: libx265 does not expose passlogfile/stats AVOptions via FFmpeg,
@@ -441,13 +441,13 @@ func newEncoder(path string, opts *EncoderOptions, customIO *CustomIOContext) (*
 	e.videoStream = avformat.NewStream(e.formatCtx, codec)
 	if e.videoStream == nil {
 		e.cleanup()
-		return nil, errors.New("ffgo: failed to create stream")
+		return nil, errors.New("ffmpeg: failed to create stream")
 	}
 	// Create video codec context
 	e.videoCodecCtx = avcodec.AllocContext3(codec)
 	if e.videoCodecCtx == nil {
 		e.cleanup()
-		return nil, errors.New("ffgo: failed to allocate codec context")
+		return nil, errors.New("ffmpeg: failed to allocate codec context")
 	}
 	// Configure basic codec context parameters
 	avcodec.SetCtxWidth(e.videoCodecCtx, int32(video.Width))
@@ -493,11 +493,11 @@ func newEncoder(path string, opts *EncoderOptions, customIO *CustomIOContext) (*
 	if opts.Pass != 0 {
 		if opts.Pass != 1 && opts.Pass != 2 {
 			e.cleanup()
-			return nil, errors.New("ffgo: Pass must be 0, 1, or 2")
+			return nil, errors.New("ffmpeg: Pass must be 0, 1, or 2")
 		}
 		if opts.PassLogFile == "" {
 			e.cleanup()
-			return nil, errors.New("ffgo: PassLogFile is required when Pass is set")
+			return nil, errors.New("ffmpeg: PassLogFile is required when Pass is set")
 		}
 		// Set stats filename (libx264/libx265 accept both keys).
 		if err := avutil.DictSet(&openDict, "passlogfile", opts.PassLogFile, 0); err != nil {
@@ -549,7 +549,7 @@ func newEncoder(path string, opts *EncoderOptions, customIO *CustomIOContext) (*
 	e.videoPacket = avcodec.PacketAlloc()
 	if e.videoPacket == nil {
 		e.cleanup()
-		return nil, errors.New("ffgo: failed to allocate packet")
+		return nil, errors.New("ffmpeg: failed to allocate packet")
 	}
 	// Setup audio if configured
 	if opts.Audio != nil {
@@ -582,7 +582,7 @@ func (e *Encoder) ensureIOOpenLocked() error {
 		return ErrEncoderClosed
 	}
 	if e.formatCtx == nil {
-		return errors.New("ffgo: encoder is not initialized")
+		return errors.New("ffmpeg: encoder is not initialized")
 	}
 	if avformat.HasNoFile(e.formatCtx) {
 		return nil
@@ -591,7 +591,7 @@ func (e *Encoder) ensureIOOpenLocked() error {
 		return nil
 	}
 	if e.path == "" {
-		return errors.New("ffgo: output path is not set")
+		return errors.New("ffmpeg: output path is not set")
 	}
 
 	// Build IO options for avio_open2 if provided.
@@ -671,7 +671,7 @@ func newEncoderStreamCopy(path string, opts *EncoderOptions, customIO *CustomIOC
 		formatName = guessFormatFromPath(path)
 	}
 	if formatName == "" {
-		return nil, errors.New("ffgo: cannot determine output format from filename")
+		return nil, errors.New("ffmpeg: cannot determine output format from filename")
 	}
 
 	e := &Encoder{
@@ -705,7 +705,7 @@ func newEncoderStreamCopy(path string, opts *EncoderOptions, customIO *CustomIOC
 		stream := avformat.NewStream(e.formatCtx, nil)
 		if stream == nil {
 			e.cleanup()
-			return nil, errors.New("ffgo: failed to create video stream for copy")
+			return nil, errors.New("ffmpeg: failed to create video stream for copy")
 		}
 		e.videoStream = stream
 		e.videoStreamIdx = int(avformat.GetStreamIndex(stream))
@@ -716,7 +716,7 @@ func newEncoderStreamCopy(path string, opts *EncoderOptions, customIO *CustomIOC
 		runtime.KeepAlive(opts.SourceStreams)
 		if err != nil {
 			e.cleanup()
-			return nil, errors.New("ffgo: failed to copy video codec parameters")
+			return nil, errors.New("ffmpeg: failed to copy video codec parameters")
 		}
 
 		// Request the source time base. The muxer may adjust it when writing the
@@ -735,7 +735,7 @@ func newEncoderStreamCopy(path string, opts *EncoderOptions, customIO *CustomIOC
 		stream := avformat.NewStream(e.formatCtx, nil)
 		if stream == nil {
 			e.cleanup()
-			return nil, errors.New("ffgo: failed to create audio stream for copy")
+			return nil, errors.New("ffmpeg: failed to create audio stream for copy")
 		}
 		e.audioStream = stream
 		e.audioStreamIdx = int(avformat.GetStreamIndex(stream))
@@ -746,7 +746,7 @@ func newEncoderStreamCopy(path string, opts *EncoderOptions, customIO *CustomIOC
 		runtime.KeepAlive(opts.SourceStreams)
 		if err != nil {
 			e.cleanup()
-			return nil, errors.New("ffgo: failed to copy audio codec parameters")
+			return nil, errors.New("ffmpeg: failed to copy audio codec parameters")
 		}
 
 		avformat.SetStreamTimeBase(stream, opts.SourceStreams.AudioTimeBase.Num, opts.SourceStreams.AudioTimeBase.Den)
@@ -779,7 +779,7 @@ func newEncoderStreamCopy(path string, opts *EncoderOptions, customIO *CustomIOC
 	e.videoPacket = avcodec.PacketAlloc()
 	if e.videoPacket == nil {
 		e.cleanup()
-		return nil, errors.New("ffgo: failed to allocate packet")
+		return nil, errors.New("ffmpeg: failed to allocate packet")
 	}
 
 	return e, nil
@@ -799,17 +799,17 @@ func (e *Encoder) WritePacket(packet *Packet) error {
 	}
 
 	if !e.copyVideo && !e.copyAudio {
-		return errors.New("ffgo: WritePacket only available in stream copy mode")
+		return errors.New("ffmpeg: WritePacket only available in stream copy mode")
 	}
 
 	if packet == nil || packet.ptr == nil {
-		return errors.New("ffgo: packet cannot be nil")
+		return errors.New("ffmpeg: packet cannot be nil")
 	}
 
 	sourceStreamIndex := int(avcodec.GetPacketStreamIndex(packet.ptr))
 	target, ok := e.copyStreams[sourceStreamIndex]
 	if !ok {
-		return fmt.Errorf("ffgo: source stream %d is not configured for copy", sourceStreamIndex)
+		return fmt.Errorf("ffmpeg: source stream %d is not configured for copy", sourceStreamIndex)
 	}
 
 	// Write header if not yet written. This can change the destination time
@@ -925,7 +925,7 @@ func applyVideoOptions(ctx unsafe.Pointer, cfg *VideoEncoderConfig) error {
 	// Custom codec options
 	for key, value := range cfg.CodecOptions {
 		if err := avutil.OptSet(ctx, key, value, avutil.AV_OPT_SEARCH_CHILDREN); err != nil {
-			return fmt.Errorf("ffgo: set codec option %q: %w", key, err)
+			return fmt.Errorf("ffmpeg: set codec option %q: %w", key, err)
 		}
 	}
 
@@ -955,19 +955,19 @@ func (e *Encoder) setupAudio(cfg *AudioEncoderConfig) error {
 	// Find audio encoder
 	audioCodec := avcodec.FindEncoder(codecID)
 	if audioCodec == nil {
-		return errors.New("ffgo: audio encoder not found")
+		return errors.New("ffmpeg: audio encoder not found")
 	}
 
 	// Create audio stream
 	e.audioStream = avformat.NewStream(e.formatCtx, audioCodec)
 	if e.audioStream == nil {
-		return errors.New("ffgo: failed to create audio stream")
+		return errors.New("ffmpeg: failed to create audio stream")
 	}
 
 	// Create audio codec context
 	e.audioCodecCtx = avcodec.AllocContext3(audioCodec)
 	if e.audioCodecCtx == nil {
-		return errors.New("ffgo: failed to allocate audio codec context")
+		return errors.New("ffmpeg: failed to allocate audio codec context")
 	}
 
 	// Configure audio codec context
@@ -1001,7 +1001,7 @@ func (e *Encoder) setupAudio(cfg *AudioEncoderConfig) error {
 	// Allocate audio packet
 	e.audioPacket = avcodec.PacketAlloc()
 	if e.audioPacket == nil {
-		return errors.New("ffgo: failed to allocate audio packet")
+		return errors.New("ffmpeg: failed to allocate audio packet")
 	}
 
 	// Store audio properties
@@ -1065,10 +1065,10 @@ func (e *Encoder) WriteAudioFrame(frame Frame) error {
 		return err
 	}
 	if !e.hasAudio {
-		return errors.New("ffgo: encoder was not configured with audio")
+		return errors.New("ffmpeg: encoder was not configured with audio")
 	}
 	if e.audioCodecCtx == nil {
-		return errors.New("ffgo: audio codec context not initialized")
+		return errors.New("ffmpeg: audio codec context not initialized")
 	}
 
 	// Ensure header is written

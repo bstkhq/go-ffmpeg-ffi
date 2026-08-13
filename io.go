@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 import (
 	"context"
@@ -132,7 +132,7 @@ func newIOCallbackPointers(newCallback func(any) uintptr) (callbacks ioCallbackP
 	defer func() {
 		if value := recover(); value != nil {
 			callbacks = ioCallbackPointers{}
-			err = fmt.Errorf("ffgo: initialize custom I/O callbacks: %w", callbackPanicError(value))
+			err = fmt.Errorf("ffmpeg: initialize custom I/O callbacks: %w", callbackPanicError(value))
 		}
 	}()
 
@@ -331,7 +331,7 @@ func (c *customIOState) recordCallbackError(operation string, err error) {
 	c.errorMu.Lock()
 	defer c.errorMu.Unlock()
 	if c.callbackErr == nil {
-		c.callbackErr = fmt.Errorf("ffgo: custom I/O %s callback: %w", operation, err)
+		c.callbackErr = fmt.Errorf("ffmpeg: custom I/O %s callback: %w", operation, err)
 	}
 }
 
@@ -522,16 +522,16 @@ func NewCustomIOContext(callbacks *IOCallbacks, writable bool) (*CustomIOContext
 // NewCustomIOContextWithSize creates a new custom I/O context with a specific buffer size.
 func NewCustomIOContextWithSize(callbacks *IOCallbacks, writable bool, bufferSize int) (*CustomIOContext, error) {
 	if callbacks == nil {
-		return nil, errors.New("ffgo: callbacks cannot be nil")
+		return nil, errors.New("ffmpeg: callbacks cannot be nil")
 	}
 	if !writable && callbacks.ReadContext == nil && callbacks.Read == nil {
-		return nil, errors.New("ffgo: read callback required for readable I/O context")
+		return nil, errors.New("ffmpeg: read callback required for readable I/O context")
 	}
 	if writable && callbacks.WriteContext == nil && callbacks.Write == nil {
-		return nil, errors.New("ffgo: write callback required for writable I/O context")
+		return nil, errors.New("ffmpeg: write callback required for writable I/O context")
 	}
 	if bufferSize <= 0 {
-		return nil, errors.New("ffgo: I/O buffer size must be positive")
+		return nil, errors.New("ffmpeg: I/O buffer size must be positive")
 	}
 
 	// Ensure FFmpeg is loaded
@@ -547,7 +547,7 @@ func NewCustomIOContextWithSize(callbacks *IOCallbacks, writable bool, bufferSiz
 	// Allocate the buffer with av_malloc as required by avio_alloc_context.
 	buffer := avutil.Malloc(uintptr(bufferSize))
 	if buffer == nil {
-		return nil, errors.New("ffgo: failed to allocate I/O buffer")
+		return nil, errors.New("ffmpeg: failed to allocate I/O buffer")
 	}
 
 	lifetimeCtx, lifetimeCancel := context.WithCancel(context.Background())
@@ -593,7 +593,7 @@ func NewCustomIOContextWithSize(callbacks *IOCallbacks, writable bool, bufferSiz
 		ctx.lease = nil
 		ctx.handle = 0
 		state.cancelPending()
-		return nil, errors.New("ffgo: failed to create AVIOContext")
+		return nil, errors.New("ffmpeg: failed to create AVIOContext")
 	}
 
 	return ctx, nil
@@ -657,7 +657,7 @@ func NewDecoderFromIO(callbacks *IOCallbacks, opts *DecoderOptions) (*Decoder, e
 // valid input bytes to identify the stream before it can return.
 func NewDecoderFromIOContext(ctx context.Context, callbacks *IOCallbacks, opts *DecoderOptions) (*Decoder, error) {
 	if ctx == nil {
-		return nil, errors.New("ffgo: context cannot be nil")
+		return nil, errors.New("ffmpeg: context cannot be nil")
 	}
 	// Create custom I/O context
 	ioCtx, err := NewCustomIOContext(callbacks, false)
@@ -677,7 +677,7 @@ func NewDecoderFromIOContext(ctx context.Context, callbacks *IOCallbacks, opts *
 	if formatCtx == nil {
 		interrupt.release(nil)
 		_ = ioCtx.Close()
-		return nil, errors.New("ffgo: failed to allocate format context")
+		return nil, errors.New("ffmpeg: failed to allocate format context")
 	}
 	interrupt.attach(formatCtx)
 
@@ -695,7 +695,7 @@ func NewDecoderFromIOContext(ctx context.Context, callbacks *IOCallbacks, opts *
 			interrupt.release(formatCtx)
 			_ = ioCtx.Close()
 			avformat.FreeContext(formatCtx)
-			return nil, errors.New("ffgo: input format not found")
+			return nil, errors.New("ffmpeg: input format not found")
 		}
 	}
 
@@ -789,7 +789,7 @@ func NewDecoderFromReader(r io.Reader, opts *DecoderOptions) (*Decoder, error) {
 // NewDecoderFromReaderContext creates a decoder from an io.Reader with cancellation.
 func NewDecoderFromReaderContext(ctx context.Context, r io.Reader, opts *DecoderOptions) (*Decoder, error) {
 	if r == nil {
-		return nil, errors.New("ffgo: reader cannot be nil")
+		return nil, errors.New("ffmpeg: reader cannot be nil")
 	}
 
 	callbacks := &IOCallbacks{
@@ -812,7 +812,7 @@ func NewDecoderFromReaderContext(ctx context.Context, r io.Reader, opts *Decoder
 // format is the output format (e.g., "mp4", "mkv", "avi").
 func NewEncoderToWriter(w io.Writer, format string, opts *EncoderOptions) (*Encoder, error) {
 	if w == nil {
-		return nil, errors.New("ffgo: writer cannot be nil")
+		return nil, errors.New("ffmpeg: writer cannot be nil")
 	}
 	callbacks := &IOCallbacks{
 		Write: func(buf []byte) (int, error) {
@@ -831,7 +831,7 @@ func NewEncoderToWriter(w io.Writer, format string, opts *EncoderOptions) (*Enco
 // The encoder owns the CustomIOContext and closes it with Encoder.Close.
 func NewEncoderFromIO(callbacks *IOCallbacks, format string, opts *EncoderOptions) (*Encoder, error) {
 	if opts == nil {
-		return nil, errors.New("ffgo: EncoderOptions is required")
+		return nil, errors.New("ffmpeg: EncoderOptions is required")
 	}
 	ioCtx, err := NewCustomIOContext(callbacks, true)
 	if err != nil {

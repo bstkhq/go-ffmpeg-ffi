@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 // EncoderPreset specifies encoding speed/quality tradeoff.
 // Slower presets produce smaller files at the cost of encoding speed.
@@ -25,15 +25,15 @@ type EncoderTune string
 
 // Video encoder tune options (x264/x265)
 const (
-	TuneNone        EncoderTune = ""           // No tuning
-	TuneFilm        EncoderTune = "film"       // Live action content
-	TuneAnimation   EncoderTune = "animation"  // Animated content
-	TuneGrain       EncoderTune = "grain"      // Preserve film grain
-	TuneStillimage  EncoderTune = "stillimage" // Static images
-	TuneFastdecode  EncoderTune = "fastdecode" // Optimize for fast decoding
+	TuneNone        EncoderTune = ""            // No tuning
+	TuneFilm        EncoderTune = "film"        // Live action content
+	TuneAnimation   EncoderTune = "animation"   // Animated content
+	TuneGrain       EncoderTune = "grain"       // Preserve film grain
+	TuneStillimage  EncoderTune = "stillimage"  // Static images
+	TuneFastdecode  EncoderTune = "fastdecode"  // Optimize for fast decoding
 	TuneZerolatency EncoderTune = "zerolatency" // Streaming/real-time
-	TunePsnr        EncoderTune = "psnr"       // Optimize for PSNR metric
-	TuneSsim        EncoderTune = "ssim"       // Optimize for SSIM metric
+	TunePsnr        EncoderTune = "psnr"        // Optimize for PSNR metric
+	TuneSsim        EncoderTune = "ssim"        // Optimize for SSIM metric
 )
 
 // VideoProfile specifies the H.264/H.265 profile.
@@ -72,14 +72,14 @@ const (
 	Level3   VideoLevel = "3"
 	Level3_1 VideoLevel = "3.1"
 	Level3_2 VideoLevel = "3.2"
-	Level4   VideoLevel = "4"     // 1080p30
-	Level4_1 VideoLevel = "4.1"   // 1080p60
+	Level4   VideoLevel = "4"   // 1080p30
+	Level4_1 VideoLevel = "4.1" // 1080p60
 	Level4_2 VideoLevel = "4.2"
-	Level5   VideoLevel = "5"     // 4K30
-	Level5_1 VideoLevel = "5.1"   // 4K60
+	Level5   VideoLevel = "5"   // 4K30
+	Level5_1 VideoLevel = "5.1" // 4K60
 	Level5_2 VideoLevel = "5.2"
-	Level6   VideoLevel = "6"     // 8K30
-	Level6_1 VideoLevel = "6.1"   // 8K60
+	Level6   VideoLevel = "6"   // 8K30
+	Level6_1 VideoLevel = "6.1" // 8K60
 	Level6_2 VideoLevel = "6.2"
 )
 

@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 import (
 	"errors"
@@ -62,7 +62,7 @@ var ErrFilterGraphClosed = resourceClosedError("filter graph")
 //
 // Example:
 //
-//	graph, err := ffgo.NewVideoFilterGraph("scale=640:480", 1920, 1080, ffgo.PixelFormatYUV420P)
+//	graph, err := ffmpeg.NewVideoFilterGraph("scale=640:480", 1920, 1080, ffmpeg.PixelFormatYUV420P)
 //	if err != nil {
 //	    return err
 //	}
@@ -91,7 +91,7 @@ func newVideoFilterGraphWithSpecs(specs []filterSpec, width, height int, pixFmt 
 
 func newFilterGraph(cfg FilterGraphConfig, videoSpecs []filterSpec) (*FilterGraph, error) {
 	if err := avfilter.Init(); err != nil {
-		return nil, fmt.Errorf("ffgo: failed to initialize avfilter: %w", err)
+		return nil, fmt.Errorf("ffmpeg: failed to initialize avfilter: %w", err)
 	}
 
 	// Determine if this is video or audio based on config
@@ -99,11 +99,11 @@ func newFilterGraph(cfg FilterGraphConfig, videoSpecs []filterSpec) (*FilterGrap
 	isAudio := cfg.SampleRate > 0 && cfg.Channels > 0
 
 	if !isVideo && !isAudio {
-		return nil, errors.New("ffgo: must specify either video (Width, Height) or audio (SampleRate, Channels) parameters")
+		return nil, errors.New("ffmpeg: must specify either video (Width, Height) or audio (SampleRate, Channels) parameters")
 	}
 
 	if isVideo && isAudio {
-		return nil, errors.New("ffgo: cannot mix video and audio parameters; create separate filter graphs")
+		return nil, errors.New("ffmpeg: cannot mix video and audio parameters; create separate filter graphs")
 	}
 
 	g := &FilterGraph{
@@ -116,7 +116,7 @@ func newFilterGraph(cfg FilterGraphConfig, videoSpecs []filterSpec) (*FilterGrap
 	// Allocate filter graph
 	g.graph = avfilter.GraphAlloc()
 	if g.graph == nil {
-		return nil, errors.New("ffgo: failed to allocate filter graph")
+		return nil, errors.New("ffmpeg: failed to allocate filter graph")
 	}
 
 	var err error
@@ -135,7 +135,7 @@ func newFilterGraph(cfg FilterGraphConfig, videoSpecs []filterSpec) (*FilterGrap
 	g.outFrame = avutil.FrameAlloc()
 	if g.outFrame == nil {
 		avfilter.GraphFree(&g.graph)
-		return nil, errors.New("ffgo: failed to allocate output frame")
+		return nil, errors.New("ffmpeg: failed to allocate output frame")
 	}
 
 	runtime.SetFinalizer(g, (*FilterGraph).cleanup)
@@ -158,7 +158,7 @@ func (g *FilterGraph) setupVideoFilters(cfg FilterGraphConfig, filterSpecs []fil
 	// Create buffersrc
 	bufferSrc := avfilter.GetByName("buffer")
 	if bufferSrc == nil {
-		return errors.New("ffgo: buffer filter not found")
+		return errors.New("ffmpeg: buffer filter not found")
 	}
 
 	srcArgs := videoBufferSourceArgs(cfg, timeBase, sar)
@@ -166,18 +166,18 @@ func (g *FilterGraph) setupVideoFilters(cfg FilterGraphConfig, filterSpecs []fil
 	var err error
 	g.bufferSrc, err = avfilter.GraphCreateFilter(g.graph, bufferSrc, "in", srcArgs)
 	if err != nil {
-		return fmt.Errorf("ffgo: failed to create buffersrc: %w", err)
+		return fmt.Errorf("ffmpeg: failed to create buffersrc: %w", err)
 	}
 
 	// Create buffersink
 	bufferSink := avfilter.GetByName("buffersink")
 	if bufferSink == nil {
-		return errors.New("ffgo: buffersink filter not found")
+		return errors.New("ffmpeg: buffersink filter not found")
 	}
 
 	g.bufferSink, err = avfilter.GraphCreateFilter(g.graph, bufferSink, "out", "")
 	if err != nil {
-		return fmt.Errorf("ffgo: failed to create buffersink: %w", err)
+		return fmt.Errorf("ffmpeg: failed to create buffersink: %w", err)
 	}
 
 	// Link filters - use manual linking approach which is more reliable
@@ -188,7 +188,7 @@ func (g *FilterGraph) setupVideoFilters(cfg FilterGraphConfig, filterSpecs []fil
 	} else if cfg.Filters == "" || cfg.Filters == "null" {
 		// No filters or null filter - link src directly to sink
 		if err := avfilter.Link(g.bufferSrc, 0, g.bufferSink, 0); err != nil {
-			return fmt.Errorf("ffgo: failed to link src to sink: %w", err)
+			return fmt.Errorf("ffmpeg: failed to link src to sink: %w", err)
 		}
 	} else {
 		// For filter chains, we create intermediate filters manually
@@ -200,7 +200,7 @@ func (g *FilterGraph) setupVideoFilters(cfg FilterGraphConfig, filterSpecs []fil
 
 	// Configure the graph
 	if err := avfilter.GraphConfig(g.graph); err != nil {
-		return fmt.Errorf("ffgo: failed to configure filter graph: %w", err)
+		return fmt.Errorf("ffmpeg: failed to configure filter graph: %w", err)
 	}
 
 	return nil
@@ -234,12 +234,12 @@ func (g *FilterGraph) linkFilterSpecs(filterList []filterSpec) error {
 	for i, f := range filterList {
 		filter := avfilter.GetByName(f.name)
 		if filter == nil {
-			return fmt.Errorf("ffgo: filter %q not found", f.name)
+			return fmt.Errorf("ffmpeg: filter %q not found", f.name)
 		}
 
 		ctx, err := g.createFilter(filter, fmt.Sprintf("f%d", i), f)
 		if err != nil {
-			return fmt.Errorf("ffgo: failed to create filter %q: %w", f.name, err)
+			return fmt.Errorf("ffmpeg: failed to create filter %q: %w", f.name, err)
 		}
 		filterCtxs = append(filterCtxs, ctx)
 	}
@@ -248,14 +248,14 @@ func (g *FilterGraph) linkFilterSpecs(filterList []filterSpec) error {
 	prevCtx := g.bufferSrc
 	for i, ctx := range filterCtxs {
 		if err := avfilter.Link(prevCtx, 0, ctx, 0); err != nil {
-			return fmt.Errorf("ffgo: failed to link filter chain at filter %d: %w", i, err)
+			return fmt.Errorf("ffmpeg: failed to link filter chain at filter %d: %w", i, err)
 		}
 		prevCtx = ctx
 	}
 
 	// Link last filter to buffersink
 	if err := avfilter.Link(prevCtx, 0, g.bufferSink, 0); err != nil {
-		return fmt.Errorf("ffgo: failed to link to buffersink: %w", err)
+		return fmt.Errorf("ffmpeg: failed to link to buffersink: %w", err)
 	}
 
 	return nil
@@ -363,7 +363,7 @@ func (g *FilterGraph) setupAudioFilters(cfg FilterGraphConfig) error {
 	// Create abuffer (audio buffer source)
 	abufferSrc := avfilter.GetByName("abuffer")
 	if abufferSrc == nil {
-		return errors.New("ffgo: abuffer filter not found")
+		return errors.New("ffmpeg: abuffer filter not found")
 	}
 
 	srcArgs := audioBufferSourceArgs(cfg)
@@ -371,25 +371,25 @@ func (g *FilterGraph) setupAudioFilters(cfg FilterGraphConfig) error {
 	var err error
 	g.bufferSrc, err = avfilter.GraphCreateFilter(g.graph, abufferSrc, "in", srcArgs)
 	if err != nil {
-		return fmt.Errorf("ffgo: failed to create abuffer: %w", err)
+		return fmt.Errorf("ffmpeg: failed to create abuffer: %w", err)
 	}
 
 	// Create abuffersink (audio buffer sink)
 	abufferSink := avfilter.GetByName("abuffersink")
 	if abufferSink == nil {
-		return errors.New("ffgo: abuffersink filter not found")
+		return errors.New("ffmpeg: abuffersink filter not found")
 	}
 
 	g.bufferSink, err = avfilter.GraphCreateFilter(g.graph, abufferSink, "out", "")
 	if err != nil {
-		return fmt.Errorf("ffgo: failed to create abuffersink: %w", err)
+		return fmt.Errorf("ffmpeg: failed to create abuffersink: %w", err)
 	}
 
 	// Parse and link filters
 	if cfg.Filters != "" && cfg.Filters != "anull" {
 		inputs, outputs, err := avfilter.GraphParse2(g.graph, cfg.Filters)
 		if err != nil {
-			return fmt.Errorf("ffgo: failed to parse filter graph: %w", err)
+			return fmt.Errorf("ffmpeg: failed to parse filter graph: %w", err)
 		}
 
 		// Link src -> first filter
@@ -399,7 +399,7 @@ func (g *FilterGraph) setupAudioFilters(cfg FilterGraphConfig) error {
 			if err := avfilter.Link(g.bufferSrc, 0, outputCtx, uint32(outputPad)); err != nil {
 				avfilter.InOutFree(&inputs)
 				avfilter.InOutFree(&outputs)
-				return fmt.Errorf("ffgo: failed to link abuffer: %w", err)
+				return fmt.Errorf("ffmpeg: failed to link abuffer: %w", err)
 			}
 		}
 
@@ -410,7 +410,7 @@ func (g *FilterGraph) setupAudioFilters(cfg FilterGraphConfig) error {
 			if err := avfilter.Link(inputCtx, uint32(inputPad), g.bufferSink, 0); err != nil {
 				avfilter.InOutFree(&inputs)
 				avfilter.InOutFree(&outputs)
-				return fmt.Errorf("ffgo: failed to link abuffersink: %w", err)
+				return fmt.Errorf("ffmpeg: failed to link abuffersink: %w", err)
 			}
 		}
 
@@ -419,13 +419,13 @@ func (g *FilterGraph) setupAudioFilters(cfg FilterGraphConfig) error {
 	} else {
 		// Direct link
 		if err := avfilter.Link(g.bufferSrc, 0, g.bufferSink, 0); err != nil {
-			return fmt.Errorf("ffgo: failed to link src to sink: %w", err)
+			return fmt.Errorf("ffmpeg: failed to link src to sink: %w", err)
 		}
 	}
 
 	// Configure
 	if err := avfilter.GraphConfig(g.graph); err != nil {
-		return fmt.Errorf("ffgo: failed to configure filter graph: %w", err)
+		return fmt.Errorf("ffmpeg: failed to configure filter graph: %w", err)
 	}
 
 	return nil
@@ -505,7 +505,7 @@ func (g *FilterGraph) Filter(frame *Frame) ([]*Frame, error) {
 	}
 
 	if err := avfilter.BufferSrcAddFrameFlags(g.bufferSrc, framePtr, avfilter.AV_BUFFERSRC_FLAG_KEEP_REF); err != nil {
-		return nil, fmt.Errorf("ffgo: failed to push frame to filter: %w", err)
+		return nil, fmt.Errorf("ffmpeg: failed to push frame to filter: %w", err)
 	}
 	if frame != nil {
 		runtime.KeepAlive(frame)
@@ -520,17 +520,17 @@ func (g *FilterGraph) Filter(frame *Frame) ([]*Frame, error) {
 			break
 		}
 		if ret < 0 {
-			return frames, fmt.Errorf("ffgo: failed to get frame from filter: %d", ret)
+			return frames, fmt.Errorf("ffmpeg: failed to get frame from filter: %d", ret)
 		}
 
 		// Clone the frame (avutil.FrameClone allocates a new frame and copies refs)
 		newFrame := avutil.FrameAlloc()
 		if newFrame == nil {
-			return frames, errors.New("ffgo: failed to allocate output frame")
+			return frames, errors.New("ffmpeg: failed to allocate output frame")
 		}
 		if err := avutil.FrameRef(newFrame, g.outFrame); err != nil {
 			avutil.FrameFree(&newFrame)
-			return frames, fmt.Errorf("ffgo: failed to reference frame: %w", err)
+			return frames, fmt.Errorf("ffmpeg: failed to reference frame: %w", err)
 		}
 		// Allocate a Frame slot to hold the pointer (since we return []*Frame)
 		framePtr := new(Frame)
@@ -556,7 +556,7 @@ func (g *FilterGraph) Flush() ([]*Frame, error) {
 
 	// Send NULL frame to signal EOF
 	if err := avfilter.BufferSrcAddFrameFlags(g.bufferSrc, nil, 0); err != nil {
-		return nil, fmt.Errorf("ffgo: failed to flush filter: %w", err)
+		return nil, fmt.Errorf("ffmpeg: failed to flush filter: %w", err)
 	}
 
 	// Collect remaining frames
@@ -568,16 +568,16 @@ func (g *FilterGraph) Flush() ([]*Frame, error) {
 			break
 		}
 		if ret < 0 {
-			return frames, fmt.Errorf("ffgo: failed to get frame from filter: %d", ret)
+			return frames, fmt.Errorf("ffmpeg: failed to get frame from filter: %d", ret)
 		}
 
 		newFrame := avutil.FrameAlloc()
 		if newFrame == nil {
-			return frames, errors.New("ffgo: failed to allocate output frame")
+			return frames, errors.New("ffmpeg: failed to allocate output frame")
 		}
 		if err := avutil.FrameRef(newFrame, g.outFrame); err != nil {
 			avutil.FrameFree(&newFrame)
-			return frames, fmt.Errorf("ffgo: failed to reference frame: %w", err)
+			return frames, fmt.Errorf("ffmpeg: failed to reference frame: %w", err)
 		}
 		// Allocate a Frame slot to hold the pointer (since we return []*Frame)
 		framePtr := new(Frame)

@@ -71,5 +71,5 @@ for frame := range pool.Acquire() {
 
 ## Related Topics
 
-- `ffgo-integration-pattern` - How ffgo integrates with server architecture
+- `ffmpeg-integration-pattern` - How ffmpeg integrates with server architecture
 - `error-handling-strategy` - Error classification and recovery

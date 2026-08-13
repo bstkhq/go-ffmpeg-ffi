@@ -71,7 +71,7 @@ customProfile := ABRProfile{
             Width:   854,
             Height:  480,
             BitRate: 1_500_000,
-            Codec:   ffgo.CodecIDH264,
+            Codec:   ffmpeg.CodecIDH264,
         },
         {
             Name:    "240p",

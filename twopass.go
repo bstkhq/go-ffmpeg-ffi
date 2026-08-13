@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 import (
 	"errors"
@@ -15,10 +15,10 @@ import (
 // - Input must be seekable (regular files are fine).
 func TwoPassTranscode(input, output string, opts *EncoderOptions) error {
 	if input == "" || output == "" {
-		return errors.New("ffgo: input and output are required")
+		return errors.New("ffmpeg: input and output are required")
 	}
 	if opts == nil || opts.Video == nil {
-		return errors.New("ffgo: EncoderOptions.Video is required")
+		return errors.New("ffmpeg: EncoderOptions.Video is required")
 	}
 
 	dec, err := NewDecoder(input, nil)
@@ -35,7 +35,7 @@ func TwoPassTranscode(input, output string, opts *EncoderOptions) error {
 	}
 	videoInfo := dec.VideoStream()
 	if videoInfo == nil {
-		return errors.New("ffgo: video stream info not available")
+		return errors.New("ffmpeg: video stream info not available")
 	}
 
 	// Fill common defaults from input if unset.
@@ -86,7 +86,7 @@ func newTwoPassWorkspace(output string, opts *EncoderOptions) (twoPassWorkspace,
 		return workspace, nil
 	}
 
-	tempDir, err := os.MkdirTemp("", "ffgo-twopass-*")
+	tempDir, err := os.MkdirTemp("", "ffmpeg-twopass-*")
 	if err != nil {
 		return twoPassWorkspace{}, err
 	}

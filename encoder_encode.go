@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 import (
 	"errors"
@@ -13,7 +13,7 @@ import (
 
 func (e *Encoder) encodeVideoFrameLocked(frame Frame) error {
 	if e.videoCodecCtx == nil || e.videoPacket == nil || e.videoStream == nil {
-		return errors.New("ffgo: video encoder is not configured")
+		return errors.New("ffmpeg: video encoder is not configured")
 	}
 	restoreMissingPTS := !frame.IsNil() && frame.PTS() == avutil.AV_NOPTS_VALUE
 	if restoreMissingPTS {
@@ -34,7 +34,7 @@ func (e *Encoder) encodeVideoFrameLocked(frame Frame) error {
 
 func (e *Encoder) encodeAudioFrameLocked(frame Frame) error {
 	if e.audioCodecCtx == nil || e.audioPacket == nil || e.audioStream == nil {
-		return errors.New("ffgo: audio encoder is not configured")
+		return errors.New("ffmpeg: audio encoder is not configured")
 	}
 	restoreMissingPTS := !frame.IsNil() && frame.PTS() == avutil.AV_NOPTS_VALUE
 	if restoreMissingPTS {
@@ -80,12 +80,12 @@ func (e *Encoder) flushEncodersLocked() error {
 	var flushErrors []error
 	if e.videoCodecCtx != nil && e.videoPacket != nil {
 		if err := e.videoState.encode(e.videoCodecCtx, nil, e.videoPacket, e.writeVideoPacketLocked); err != nil {
-			flushErrors = append(flushErrors, fmt.Errorf("ffgo: flush video encoder: %w", err))
+			flushErrors = append(flushErrors, fmt.Errorf("ffmpeg: flush video encoder: %w", err))
 		}
 	}
 	if e.audioCodecCtx != nil && e.audioPacket != nil {
 		if err := e.audioState.encode(e.audioCodecCtx, nil, e.audioPacket, e.writeAudioPacketLocked); err != nil {
-			flushErrors = append(flushErrors, fmt.Errorf("ffgo: flush audio encoder: %w", err))
+			flushErrors = append(flushErrors, fmt.Errorf("ffmpeg: flush audio encoder: %w", err))
 		}
 	}
 	return errors.Join(flushErrors...)

@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 import (
 	"errors"
@@ -129,25 +129,25 @@ func (e *Encoder) AddAttachment(att Attachment) error {
 		return ErrEncoderClosed
 	}
 	if e.headerWritten {
-		return errors.New("ffgo: AddAttachment must be called before WriteHeader")
+		return errors.New("ffmpeg: AddAttachment must be called before WriteHeader")
 	}
 	if e.formatCtx == nil {
-		return errors.New("ffgo: encoder not initialized")
+		return errors.New("ffmpeg: encoder not initialized")
 	}
 	if len(att.Data) == 0 {
-		return errors.New("ffgo: attachment data is empty")
+		return errors.New("ffmpeg: attachment data is empty")
 	}
 
 	// Create a new stream for the attachment
 	stream := avformat.NewStream(e.formatCtx, nil)
 	if stream == nil {
-		return errors.New("ffgo: failed to create attachment stream")
+		return errors.New("ffmpeg: failed to create attachment stream")
 	}
 
 	// Get codec parameters for the stream
 	codecPar := avformat.GetStreamCodecPar(stream)
 	if codecPar == nil {
-		return errors.New("ffgo: failed to get codec parameters")
+		return errors.New("ffmpeg: failed to get codec parameters")
 	}
 
 	// Set media type to attachment

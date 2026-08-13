@@ -251,11 +251,11 @@ state machines run during concurrent open/decode/seek/close cycles. The normal
 test suite runs a short pass; an extended local pass is:
 
 ```sh
-FFGO_STRESS=1 go test -run TestDecoderLifecycleStress -count=1 .
-FFGO_STRESS=1 go test -race -run TestDecoderLifecycleStress -count=1 .
+FFMPEG_STRESS=1 go test -run TestDecoderLifecycleStress -count=1 .
+FFMPEG_STRESS=1 go test -race -run TestDecoderLifecycleStress -count=1 .
 ```
 
-`FFGO_STRESS_ITERATIONS` overrides the default extended iteration count. On
+`FFMPEG_STRESS_ITERATIONS` overrides the default extended iteration count. On
 Linux the test checks handle, file-descriptor, Go-heap, and resident-memory
 growth after cleanup.
 

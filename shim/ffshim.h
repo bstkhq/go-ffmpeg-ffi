@@ -1,5 +1,5 @@
 /*
- * ffshim.h - FFmpeg shim library for ffgo
+ * ffshim.h - FFmpeg shim library for ffmpeg
  *
  * This shim provides wrappers for FFmpeg functionality that purego cannot handle:
  * 1. Variadic functions (av_log, avio_printf)

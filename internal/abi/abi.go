@@ -1,10 +1,10 @@
 //go:build amd64 || arm64
 
-// Package abi describes the public FFmpeg structure layouts used by ffgo.
+// Package abi describes the public FFmpeg structure layouts used by ffmpeg.
 //
 // FFmpeg keeps these structures source-compatible within a release branch, but
 // does not promise that their binary layout remains stable across major
-// releases. ffgo accesses a small subset of their fields through purego, so it
+// releases. ffmpeg accesses a small subset of their fields through purego, so it
 // must select offsets from the versions of the libraries actually loaded.
 package abi
 
@@ -15,7 +15,7 @@ import (
 
 // ErrUnsupported is returned for an unsupported or internally inconsistent
 // set of FFmpeg shared libraries.
-var ErrUnsupported = errors.New("ffgo: unsupported FFmpeg ABI")
+var ErrUnsupported = errors.New("ffmpeg: unsupported FFmpeg ABI")
 
 // Layout contains every public FFmpeg structure layout used directly by Go.
 type Layout struct {

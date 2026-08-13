@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 import (
 	"errors"
@@ -113,15 +113,15 @@ func (e *Encoder) SetChapters(chapters []Chapter) error {
 		return ErrEncoderClosed
 	}
 	if e.headerWritten {
-		return errors.New("ffgo: SetChapters must be called before WriteHeader")
+		return errors.New("ffmpeg: SetChapters must be called before WriteHeader")
 	}
 	if e.formatCtx == nil {
-		return errors.New("ffgo: encoder not initialized")
+		return errors.New("ffmpeg: encoder not initialized")
 	}
 
 	// Check if shim is loaded (required for chapter writing)
 	if !shim.IsLoaded() {
-		return errors.New("ffgo: shim not loaded, chapter writing not available")
+		return errors.New("ffmpeg: shim not loaded, chapter writing not available")
 	}
 
 	// Use millisecond time base for chapters (1/1000)

@@ -18,10 +18,10 @@ final class MediaFixture {
   private MediaFixture() {}
 
   static void prepare(Context context) {
-    File media = new File(context.getCacheDir(), "ffgo-test.mp4");
+    File media = new File(context.getCacheDir(), "ffmpeg-test.mp4");
     File staged = null;
     try {
-      staged = File.createTempFile("ffgo-test-", ".mp4", context.getCacheDir());
+      staged = File.createTempFile("ffmpeg-test-", ".mp4", context.getCacheDir());
       try (InputStream input = context.getAssets().open("test.mp4");
            OutputStream output = new FileOutputStream(staged, false)) {
         byte[] buffer = new byte[8192];

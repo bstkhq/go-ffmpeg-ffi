@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 import (
 	"errors"
@@ -10,7 +10,7 @@ import (
 
 // NewStreamingEncoder creates an encoder configured for network streaming outputs (RTMP/UDP/RTP/etc).
 //
-// ffgo selects a sensible default muxer based on the URL scheme:
+// ffmpeg selects a sensible default muxer based on the URL scheme:
 //   - rtmp/rtmps -> flv
 //   - udp/srt    -> mpegts
 //   - rtp        -> rtp
@@ -20,16 +20,16 @@ import (
 // options use the same raw FFmpeg dictionaries as NewEncoder.
 func NewStreamingEncoder(outURL string, opts *EncoderOptions) (*Encoder, error) {
 	if strings.TrimSpace(outURL) == "" {
-		return nil, errors.New("ffgo: output url cannot be empty")
+		return nil, errors.New("ffmpeg: output url cannot be empty")
 	}
 	u, err := url.Parse(outURL)
 	if err != nil || u.Scheme == "" {
-		return nil, errors.New("ffgo: invalid streaming url")
+		return nil, errors.New("ffmpeg: invalid streaming url")
 	}
 
 	encOpts := cloneEncoderOptions(opts)
 	if encOpts == nil {
-		return nil, errors.New("ffgo: EncoderOptions is required")
+		return nil, errors.New("ffmpeg: EncoderOptions is required")
 	}
 
 	if encOpts.Format == "" {
@@ -43,7 +43,7 @@ func NewStreamingEncoder(outURL string, opts *EncoderOptions) (*Encoder, error) 
 		case "rtsp":
 			encOpts.Format = "rtsp"
 		default:
-			return nil, errors.New("ffgo: unsupported streaming scheme")
+			return nil, errors.New("ffmpeg: unsupported streaming scheme")
 		}
 	}
 

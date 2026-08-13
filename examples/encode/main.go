@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-// Example: encode - Demonstrates video encoding with ffgo
+// Example: encode - Demonstrates video encoding with ffmpeg
 //
 // Usage: encode <output_file>
 //
@@ -24,13 +24,13 @@ func main() {
 	outputFile := os.Args[1]
 
 	// Initialize FFmpeg
-	if err := ffgo.Init(); err != nil {
+	if err := ffmpeg.Init(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize FFmpeg: %v\n", err)
 		os.Exit(1)
 	}
 
 	// Print version info
-	avutil, avcodec, avformat := ffgo.Version()
+	avutil, avcodec, avformat := ffmpeg.Version()
 	fmt.Printf("FFmpeg versions: avutil=%d.%d.%d, avcodec=%d.%d.%d, avformat=%d.%d.%d\n",
 		avutil>>16, (avutil>>8)&0xFF, avutil&0xFF,
 		avcodec>>16, (avcodec>>8)&0xFF, avcodec&0xFF,
@@ -44,14 +44,14 @@ func main() {
 
 	fmt.Printf("\nCreating encoder: %dx%d, %d fps, %d frames\n", width, height, frameRate, totalFrames)
 
-	encoder, err := ffgo.NewEncoder(outputFile, &ffgo.EncoderOptions{
-		Video: &ffgo.VideoEncoderConfig{
+	encoder, err := ffmpeg.NewEncoder(outputFile, &ffmpeg.EncoderOptions{
+		Video: &ffmpeg.VideoEncoderConfig{
 			Width:       width,
 			Height:      height,
-			PixelFormat: ffgo.PixelFormatYUV420P,
-			Codec:       ffgo.CodecIDH264,
+			PixelFormat: ffmpeg.PixelFormatYUV420P,
+			Codec:       ffmpeg.CodecIDH264,
 			Bitrate:     1000000, // 1 Mbps
-			FrameRate:   ffgo.NewRational(int32(frameRate), 1),
+			FrameRate:   ffmpeg.NewRational(int32(frameRate), 1),
 			GOPSize:     12,
 			MaxBFrames:  0,
 		},
@@ -63,17 +63,17 @@ func main() {
 	defer encoder.Close()
 
 	// Allocate frame
-	frame := ffgo.FrameAlloc()
+	frame := ffmpeg.FrameAlloc()
 	if frame.IsNil() {
 		fmt.Fprintf(os.Stderr, "Failed to allocate frame\n")
 		os.Exit(1)
 	}
-	defer func() { _ = ffgo.FrameFree(&frame) }()
+	defer func() { _ = ffmpeg.FrameFree(&frame) }()
 
 	// Set up frame
 	frame.SetWidth(width)
 	frame.SetHeight(height)
-	frame.SetPixelFormat(ffgo.PixelFormatYUV420P)
+	frame.SetPixelFormat(ffmpeg.PixelFormatYUV420P)
 
 	// Allocate frame buffer
 	if err := frame.GetBuffer(0); err != nil {
@@ -126,7 +126,7 @@ func main() {
 }
 
 // fillTestPattern fills a YUV420P frame with an animated test pattern
-func fillTestPattern(frame ffgo.Frame, frameNum, width, height int) {
+func fillTestPattern(frame ffmpeg.Frame, frameNum, width, height int) {
 	if frame.IsNil() {
 		return
 	}

@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 import (
 	"errors"
@@ -76,7 +76,7 @@ func loadBSFBindings() (err error) {
 	)
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			err = fmt.Errorf("ffgo: register bitstream filter bindings: %v", recovered)
+			err = fmt.Errorf("ffmpeg: register bitstream filter bindings: %v", recovered)
 		}
 	}()
 
@@ -137,7 +137,7 @@ func NewBitstreamFilter(filterName string) (*BitstreamFilter, error) {
 	// Find the filter
 	filter := avBsfGetByName(filterName)
 	if filter == nil {
-		return nil, errors.New("ffgo: bitstream filter not found: " + filterName)
+		return nil, errors.New("ffmpeg: bitstream filter not found: " + filterName)
 	}
 
 	// Allocate context
@@ -151,7 +151,7 @@ func NewBitstreamFilter(filterName string) (*BitstreamFilter, error) {
 	packet := avcodec.PacketAlloc()
 	if packet == nil {
 		avBsfFree(&ctx)
-		return nil, errors.New("ffgo: failed to allocate packet")
+		return nil, errors.New("ffmpeg: failed to allocate packet")
 	}
 
 	return &BitstreamFilter{
@@ -173,7 +173,7 @@ func (f *BitstreamFilter) SetInputCodecParameters(par avcodec.Parameters) error 
 	// Get par_in pointer and copy parameters
 	parIn := *(*unsafe.Pointer)(unsafe.Pointer(uintptr(f.ctx) + offsetBsfParIn))
 	if parIn == nil {
-		return errors.New("ffgo: filter has no par_in")
+		return errors.New("ffmpeg: filter has no par_in")
 	}
 
 	return avcodec.ParametersCopy(parIn, par)
@@ -224,7 +224,7 @@ func (f *BitstreamFilter) Filter(pkt avcodec.Packet) (avcodec.Packet, error) {
 		return nil, closedError("filter")
 	}
 	if pkt == nil {
-		return nil, errors.New("ffgo: bitstream filter input packet is nil; use Flush")
+		return nil, errors.New("ffmpeg: bitstream filter input packet is nil; use Flush")
 	}
 
 	avcodec.PacketUnref(f.packet)
@@ -254,7 +254,7 @@ func (f *BitstreamFilter) Flush() (avcodec.Packet, error) {
 func (f *BitstreamFilter) enqueueOutputLocked(packet avcodec.Packet) error {
 	clone := avcodec.PacketAlloc()
 	if clone == nil {
-		return errors.New("ffgo: failed to allocate bitstream filter output packet")
+		return errors.New("ffmpeg: failed to allocate bitstream filter output packet")
 	}
 	if err := avcodec.PacketRef(clone, packet); err != nil {
 		avcodec.PacketFree(&clone)

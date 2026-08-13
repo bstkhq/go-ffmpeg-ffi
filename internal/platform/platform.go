@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-// Package platform provides platform detection and capabilities for ffgo.
+// Package platform provides platform detection and capabilities for ffmpeg.
 // It determines what features are available based on the operating system and architecture.
 package platform
 
@@ -18,7 +18,7 @@ const SupportsStructByValue = runtime.GOOS == "darwin" &&
 	(runtime.GOARCH == "amd64" || runtime.GOARCH == "arm64")
 
 // Is64Bit indicates whether the platform is 64-bit.
-// ffgo only supports 64-bit platforms due to purego limitations.
+// ffmpeg only supports 64-bit platforms due to purego limitations.
 const Is64Bit = unsafe.Sizeof(uintptr(0)) == 8
 
 // LibraryExtension is the file extension for shared libraries on this platform.

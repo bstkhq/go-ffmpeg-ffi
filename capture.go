@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 import (
 	"errors"
@@ -38,7 +38,7 @@ type DeviceInfo struct {
 type DeviceListOptions struct {
 	// InputFormat is the FFmpeg input format used for device enumeration
 	// (e.g. "v4l2", "alsa", "dshow", "avfoundation").
-	// If empty, ffgo uses platform defaults based on deviceType.
+	// If empty, ffmpeg uses platform defaults based on deviceType.
 	InputFormat string
 
 	// DeviceName is an optional selector string passed to FFmpeg.
@@ -182,45 +182,45 @@ func cStringArrayToGo(arr unsafe.Pointer, count int) []string {
 //
 // Example (Linux webcam):
 //
-//	decoder, err := ffgo.NewCapture(ffgo.CaptureConfig{
+//	decoder, err := ffmpeg.NewCapture(ffmpeg.CaptureConfig{
 //	    Device:     "/dev/video0",
-//	    DeviceType: ffgo.DeviceTypeVideo,
+//	    DeviceType: ffmpeg.DeviceTypeVideo,
 //	    Width:      1920,
 //	    Height:     1080,
-//	    FrameRate:  ffgo.NewRational(30, 1),
+//	    FrameRate:  ffmpeg.NewRational(30, 1),
 //	})
 //
 // Example (macOS camera):
 //
-//	decoder, err := ffgo.NewCapture(ffgo.CaptureConfig{
+//	decoder, err := ffmpeg.NewCapture(ffmpeg.CaptureConfig{
 //	    Device:     "0",
-//	    DeviceType: ffgo.DeviceTypeVideo,
+//	    DeviceType: ffmpeg.DeviceTypeVideo,
 //	})
 func NewCapture(cfg CaptureConfig) (*Decoder, error) {
 	if cfg.Device == "" {
-		return nil, errors.New("ffgo: device must be specified")
+		return nil, errors.New("ffmpeg: device must be specified")
 	}
 	if cfg.DeviceType == DeviceTypeVideo && cfg.PixelFormat != PixelFormatNone && getPixelFormatName(cfg.PixelFormat) == "" {
-		return nil, fmt.Errorf("ffgo: unsupported capture pixel format %d", cfg.PixelFormat)
+		return nil, fmt.Errorf("ffmpeg: unsupported capture pixel format %d", cfg.PixelFormat)
 	}
 
 	if err := bindings.Load(); err != nil {
 		return nil, err
 	}
 	if err := avdevice.RegisterAll(); err != nil {
-		return nil, fmt.Errorf("ffgo: device capture requires libavdevice: %w", err)
+		return nil, fmt.Errorf("ffmpeg: device capture requires libavdevice: %w", err)
 	}
 
 	// Determine the input format based on platform and device type
 	inputFormatName := getInputFormat(cfg.DeviceType)
 	if inputFormatName == "" {
-		return nil, fmt.Errorf("ffgo: capture not supported on this platform")
+		return nil, fmt.Errorf("ffmpeg: capture not supported on this platform")
 	}
 
 	// Get the input format
 	inputFmt := avformat.FindInputFormat(inputFormatName)
 	if inputFmt == nil {
-		return nil, fmt.Errorf("ffgo: input format %s not found (is libavdevice installed?)", inputFormatName)
+		return nil, fmt.Errorf("ffmpeg: input format %s not found (is libavdevice installed?)", inputFormatName)
 	}
 
 	// Build options dictionary
@@ -286,7 +286,7 @@ func NewCapture(cfg CaptureConfig) (*Decoder, error) {
 		if avDict != nil {
 			avutil.DictFree(&avDict)
 		}
-		return nil, fmt.Errorf("ffgo: failed to open capture device: %w", err)
+		return nil, fmt.Errorf("ffmpeg: failed to open capture device: %w", err)
 	}
 	d.interrupt.attach(d.formatCtx)
 
@@ -308,7 +308,7 @@ func NewCapture(cfg CaptureConfig) (*Decoder, error) {
 // must pass through this function before publishing the Decoder.
 func (d *Decoder) initializeCaptureDecoder() error {
 	if err := avformat.FindStreamInfo(d.formatCtx, nil); err != nil {
-		return fmt.Errorf("ffgo: failed to find stream info: %w", err)
+		return fmt.Errorf("ffmpeg: failed to find stream info: %w", err)
 	}
 
 	d.videoStreamIdx = int(avformat.FindBestStream(d.formatCtx, avutil.MediaTypeVideo, -1, -1, nil, 0))
@@ -405,11 +405,11 @@ func getPixelFormatName(pixFmt PixelFormat) string {
 //
 // Example (Linux X11):
 //
-//	decoder, err := ffgo.CaptureScreen(":0.0")
+//	decoder, err := ffmpeg.CaptureScreen(":0.0")
 //
 // Example (macOS):
 //
-//	decoder, err := ffgo.CaptureScreen("Capture screen 0")
+//	decoder, err := ffmpeg.CaptureScreen("Capture screen 0")
 //
 // Note: Screen capture may require additional permissions on some platforms.
 func CaptureScreen(display string) (*Decoder, error) {
@@ -482,7 +482,7 @@ func CaptureScreenWithOptions(opts ScreenCaptureOptions) (*Decoder, error) {
 		return nil, err
 	}
 	if err := avdevice.RegisterAll(); err != nil {
-		return nil, fmt.Errorf("ffgo: screen capture requires libavdevice: %w", err)
+		return nil, fmt.Errorf("ffmpeg: screen capture requires libavdevice: %w", err)
 	}
 
 	display := opts.Display
@@ -492,12 +492,12 @@ func CaptureScreenWithOptions(opts ScreenCaptureOptions) (*Decoder, error) {
 
 	inputFormatName := getScreenCaptureFormat()
 	if inputFormatName == "" {
-		return nil, fmt.Errorf("ffgo: screen capture not supported on this platform")
+		return nil, fmt.Errorf("ffmpeg: screen capture not supported on this platform")
 	}
 
 	inputFmt := avformat.FindInputFormat(inputFormatName)
 	if inputFmt == nil {
-		return nil, fmt.Errorf("ffgo: input format %s not found", inputFormatName)
+		return nil, fmt.Errorf("ffmpeg: input format %s not found", inputFormatName)
 	}
 
 	// Build options dictionary
@@ -557,7 +557,7 @@ func CaptureScreenWithOptions(opts ScreenCaptureOptions) (*Decoder, error) {
 		if avDict != nil {
 			avutil.DictFree(&avDict)
 		}
-		return nil, fmt.Errorf("ffgo: failed to open screen capture: %w", err)
+		return nil, fmt.Errorf("ffmpeg: failed to open screen capture: %w", err)
 	}
 	d.interrupt.attach(d.formatCtx)
 

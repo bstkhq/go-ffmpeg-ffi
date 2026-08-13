@@ -2,17 +2,17 @@
 
 set -euo pipefail
 
-readonly package_name="${ANDROID_PACKAGE:-dev.bstk.ffgo.probe}"
-readonly activity_name="${ANDROID_ACTIVITY:-dev.bstk.ffgo.probe/.MainActivity}"
-readonly full_cycles="${FFGO_ANDROID_FULL_CYCLES:-20}"
-readonly rapid_cycles="${FFGO_ANDROID_RAPID_CYCLES:-30}"
-readonly rapid_active_seconds="${FFGO_ANDROID_RAPID_ACTIVE_SECONDS:-1}"
-readonly full_timeout_seconds="${FFGO_ANDROID_FULL_TIMEOUT_SECONDS:-180}"
-readonly lifecycle_timeout_seconds="${FFGO_ANDROID_LIFECYCLE_TIMEOUT_SECONDS:-60}"
-readonly max_pss_growth_kb="${FFGO_ANDROID_MAX_PSS_GROWTH_KB:-65536}"
-readonly max_rss_growth_kb="${FFGO_ANDROID_MAX_RSS_GROWTH_KB:-65536}"
-readonly max_fd_growth="${FFGO_ANDROID_MAX_FD_GROWTH:-8}"
-readonly max_thread_growth="${FFGO_ANDROID_MAX_THREAD_GROWTH:-8}"
+readonly package_name="${ANDROID_PACKAGE:-dev.bstk.ffmpeg.probe}"
+readonly activity_name="${ANDROID_ACTIVITY:-dev.bstk.ffmpeg.probe/.MainActivity}"
+readonly full_cycles="${FFMPEG_ANDROID_FULL_CYCLES:-20}"
+readonly rapid_cycles="${FFMPEG_ANDROID_RAPID_CYCLES:-30}"
+readonly rapid_active_seconds="${FFMPEG_ANDROID_RAPID_ACTIVE_SECONDS:-1}"
+readonly full_timeout_seconds="${FFMPEG_ANDROID_FULL_TIMEOUT_SECONDS:-180}"
+readonly lifecycle_timeout_seconds="${FFMPEG_ANDROID_LIFECYCLE_TIMEOUT_SECONDS:-60}"
+readonly max_pss_growth_kb="${FFMPEG_ANDROID_MAX_PSS_GROWTH_KB:-65536}"
+readonly max_rss_growth_kb="${FFMPEG_ANDROID_MAX_RSS_GROWTH_KB:-65536}"
+readonly max_fd_growth="${FFMPEG_ANDROID_MAX_FD_GROWTH:-8}"
+readonly max_thread_growth="${FFMPEG_ANDROID_MAX_THREAD_GROWTH:-8}"
 
 if [[ -n "${ADB_BIN:-}" ]]; then
 	readonly adb_bin="$ADB_BIN"
@@ -39,7 +39,7 @@ for value_name in \
 done
 
 readonly repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-readonly artifact_root="${FFGO_ANDROID_ARTIFACT_DIR:-$repo_root/.build/android-artifacts}"
+readonly artifact_root="${FFMPEG_ANDROID_ARTIFACT_DIR:-$repo_root/.build/android-artifacts}"
 readonly run_id="$(date -u +%Y%m%dT%H%M%SZ)"
 readonly metrics_file="$artifact_root/android-stress-$run_id.csv"
 readonly logcat_file="$artifact_root/android-stress-$run_id.logcat.txt"
@@ -151,7 +151,7 @@ check_failures() {
 		/H\.264 decode\/scale: FAILED/ ||
 		(/FATAL EXCEPTION/ && $3 == pid) ||
 		(/Fatal signal/ && $3 == pid) ||
-		/ANR in dev\.bstk\.ffgo\.probe/ { print }
+		/ANR in dev\.bstk\.ffmpeg\.probe/ { print }
 	')"
 	if [[ -n "$failures" ]]; then
 		echo "Android failures found in logcat:" >&2

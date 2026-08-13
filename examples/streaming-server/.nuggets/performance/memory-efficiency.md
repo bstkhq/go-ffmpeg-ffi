@@ -12,15 +12,15 @@ Media processing is inherently memory-intensive. A single 4K frame requires 33 M
 
 ## Frame Buffer Allocation
 
-Raw frame buffers must be explicitly allocated in ffgo:
+Raw frame buffers must be explicitly allocated in ffmpeg:
 
 ```go
 // Allocation
-frame := ffgo.FrameAlloc()  // Creates AVFrame structure, buffers uninitialized
+frame := ffmpeg.FrameAlloc()  // Creates AVFrame structure, buffers uninitialized
 
 // To use frame for actual data, must allocate buffers
-if err := ffgo.AVUtil.FrameGetBuffer(frame, 1); err != nil {
-    ffgo.FrameFree(&frame)
+if err := ffmpeg.AVUtil.FrameGetBuffer(frame, 1); err != nil {
+    ffmpeg.FrameFree(&frame)
     return nil, err
 }
 
@@ -30,15 +30,15 @@ if err := ffgo.AVUtil.FrameGetBuffer(frame, 1); err != nil {
 **Size calculation:**
 
 ```go
-func frameSizeBytes(width, height int, pixFmt ffgo.PixelFormat) int {
+func frameSizeBytes(width, height int, pixFmt ffmpeg.PixelFormat) int {
     switch pixFmt {
-    case ffgo.PixelFormatYUV420P:
+    case ffmpeg.PixelFormatYUV420P:
         return width * height * 3 / 2  // 1.5x
-    case ffgo.PixelFormatYUV422P:
+    case ffmpeg.PixelFormatYUV422P:
         return width * height * 2      // 2x
-    case ffgo.PixelFormatRGB24:
+    case ffmpeg.PixelFormatRGB24:
         return width * height * 3      // 3x
-    case ffgo.PixelFormatRGBA:
+    case ffmpeg.PixelFormatRGBA:
         return width * height * 4      // 4x
     default:
         return 0
@@ -56,18 +56,18 @@ Pre-allocating frames avoids GC pressure and runtime allocation costs:
 
 ```go
 type FramePool struct {
-    frames    chan ffgo.Frame
+    frames    chan ffmpeg.Frame
     size      int
 
     // Configuration
     width     int
     height    int
-    pixFmt    ffgo.PixelFormat
+    pixFmt    ffmpeg.PixelFormat
 }
 
-func NewFramePool(width, height int, pixFmt ffgo.PixelFormat, poolSize int) (*FramePool, error) {
+func NewFramePool(width, height int, pixFmt ffmpeg.PixelFormat, poolSize int) (*FramePool, error) {
     fp := &FramePool{
-        frames: make(chan ffgo.Frame, poolSize),
+        frames: make(chan ffmpeg.Frame, poolSize),
         size:   poolSize,
         width:  width,
         height: height,
@@ -76,16 +76,16 @@ func NewFramePool(width, height int, pixFmt ffgo.PixelFormat, poolSize int) (*Fr
 
     // Pre-allocate all frames
     for i := 0; i < poolSize; i++ {
-        frame := ffgo.FrameAlloc()
-        ffgo.AVUtil.SetFrameWidth(frame, int32(width))
-        ffgo.AVUtil.SetFrameHeight(frame, int32(height))
-        ffgo.AVUtil.SetFrameFormat(frame, int32(pixFmt))
+        frame := ffmpeg.FrameAlloc()
+        ffmpeg.AVUtil.SetFrameWidth(frame, int32(width))
+        ffmpeg.AVUtil.SetFrameHeight(frame, int32(height))
+        ffmpeg.AVUtil.SetFrameFormat(frame, int32(pixFmt))
 
-        if err := ffgo.AVUtil.FrameGetBuffer(frame, 1); err != nil {
+        if err := ffmpeg.AVUtil.FrameGetBuffer(frame, 1); err != nil {
             // Cleanup on error
             for j := 0; j < i; j++ {
                 f := <-fp.frames
-                ffgo.FrameFree(&f)
+                ffmpeg.FrameFree(&f)
             }
             return nil, err
         }
@@ -97,34 +97,34 @@ func NewFramePool(width, height int, pixFmt ffgo.PixelFormat, poolSize int) (*Fr
 }
 
 // Non-blocking acquire (fallback to allocation if pool exhausted)
-func (fp *FramePool) Acquire(ctx context.Context) (ffgo.Frame, error) {
+func (fp *FramePool) Acquire(ctx context.Context) (ffmpeg.Frame, error) {
     select {
     case frame := <-fp.frames:
         // Clear state for reuse
-        ffgo.FrameUnref(frame)
+        ffmpeg.FrameUnref(frame)
         return frame, nil
     default:
         // Pool empty, allocate new frame (will be slower)
-        frame := ffgo.FrameAlloc()
-        ffgo.AVUtil.SetFrameWidth(frame, int32(fp.width))
-        ffgo.AVUtil.SetFrameHeight(frame, int32(fp.height))
-        ffgo.AVUtil.SetFrameFormat(frame, int32(fp.pixFmt))
+        frame := ffmpeg.FrameAlloc()
+        ffmpeg.AVUtil.SetFrameWidth(frame, int32(fp.width))
+        ffmpeg.AVUtil.SetFrameHeight(frame, int32(fp.height))
+        ffmpeg.AVUtil.SetFrameFormat(frame, int32(fp.pixFmt))
 
-        if err := ffgo.AVUtil.FrameGetBuffer(frame, 1); err != nil {
-            ffgo.FrameFree(&frame)
+        if err := ffmpeg.AVUtil.FrameGetBuffer(frame, 1); err != nil {
+            ffmpeg.FrameFree(&frame)
             return nil, err
         }
         return frame, nil
     }
 }
 
-func (fp *FramePool) Release(frame ffgo.Frame) error {
+func (fp *FramePool) Release(frame ffmpeg.Frame) error {
     select {
     case fp.frames <- frame:
         return nil
     default:
         // Pool full, dispose
-        ffgo.FrameFree(&frame)
+        ffmpeg.FrameFree(&frame)
         return nil
     }
 }
@@ -132,7 +132,7 @@ func (fp *FramePool) Release(frame ffgo.Frame) error {
 func (fp *FramePool) Close() error {
     close(fp.frames)
     for frame := range fp.frames {
-        ffgo.FrameFree(&frame)
+        ffmpeg.FrameFree(&frame)
     }
     return nil
 }
@@ -185,7 +185,7 @@ Trade-off: Slightly higher CPU (1-3%) for lower latency variance
 
 ## Reference Counting and Leaks
 
-ffgo frames use reference counting internally. Improper handling causes leaks:
+ffmpeg frames use reference counting internally. Improper handling causes leaks:
 
 ```go
 // LEAK: Frame allocated but never freed
@@ -205,17 +205,17 @@ func goodExample() error {
     if err != nil {
         return err
     }
-    defer ffgo.FrameFree(&frame)
+    defer ffmpeg.FrameFree(&frame)
 
     // Frame automatically freed when function returns
     return nil
 }
 
 // Using defer with slice cleanup
-func processFrames(frames []ffgo.Frame) {
+func processFrames(frames []ffmpeg.Frame) {
     defer func() {
         for _, f := range frames {
-            ffgo.FrameFree(&f)
+            ffmpeg.FrameFree(&f)
         }
     }()
 

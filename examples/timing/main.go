@@ -19,12 +19,12 @@ func main() {
 	}
 	in := os.Args[1]
 
-	if err := ffgo.Init(); err != nil {
+	if err := ffmpeg.Init(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize FFmpeg: %v\n", err)
 		os.Exit(1)
 	}
 
-	dec, err := ffgo.NewDecoder(in, nil)
+	dec, err := ffmpeg.NewDecoder(in, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to open input: %v\n", err)
 		os.Exit(1)
@@ -36,7 +36,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	fps, err := ffgo.FrameRateDetect(dec)
+	fps, err := ffmpeg.FrameRateDetect(dec)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "FrameRateDetect failed: %v\n", err)
 		os.Exit(1)
@@ -45,6 +45,6 @@ func main() {
 	fmt.Printf("Detected fps: %0.3f\n", fps)
 	fmt.Printf("Time base: %d/%d\n", tb.Num, tb.Den)
 
-	ts := ffgo.GenerateTimestamps(10, tb, fps)
+	ts := ffmpeg.GenerateTimestamps(10, tb, fps)
 	fmt.Printf("First 10 PTS: %v\n", ts)
 }

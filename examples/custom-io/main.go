@@ -26,13 +26,13 @@ func main() {
 	inputFile := os.Args[1]
 
 	// Initialize FFmpeg
-	if err := ffgo.Init(); err != nil {
+	if err := ffmpeg.Init(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize FFmpeg: %v\n", err)
 		os.Exit(1)
 	}
 
 	// Print version info
-	avutil, avcodec, avformat := ffgo.Version()
+	avutil, avcodec, avformat := ffmpeg.Version()
 	fmt.Printf("FFmpeg versions: avutil=%d.%d.%d, avcodec=%d.%d.%d, avformat=%d.%d.%d\n",
 		avutil>>16, (avutil>>8)&0xFF, avutil&0xFF,
 		avcodec>>16, (avcodec>>8)&0xFF, avcodec&0xFF,
@@ -51,7 +51,7 @@ func main() {
 	// Create decoder from io.Reader
 	// Since *os.File implements both io.Reader and io.Seeker,
 	// the decoder will support seeking
-	decoder, err := ffgo.NewDecoderFromReader(file, nil)
+	decoder, err := ffmpeg.NewDecoderFromReader(file, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create decoder: %v\n", err)
 		os.Exit(1)
@@ -83,7 +83,7 @@ func main() {
 	for videoFrames+audioFrames < maxFrames {
 		frame, err := decoder.ReadFrame()
 		if err != nil {
-			if ffgo.IsEOF(err) {
+			if ffmpeg.IsEOF(err) {
 				break
 			}
 			fmt.Fprintf(os.Stderr, "Read error: %v\n", err)
@@ -94,13 +94,13 @@ func main() {
 		}
 
 		switch frame.MediaType() {
-		case ffgo.MediaTypeVideo:
+		case ffmpeg.MediaTypeVideo:
 			videoFrames++
 			if videoFrames <= 5 {
 				fmt.Printf("  Video frame %d: %dx%d, PTS=%d\n",
 					videoFrames, frame.Width(), frame.Height(), frame.PTS())
 			}
-		case ffgo.MediaTypeAudio:
+		case ffmpeg.MediaTypeAudio:
 			audioFrames++
 			if audioFrames <= 3 {
 				fmt.Printf("  Audio frame %d: %d samples, PTS=%d\n",
@@ -131,7 +131,7 @@ func demonstrateCustomCallbacks(inputFile string) {
 	readCalls := 0
 
 	// Create custom callbacks
-	callbacks := &ffgo.IOCallbacks{
+	callbacks := &ffmpeg.IOCallbacks{
 		Read: func(buf []byte) (int, error) {
 			n, err := file.Read(buf)
 			if n > 0 {
@@ -149,7 +149,7 @@ func demonstrateCustomCallbacks(inputFile string) {
 	}
 
 	// Create decoder with custom callbacks
-	decoder, err := ffgo.NewDecoderFromIO(callbacks, nil)
+	decoder, err := ffmpeg.NewDecoderFromIO(callbacks, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create decoder with callbacks: %v\n", err)
 		return
@@ -161,7 +161,7 @@ func demonstrateCustomCallbacks(inputFile string) {
 	for frameCount < 10 {
 		frame, err := decoder.ReadFrame()
 		if err != nil {
-			if ffgo.IsEOF(err) {
+			if ffmpeg.IsEOF(err) {
 				break
 			}
 			fmt.Fprintf(os.Stderr, "Read error: %v\n", err)
@@ -170,7 +170,7 @@ func demonstrateCustomCallbacks(inputFile string) {
 		if frame == nil {
 			continue
 		}
-		if frame.MediaType() == ffgo.MediaTypeVideo {
+		if frame.MediaType() == ffmpeg.MediaTypeVideo {
 			frameCount++
 		}
 	}

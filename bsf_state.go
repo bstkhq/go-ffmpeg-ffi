@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 import (
 	"errors"
@@ -10,8 +10,8 @@ import (
 )
 
 var (
-	errBitstreamFilterProtocolStalled = errors.New("ffgo: bitstream filter send/receive protocol stalled")
-	errBitstreamFilterFlushed         = errors.New("ffgo: bitstream filter already flushed")
+	errBitstreamFilterProtocolStalled = errors.New("ffmpeg: bitstream filter send/receive protocol stalled")
+	errBitstreamFilterFlushed         = errors.New("ffmpeg: bitstream filter already flushed")
 )
 
 // bitstreamFilterState implements FFmpeg's send/receive protocol independently

@@ -18,9 +18,9 @@ The encoder has a fixed internal buffer for pending frames. Once full, it return
 
 ```go
 // SYMPTOM: EncodeFrame() returns "EAGAIN" repeatedly
-func (e *Encoder) EncodeFrame(frame ffgo.Frame) error {
+func (e *Encoder) EncodeFrame(frame ffmpeg.Frame) error {
     if err := e.avcodec.SendFrame(frame); err != nil {
-        if ffgo.IsAgain(err) {
+        if ffmpeg.IsAgain(err) {
             // Buffer full! Must flush packets first
             return fmt.Errorf("encoder buffer full")
         }
@@ -33,7 +33,7 @@ func (e *Encoder) EncodeFrame(frame ffgo.Frame) error {
 // FIX: Always loop to receive all available packets
 for {
     pkt, err := encoder.ReceivePacket()
-    if ffgo.IsAgain(err) {
+    if ffmpeg.IsAgain(err) {
         break  // No more packets available
     }
     if err != nil {
@@ -90,22 +90,22 @@ Result: 10 FPS frame drop, accumulating input queue
 
 ```go
 // Option 1: Faster preset
-encoder.AddVideoStream(ffgo.VideoEncoderConfig{
+encoder.AddVideoStream(ffmpeg.VideoEncoderConfig{
     Preset: "fast",  // was "slow"
 })
 
 // Option 2: Lower quality (CRF)
-encoder.AddVideoStream(ffgo.VideoEncoderConfig{
+encoder.AddVideoStream(ffmpeg.VideoEncoderConfig{
     CRF: 35,  // was 24 (lower = lower quality, faster encoding)
 })
 
 // Option 3: GPU acceleration
-encoder.AddVideoStream(ffgo.VideoEncoderConfig{
+encoder.AddVideoStream(ffmpeg.VideoEncoderConfig{
     HWDevice: "cuda",  // 5-10x speedup
 })
 
 // Option 4: Reduce resolution
-encoder.AddVideoStream(ffgo.VideoEncoderConfig{
+encoder.AddVideoStream(ffmpeg.VideoEncoderConfig{
     Width:  960,   // was 1920
     Height: 540,   // was 1080
 })
@@ -142,7 +142,7 @@ However, with 4K encoding or very large bframes:
 ```go
 func createEncoderWithFallback(cfg VideoEncoderConfig) (*Encoder, error) {
     // Try GPU first
-    encoder, err := ffgo.NewEncoder(output)
+    encoder, err := ffmpeg.NewEncoder(output)
     if err == nil {
         config := cfg
         config.HWDevice = "cuda"
@@ -154,7 +154,7 @@ func createEncoderWithFallback(cfg VideoEncoderConfig) (*Encoder, error) {
     log.Warnf("GPU encoding failed: %v, falling back to CPU", err)
 
     // Fall back to CPU
-    return ffgo.NewEncoder(output)
+    return ffmpeg.NewEncoder(output)
 }
 
 // Monitor GPU memory
@@ -223,7 +223,7 @@ func (bo *BufferedOutput) Run(ctx context.Context) error {
 }
 
 // Encoder doesn't block on I/O
-func (encoder *Encoder) EncodeWithAsyncOutput(frame ffgo.Frame) error {
+func (encoder *Encoder) EncodeWithAsyncOutput(frame ffmpeg.Frame) error {
     if err := encoder.EncodeFrame(frame); err != nil {
         return err
     }
@@ -231,7 +231,7 @@ func (encoder *Encoder) EncodeWithAsyncOutput(frame ffgo.Frame) error {
     // Packets go to async output (non-blocking)
     for {
         pkt, err := encoder.ReceivePacket()
-        if ffgo.IsAgain(err) {
+        if ffmpeg.IsAgain(err) {
             break
         }
         if err != nil {
@@ -270,13 +270,13 @@ Keyframe every 300 frames (10 seconds):
 **Configuration:**
 
 ```go
-encoder.AddVideoStream(ffgo.VideoEncoderConfig{
+encoder.AddVideoStream(ffmpeg.VideoEncoderConfig{
     GOPSize: 300,  // frames between keyframes
     // At 30 FPS, keyframe every 10 seconds
 })
 
 // Or in seconds
-func setKeyframeInterval(encoder *ffgo.Encoder, seconds int, fps int) {
+func setKeyframeInterval(encoder *ffmpeg.Encoder, seconds int, fps int) {
     gopSize := seconds * fps
     encoder.SetGOPSize(gopSize)
 }

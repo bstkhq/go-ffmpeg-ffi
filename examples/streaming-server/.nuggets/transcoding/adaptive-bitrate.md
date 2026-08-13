@@ -21,8 +21,8 @@ type VariantProfile struct {
     Width        int
     Height       int
     BitRate      int64            // Target bitrate in bps
-    FrameRate    ffgo.Rational
-    Codec        ffgo.CodecID
+    FrameRate    ffmpeg.Rational
+    Codec        ffmpeg.CodecID
     Preset       string           // "fast", "medium", "slow"
     CRF          int              // Quality (H.264/H.265)
     Profile      string           // codec profile
@@ -43,7 +43,7 @@ var StandardABR = ABRProfile{
             Width:   1920,
             Height:  1080,
             BitRate: 5_000_000,  // 5 Mbps
-            Codec:   ffgo.CodecIDH264,
+            Codec:   ffmpeg.CodecIDH264,
         },
         {
             Name:    "720p",
@@ -78,7 +78,7 @@ type ABRTranscoder struct {
     Profile     ABRProfile
 
     // Shared input
-    decoder     *ffgo.Decoder
+    decoder     *ffmpeg.Decoder
 
     // Per-variant encoding
     variants    map[string]*VariantEncoder
@@ -87,8 +87,8 @@ type ABRTranscoder struct {
 
 type VariantEncoder struct {
     name       string
-    scaler     *ffgo.Scaler
-    encoder    *ffgo.Encoder
+    scaler     *ffmpeg.Scaler
+    encoder    *ffmpeg.Encoder
 
     // Flow control
     pending    int32  // Frames queued
@@ -98,7 +98,7 @@ type VariantEncoder struct {
 func (abr *ABRTranscoder) Start(ctx context.Context) error {
     // 1. Open input
     var err error
-    abr.decoder, err = ffgo.NewDecoder(abr.SourceURL)
+    abr.decoder, err = ffmpeg.NewDecoder(abr.SourceURL)
     if err != nil {
         return err
     }
@@ -141,7 +141,7 @@ func (abr *ABRTranscoder) distribute(ctx context.Context) error {
         // Read frame from input
         frame, err := abr.decoder.ReadFrame()
         if err != nil {
-            if ffgo.IsEOF(err) {
+            if ffmpeg.IsEOF(err) {
                 // Signal EOF to all variants
                 for _, ve := range abr.variants {
                     ve.input <- nil
@@ -154,14 +154,14 @@ func (abr *ABRTranscoder) distribute(ctx context.Context) error {
         // Duplicate frame reference for each variant
         for name, ve := range abr.variants {
             // Create reference (shares same buffers)
-            cloned := ffgo.FrameAlloc()
-            if err := ffgo.FrameRef(cloned, frame); err != nil {
+            cloned := ffmpeg.FrameAlloc()
+            if err := ffmpeg.FrameRef(cloned, frame); err != nil {
                 return err
             }
 
             // Check variant is not overwhelmed
             if atomic.LoadInt32(&ve.pending) >= ve.maxPending {
-                ffgo.FrameUnref(cloned)
+                ffmpeg.FrameUnref(cloned)
                 return fmt.Errorf("variant %s overrun", name)
             }
 
@@ -170,7 +170,7 @@ func (abr *ABRTranscoder) distribute(ctx context.Context) error {
         }
 
         // Unreference original (other refs keep it alive)
-        ffgo.FrameUnref(frame)
+        ffmpeg.FrameUnref(frame)
     }
 }
 ```
@@ -192,22 +192,22 @@ func (ve *VariantEncoder) Run(ctx context.Context) error {
             }
 
             // Scale to variant resolution
-            scaled := ffgo.FrameAlloc()
+            scaled := ffmpeg.FrameAlloc()
             if err := ve.scaler.ScaleFrame(frame, scaled); err != nil {
-                ffgo.FrameUnref(frame)
-                ffgo.FrameFree(&scaled)
+                ffmpeg.FrameUnref(frame)
+                ffmpeg.FrameFree(&scaled)
                 return err
             }
 
-            ffgo.FrameUnref(frame)  // Done with original
+            ffmpeg.FrameUnref(frame)  // Done with original
 
             // Encode scaled frame
             if err := ve.encoder.EncodeFrame(scaled); err != nil {
-                ffgo.FrameFree(&scaled)
+                ffmpeg.FrameFree(&scaled)
                 return err
             }
 
-            ffgo.FrameFree(&scaled)
+            ffmpeg.FrameFree(&scaled)
 
             atomic.AddInt32(&ve.pending, -1)
 
@@ -229,7 +229,7 @@ A critical feature: all variants must have keyframes at the same timing. This is
 type KeyframeSync struct {
     keyframeInterval time.Duration
     lastKeyframe     int64
-    timeBase         ffgo.Rational
+    timeBase         ffmpeg.Rational
 }
 
 func (ks *KeyframeSync) ShouldInsertKeyframe(frame *PipelineFrame) bool {
@@ -274,12 +274,12 @@ func (has *HWAccelStrategy) selectDeviceForVariant(vp VariantProfile) string {
 func (abr *ABRTranscoder) createVariantEncoder(vp VariantProfile) (*VariantEncoder, error) {
     hwDevice := abr.hwStrategy.selectDeviceForVariant(vp)
 
-    encoder, err := ffgo.NewEncoder(abr.outputPath(vp.Name))
+    encoder, err := ffmpeg.NewEncoder(abr.outputPath(vp.Name))
     if err != nil {
         return nil, err
     }
 
-    encoder.AddVideoStream(ffgo.VideoEncoderConfig{
+    encoder.AddVideoStream(ffmpeg.VideoEncoderConfig{
         Codec:     vp.Codec,
         Width:     vp.Width,
         Height:    vp.Height,
@@ -308,12 +308,12 @@ func (abr *ABRTranscoder) outputPath(variant string) string {
 type SegmentedOutput struct {
     variant    string
     segmentDir string
-    encoder    *ffgo.Encoder
+    encoder    *ffmpeg.Encoder
     currentSeg *SegmentFile
     segNum     int
 }
 
-func (so *SegmentedOutput) OnPacket(pkt ffgo.Packet) error {
+func (so *SegmentedOutput) OnPacket(pkt ffmpeg.Packet) error {
     if isKeyframe(pkt) && so.shouldStartNewSegment() {
         so.closeCurrentSegment()
         so.startNewSegment()

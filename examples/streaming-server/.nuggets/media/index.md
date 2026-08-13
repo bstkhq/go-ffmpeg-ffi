@@ -1,12 +1,12 @@
 ---
 title: Media Processing Internals
-keywords: [media, ffgo, processing, pipeline]
+keywords: [media, ffmpeg, processing, pipeline]
 tags: [index]
 ---
 
 # Media Processing Internals
 
-This section documents how the streaming server processes media using ffgo. It covers the core data flow from input sources through transcoding to output delivery.
+This section documents how the streaming server processes media using ffmpeg. It covers the core data flow from input sources through transcoding to output delivery.
 
 ## Core Concepts
 
@@ -21,7 +21,7 @@ The media layer uses several key patterns:
 
 1. **State Machines** - Decoders and encoders follow strict state transitions (Created → Opened → Streaming → Closed)
 
-2. **Asynchronous Codec Processing** - ffgo uses send/receive semantics: send frames/packets, receive results later
+2. **Asynchronous Codec Processing** - ffmpeg uses send/receive semantics: send frames/packets, receive results later
 
 3. **Custom I/O** - Network protocols (RTMP, RTSP) are abstracted through io.Reader/Writer interfaces
 
@@ -40,12 +40,12 @@ The media layer uses several key patterns:
 **Processing a stream:**
 
 ```go
-decoder, _ := ffgo.NewDecoder(sourceURL)
+decoder, _ := ffmpeg.NewDecoder(sourceURL)
 defer decoder.Close()
 
 for {
     frame, err := decoder.ReadFrame()
-    if ffgo.IsEOF(err) {
+    if ffmpeg.IsEOF(err) {
         break
     }
     // Process frame...
@@ -55,11 +55,11 @@ for {
 **Encoding with options:**
 
 ```go
-encoder, _ := ffgo.NewEncoder(outputFile)
+encoder, _ := ffmpeg.NewEncoder(outputFile)
 defer encoder.Close()
 
-encoder.AddVideoStream(ffgo.VideoEncoderConfig{
-    Codec:   ffgo.CodecIDH264,
+encoder.AddVideoStream(ffmpeg.VideoEncoderConfig{
+    Codec:   ffmpeg.CodecIDH264,
     Width:   1280,
     Height:  720,
     BitRate: 5000000,  // 5 Mbps
@@ -75,7 +75,7 @@ for frame := range inputFrames {
 **Stream copy (fast path):**
 
 ```go
-remuxer, _ := ffgo.NewRemuxer(input, output)
+remuxer, _ := ffmpeg.NewRemuxer(input, output)
 defer remuxer.Close()
 
 remuxer.Remux()  // No transcoding needed

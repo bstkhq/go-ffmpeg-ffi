@@ -8,7 +8,7 @@
 //   - Log callbacks with va_list parameters
 //   - AVRational operations on non-Darwin platforms
 //
-// The shim is OPTIONAL - core ffgo functionality (decode, encode, transcode)
+// The shim is OPTIONAL - core ffmpeg functionality (decode, encode, transcode)
 // works without it. Only logging and some advanced features require the shim.
 //
 // To build the shim for your platform:
@@ -42,14 +42,14 @@ import (
 )
 
 // ErrShimNotLoaded is returned when shim functions are called but the shim is not available.
-var ErrShimNotLoaded = errors.New("ffgo: shim library not loaded; logging and some features unavailable")
+var ErrShimNotLoaded = errors.New("ffmpeg: shim library not loaded; logging and some features unavailable")
 
 // ErrShimNotFound is returned when the shim library cannot be found.
-var ErrShimNotFound = errors.New("ffgo: shim library not found")
+var ErrShimNotFound = errors.New("ffmpeg: shim library not found")
 
 // ErrIncompatibleShim is returned when a shim was built for another shim API
 // or FFmpeg ABI family.
-var ErrIncompatibleShim = errors.New("ffgo: incompatible shim library")
+var ErrIncompatibleShim = errors.New("ffmpeg: incompatible shim library")
 
 // APIVersion is the version of the Go-to-shim function contract.
 const APIVersion uint32 = 1
@@ -145,7 +145,7 @@ var (
 // Shim is optional - logging will not work without it.
 //
 // The shim is searched for in the following locations (in order):
-//  1. FFGO_SHIM_DIR environment variable
+//  1. FFMPEG_SHIM_DIR environment variable
 //  2. Standard library paths (/usr/local/lib, /usr/lib, etc.)
 //  3. Executable directory
 func Load() error {
@@ -162,7 +162,7 @@ func Load() error {
 		return loadErr
 	}
 	if err := bindings.Load(); err != nil {
-		loadErr = fmt.Errorf("ffgo: cannot validate shim without a supported FFmpeg runtime: %w", err)
+		loadErr = fmt.Errorf("ffmpeg: cannot validate shim without a supported FFmpeg runtime: %w", err)
 		searchErr = loadErr.Error()
 		return loadErr
 	}
@@ -499,7 +499,7 @@ func SetLogCallback(cb uintptr) error {
 		return fmt.Errorf("%w: SetLogCallback requires shim; %s", ErrShimNotLoaded, BuildInstructions())
 	}
 	if shimLogSetCallback == nil {
-		return errors.New("ffgo: shimLogSetCallback symbol not available in shim")
+		return errors.New("ffmpeg: shimLogSetCallback symbol not available in shim")
 	}
 	shimLogSetCallback(cb)
 	return nil
@@ -511,7 +511,7 @@ func SetLogLevel(level int32) error {
 		return fmt.Errorf("%w: SetLogLevel requires shim; %s", ErrShimNotLoaded, BuildInstructions())
 	}
 	if shimLogSetLevel == nil {
-		return errors.New("ffgo: shimLogSetLevel symbol not available in shim")
+		return errors.New("ffmpeg: shimLogSetLevel symbol not available in shim")
 	}
 	shimLogSetLevel(level)
 	return nil
@@ -523,7 +523,7 @@ func Log(avcl unsafe.Pointer, level int32, msg string) error {
 		return fmt.Errorf("%w: Log requires shim; %s", ErrShimNotLoaded, BuildInstructions())
 	}
 	if shimLog == nil {
-		return errors.New("ffgo: shimLog symbol not available in shim")
+		return errors.New("ffmpeg: shimLog symbol not available in shim")
 	}
 	shimLog(uintptr(avcl), level, msg)
 	return nil
@@ -536,11 +536,11 @@ func NewChapter(ctx unsafe.Pointer, id int64, tbNum, tbDen int32, start, end int
 		return nil, fmt.Errorf("%w: NewChapter requires shim", ErrShimNotLoaded)
 	}
 	if shimNewChapter == nil {
-		return nil, errors.New("ffgo: shimNewChapter symbol not available in shim")
+		return nil, errors.New("ffmpeg: shimNewChapter symbol not available in shim")
 	}
 	ch := shimNewChapter(uintptr(ctx), id, tbNum, tbDen, start, end, uintptr(metadata))
 	if ch == nil {
-		return nil, errors.New("ffgo: failed to create chapter")
+		return nil, errors.New("ffmpeg: failed to create chapter")
 	}
 	return ch, nil
 }
@@ -558,14 +558,14 @@ func AVDeviceListInputSources(formatName, deviceName string, avdictOpts unsafe.P
 		return 0, nil, nil, fmt.Errorf("%w: device listing requires shim", ErrShimNotLoaded)
 	}
 	if shimAVDeviceListInputSources == nil {
-		return 0, nil, nil, errors.New("ffgo: shim was not built with libavdevice support (-DFFSHIM_HAVE_AVDEVICE=1)")
+		return 0, nil, nil, errors.New("ffmpeg: shim was not built with libavdevice support (-DFFSHIM_HAVE_AVDEVICE=1)")
 	}
 	var c int32
 	var n unsafe.Pointer
 	var d unsafe.Pointer
 	ret := shimAVDeviceListInputSources(formatName, deviceName, uintptr(avdictOpts), &c, &n, &d)
 	if ret < 0 {
-		return 0, nil, nil, fmt.Errorf("ffgo: avdevice_list_input_sources failed (error %d)", ret)
+		return 0, nil, nil, fmt.Errorf("ffmpeg: avdevice_list_input_sources failed (error %d)", ret)
 	}
 	return int(c), n, d, nil
 }
@@ -588,12 +588,12 @@ func AVFrameColorOffsets() (rangeOff, spaceOff, primariesOff, transferOff int32,
 		return 0, 0, 0, 0, fmt.Errorf("%w: AVFrameColorOffsets requires shim", ErrShimNotLoaded)
 	}
 	if shimAVFrameColorOffsets == nil {
-		return 0, 0, 0, 0, errors.New("ffgo: shimAVFrameColorOffsets symbol not available in shim")
+		return 0, 0, 0, 0, errors.New("ffmpeg: shimAVFrameColorOffsets symbol not available in shim")
 	}
 	var r, s, p, t int32
 	ret := shimAVFrameColorOffsets(&r, &s, &p, &t)
 	if ret < 0 {
-		return 0, 0, 0, 0, errors.New("ffgo: ffshim_avframe_color_offsets failed")
+		return 0, 0, 0, 0, errors.New("ffmpeg: ffshim_avframe_color_offsets failed")
 	}
 	return r, s, p, t, nil
 }
@@ -1005,15 +1005,15 @@ func findShimLibrary() (string, error) {
 		return "", fmt.Errorf("%w: unsupported platform %s/%s", ErrShimNotFound, runtime.GOOS, runtime.GOARCH)
 	}
 
-	// FFGO_SHIM_DIR override (highest priority)
-	if dir := os.Getenv("FFGO_SHIM_DIR"); dir != "" {
+	// FFMPEG_SHIM_DIR override (highest priority)
+	if dir := os.Getenv("FFMPEG_SHIM_DIR"); dir != "" {
 		for _, name := range names {
 			path := filepath.Join(dir, name)
 			if _, err := os.Stat(path); err == nil {
 				return path, nil
 			}
 		}
-		return "", fmt.Errorf("%w: FFGO_SHIM_DIR=%s does not contain %s", ErrShimNotFound, dir, names[0])
+		return "", fmt.Errorf("%w: FFMPEG_SHIM_DIR=%s does not contain %s", ErrShimNotFound, dir, names[0])
 	}
 
 	searchPaths := trustedShimSearchPaths()
@@ -1099,6 +1099,6 @@ func findShimLibraryInPaths(names, searchPaths []string) (string, error) {
 
 	// Build detailed error message
 	expectedName := names[0]
-	return "", fmt.Errorf("%w: looked for %s in %d locations. Set FFGO_SHIM_DIR or build the shim: cd shim && make",
+	return "", fmt.Errorf("%w: looked for %s in %d locations. Set FFMPEG_SHIM_DIR or build the shim: cd shim && make",
 		ErrShimNotFound, expectedName, len(searchedPaths))
 }

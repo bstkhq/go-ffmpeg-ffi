@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-// Example: transcode - Demonstrates video transcoding with ffgo
+// Example: transcode - Demonstrates video transcoding with ffmpeg
 //
 // Usage: transcode <input_file> <output_file>
 //
@@ -25,13 +25,13 @@ func main() {
 	outputFile := os.Args[2]
 
 	// Initialize FFmpeg
-	if err := ffgo.Init(); err != nil {
+	if err := ffmpeg.Init(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize FFmpeg: %v\n", err)
 		os.Exit(1)
 	}
 
 	// Print version info
-	avutil, avcodec, avformat := ffgo.Version()
+	avutil, avcodec, avformat := ffmpeg.Version()
 	fmt.Printf("FFmpeg versions: avutil=%d.%d.%d, avcodec=%d.%d.%d, avformat=%d.%d.%d\n",
 		avutil>>16, (avutil>>8)&0xFF, avutil&0xFF,
 		avcodec>>16, (avcodec>>8)&0xFF, avcodec&0xFF,
@@ -39,7 +39,7 @@ func main() {
 
 	// Open input file
 	fmt.Printf("\nOpening input: %s\n", inputFile)
-	decoder, err := ffgo.NewDecoder(inputFile, nil)
+	decoder, err := ffmpeg.NewDecoder(inputFile, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to open input: %v\n", err)
 		os.Exit(1)
@@ -65,14 +65,14 @@ func main() {
 
 	// Create encoder with same dimensions as input
 	fmt.Printf("\nCreating output: %s\n", outputFile)
-	encoder, err := ffgo.NewEncoder(outputFile, &ffgo.EncoderOptions{
-		Video: &ffgo.VideoEncoderConfig{
+	encoder, err := ffmpeg.NewEncoder(outputFile, &ffmpeg.EncoderOptions{
+		Video: &ffmpeg.VideoEncoderConfig{
 			Width:       videoInfo.Width,
 			Height:      videoInfo.Height,
-			PixelFormat: ffgo.PixelFormatYUV420P,
-			Codec:       ffgo.CodecIDH264,
+			PixelFormat: ffmpeg.PixelFormatYUV420P,
+			Codec:       ffmpeg.CodecIDH264,
 			Bitrate:     2000000, // 2 Mbps
-			FrameRate:   ffgo.NewRational(30, 1),
+			FrameRate:   ffmpeg.NewRational(30, 1),
 			GOPSize:     12,
 			MaxBFrames:  0,
 		},
@@ -84,17 +84,17 @@ func main() {
 	defer encoder.Close()
 
 	// Create scaler if pixel format conversion is needed
-	var scaler *ffgo.Scaler
-	if videoInfo.PixelFmt != ffgo.PixelFormatYUV420P {
+	var scaler *ffmpeg.Scaler
+	if videoInfo.PixelFmt != ffmpeg.PixelFormatYUV420P {
 		fmt.Printf("Creating scaler: %v -> YUV420P\n", videoInfo.PixelFmt)
-		scaler, err = ffgo.NewScalerWithConfig(ffgo.ScalerConfig{
+		scaler, err = ffmpeg.NewScalerWithConfig(ffmpeg.ScalerConfig{
 			SrcWidth:  videoInfo.Width,
 			SrcHeight: videoInfo.Height,
 			SrcFormat: videoInfo.PixelFmt,
 			DstWidth:  videoInfo.Width,
 			DstHeight: videoInfo.Height,
-			DstFormat: ffgo.PixelFormatYUV420P,
-			Flags:     ffgo.ScaleBilinear,
+			DstFormat: ffmpeg.PixelFormatYUV420P,
+			Flags:     ffmpeg.ScaleBilinear,
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to create scaler: %v\n", err)
@@ -111,7 +111,7 @@ func main() {
 		// Decode next video frame
 		frame, err := decoder.DecodeVideo()
 		if err != nil {
-			if ffgo.IsEOF(err) {
+			if ffmpeg.IsEOF(err) {
 				break
 			}
 			fmt.Fprintf(os.Stderr, "Decode error: %v\n", err)
@@ -122,7 +122,7 @@ func main() {
 		}
 
 		// Scale if necessary
-		var encFrame ffgo.Frame = frame
+		var encFrame ffmpeg.Frame = frame
 		if scaler != nil {
 			encFrame, err = scaler.Scale(frame)
 			if err != nil {

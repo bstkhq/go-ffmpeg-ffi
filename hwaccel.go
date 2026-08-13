@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 import (
 	"errors"
@@ -68,7 +68,7 @@ func NewHWDevice(deviceType HWDeviceType, device string) (*HWDevice, error) {
 func NewHWDeviceByName(name, device string) (*HWDevice, error) {
 	deviceType := avutil.HWDeviceFindTypeByName(name)
 	if deviceType == HWDeviceTypeNone {
-		return nil, errors.New("ffgo: unknown hardware device type: " + name)
+		return nil, errors.New("ffmpeg: unknown hardware device type: " + name)
 	}
 	return NewHWDevice(deviceType, device)
 }
@@ -98,7 +98,7 @@ func (d *HWDevice) attachToCodecContext(codecCtx avcodec.Context) error {
 		return closedError("hardware device")
 	}
 	if err := avcodec.SetCtxHWDeviceCtx(codecCtx, d.deviceCtx); err != nil {
-		return fmt.Errorf("ffgo: attach hardware device: %w", err)
+		return fmt.Errorf("ffmpeg: attach hardware device: %w", err)
 	}
 	return nil
 }
@@ -156,7 +156,7 @@ type HWDecoder struct {
 // NewHWDecoder creates a hardware-accelerated decoder for the given file.
 func NewHWDecoder(inputPath string, cfg *HWDecoderConfig) (*HWDecoder, error) {
 	if cfg == nil || cfg.HWDevice == nil {
-		return nil, errors.New("ffgo: HWDevice is required for hardware decoding")
+		return nil, errors.New("ffmpeg: HWDevice is required for hardware decoding")
 	}
 
 	if err := bindings.Load(); err != nil {
@@ -190,14 +190,14 @@ func NewHWDecoder(inputPath string, cfg *HWDecoderConfig) (*HWDecoder, error) {
 	decoder := avcodec.FindDecoder(codecID)
 	if decoder == nil {
 		avformat.CloseInput(&formatCtx)
-		return nil, errors.New("ffgo: decoder not found for video stream")
+		return nil, errors.New("ffmpeg: decoder not found for video stream")
 	}
 
 	// Allocate codec context
 	codecCtx := avcodec.AllocContext3(decoder)
 	if codecCtx == nil {
 		avformat.CloseInput(&formatCtx)
-		return nil, errors.New("ffgo: failed to allocate codec context")
+		return nil, errors.New("ffmpeg: failed to allocate codec context")
 	}
 
 	// Copy codec parameters
@@ -229,7 +229,7 @@ func NewHWDecoder(inputPath string, cfg *HWDecoderConfig) (*HWDecoder, error) {
 		avcodec.Close(codecCtx)
 		avcodec.FreeContext(&codecCtx)
 		avformat.CloseInput(&formatCtx)
-		return nil, errors.New("ffgo: failed to allocate packet")
+		return nil, errors.New("ffmpeg: failed to allocate packet")
 	}
 
 	frame := avutil.FrameAlloc()
@@ -238,7 +238,7 @@ func NewHWDecoder(inputPath string, cfg *HWDecoderConfig) (*HWDecoder, error) {
 		avcodec.Close(codecCtx)
 		avcodec.FreeContext(&codecCtx)
 		avformat.CloseInput(&formatCtx)
-		return nil, errors.New("ffgo: failed to allocate frame")
+		return nil, errors.New("ffmpeg: failed to allocate frame")
 	}
 
 	// Allocate software frame for transfers if needed
@@ -251,7 +251,7 @@ func NewHWDecoder(inputPath string, cfg *HWDecoderConfig) (*HWDecoder, error) {
 			avcodec.Close(codecCtx)
 			avcodec.FreeContext(&codecCtx)
 			avformat.CloseInput(&formatCtx)
-			return nil, errors.New("ffgo: failed to allocate software frame")
+			return nil, errors.New("ffmpeg: failed to allocate software frame")
 		}
 	}
 
@@ -389,7 +389,7 @@ func (d *HWDecoder) TransferToSystem(hwFrame Frame) (Frame, error) {
 	}
 	swFrame := avutil.FrameAlloc()
 	if swFrame == nil {
-		return Frame{}, errors.New("ffgo: failed to allocate frame")
+		return Frame{}, errors.New("ffmpeg: failed to allocate frame")
 	}
 
 	if err := transferHWFrameToSystem(swFrame, hwFrame.ptr, avutil.HWFrameTransferData); err != nil {
@@ -408,7 +408,7 @@ func transferHWFrameToSystem(dst, src avutil.Frame, transfer hwFrameTransferFunc
 	}
 	avutil.FrameUnref(dst)
 	if err := transfer(dst, src, 0); err != nil {
-		return fmt.Errorf("ffgo: transfer hardware frame to system memory: %w", err)
+		return fmt.Errorf("ffmpeg: transfer hardware frame to system memory: %w", err)
 	}
 	avutil.SetFramePTS(dst, avutil.GetFramePTS(src))
 	return nil

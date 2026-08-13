@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 import (
 	"fmt"
@@ -2674,7 +2674,7 @@ func TestGetAttachments(t *testing.T) {
 
 	// Create a small attachment file
 	attachmentFile := filepath.Join(tmpDir, "test.txt")
-	attachmentData := []byte("This is a test attachment file for ffgo testing.")
+	attachmentData := []byte("This is a test attachment file for ffmpeg testing.")
 	if err := os.WriteFile(attachmentFile, attachmentData, 0644); err != nil {
 		t.Fatalf("Failed to write attachment file: %v", err)
 	}
@@ -2969,7 +2969,7 @@ This is a test
 	if err != nil {
 		// Some FFmpeg builds (notably Homebrew builds without libass) don't ship the
 		// "subtitles" filter. Treat that as an environment limitation rather than a
-		// functional failure of ffgo.
+		// functional failure of ffmpeg.
 		if strings.Contains(err.Error(), `filter "subtitles" not found`) {
 			t.Logf("SubtitleRenderer unavailable in this FFmpeg build: %v", err)
 			return

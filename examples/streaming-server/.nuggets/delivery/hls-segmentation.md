@@ -16,7 +16,7 @@ Segments are typically 6-10 seconds of video. The server splits at keyframes:
 
 ```go
 type HLSSegmenter struct {
-    encoder         *ffgo.Encoder
+    encoder         *ffmpeg.Encoder
     segmentDir      string
     segmentDuration time.Duration  // 6-10 seconds typical
 
@@ -28,7 +28,7 @@ type HLSSegmenter struct {
     manifest        *HLSManifest
 }
 
-func (hs *HLSSegmenter) ProcessPacket(pkt ffgo.Packet) error {
+func (hs *HLSSegmenter) ProcessPacket(pkt ffmpeg.Packet) error {
     isKeyFrame := avcodec.IsPacketKeyFrame(pkt)
     pts := avcodec.GetPacketPTS(pkt)
 
@@ -75,7 +75,7 @@ func (hs *HLSSegmenter) startNewSegment(startPTS int64) error {
     hs.firstKeyframe = 0
 
     // Initialize segment encoder (stream copy mode)
-    encoder := ffgo.NewEncoderToWriter(file)
+    encoder := ffmpeg.NewEncoderToWriter(file)
     encoder.WriteHeader()
     hs.encoder = encoder
 
@@ -301,7 +301,7 @@ type CMAPSegmenter struct {
 }
 
 // Init segment is written once
-func (cs *CMAPSegmenter) WriteInitSegment(encoder *ffgo.Encoder) error {
+func (cs *CMAPSegmenter) WriteInitSegment(encoder *ffmpeg.Encoder) error {
     // Header contains codec parameters
     return encoder.WriteHeader()
 }

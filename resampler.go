@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 import (
 	"fmt"
@@ -45,9 +45,9 @@ type Resampler struct {
 //
 // Example:
 //
-//	resampler, err := ffgo.NewResampler(
-//	    ffgo.AudioFormat{SampleRate: 44100, Channels: 2, SampleFormat: ffgo.SampleFormatS16},
-//	    ffgo.AudioFormat{SampleRate: 48000, Channels: 2, SampleFormat: ffgo.SampleFormatFLTP},
+//	resampler, err := ffmpeg.NewResampler(
+//	    ffmpeg.AudioFormat{SampleRate: 44100, Channels: 2, SampleFormat: ffmpeg.SampleFormatS16},
+//	    ffmpeg.AudioFormat{SampleRate: 48000, Channels: 2, SampleFormat: ffmpeg.SampleFormatFLTP},
 //	)
 func NewResampler(src, dst AudioFormat) (*Resampler, error) {
 	// Validate inputs

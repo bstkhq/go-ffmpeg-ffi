@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 import (
 	"fmt"
@@ -33,10 +33,10 @@ func NewHLSSegmenter(playlistPath string, cfg *HLSSegmenterConfig) (*Muxer, erro
 // HeaderOptions returns FFmpeg muxer options suitable to pass to Muxer.WriteHeaderWithOptions.
 func (cfg *HLSSegmenterConfig) HeaderOptions() (map[string]string, error) {
 	if cfg == nil {
-		return nil, fmt.Errorf("ffgo: HLSSegmenterConfig is nil")
+		return nil, fmt.Errorf("ffmpeg: HLSSegmenterConfig is nil")
 	}
 	if cfg.SegmentFilenamePattern == "" {
-		return nil, fmt.Errorf("ffgo: HLSSegmenterConfig.SegmentFilenamePattern is required")
+		return nil, fmt.Errorf("ffmpeg: HLSSegmenterConfig.SegmentFilenamePattern is required")
 	}
 
 	opts := make(map[string]string, len(cfg.AVOptions)+8)

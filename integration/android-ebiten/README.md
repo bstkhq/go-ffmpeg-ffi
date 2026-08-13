@@ -112,4 +112,4 @@ PSS/RSS growth, or excessive thread/file-descriptor growth. It writes CSV
 metrics, filtered `logcat`, and a summary below `.build/android-artifacts/`.
 The APK must be debuggable so `run-as` can read its own `/proc` metrics without
 root. Cycle counts, timeouts, and resource limits can be overridden with the
-`FFGO_ANDROID_*` environment variables declared at the top of the script.
+`FFMPEG_ANDROID_*` environment variables declared at the top of the script.

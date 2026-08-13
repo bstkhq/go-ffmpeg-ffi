@@ -17,7 +17,7 @@ import (
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/abi"
 )
 
-func TestFindShimLibrary_RespectsFFGOShimDir(t *testing.T) {
+func TestFindShimLibrary_RespectsFFmpegShimDir(t *testing.T) {
 	dir := t.TempDir()
 
 	var name string
@@ -40,7 +40,7 @@ func TestFindShimLibrary_RespectsFFGOShimDir(t *testing.T) {
 		t.Fatalf("write fake shim: %v", err)
 	}
 
-	t.Setenv("FFGO_SHIM_DIR", dir)
+	t.Setenv("FFMPEG_SHIM_DIR", dir)
 
 	got, err := findShimLibrary()
 	if err != nil {
@@ -51,16 +51,16 @@ func TestFindShimLibrary_RespectsFFGOShimDir(t *testing.T) {
 	}
 }
 
-func TestFindShimLibrary_FFGO_SHIM_DIR_NotFound(t *testing.T) {
+func TestFindShimLibrary_FFmpegShimDirNotFound(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("FFGO_SHIM_DIR", dir)
+	t.Setenv("FFMPEG_SHIM_DIR", dir)
 
 	_, err := findShimLibrary()
 	if err == nil {
-		t.Fatal("expected error when FFGO_SHIM_DIR doesn't contain shim")
+		t.Fatal("expected error when FFMPEG_SHIM_DIR doesn't contain shim")
 	}
-	if !strings.Contains(err.Error(), "FFGO_SHIM_DIR") {
-		t.Errorf("error should mention FFGO_SHIM_DIR: %v", err)
+	if !strings.Contains(err.Error(), "FFMPEG_SHIM_DIR") {
+		t.Errorf("error should mention FFMPEG_SHIM_DIR: %v", err)
 	}
 }
 
@@ -480,7 +480,7 @@ func TestConcurrentLoadAndFunctionCalls(t *testing.T) {
 		t.Skip("skipping shim load test in short mode")
 	}
 
-	requireShim := os.Getenv("FFGO_SHIM_DIR") != ""
+	requireShim := os.Getenv("FFMPEG_SHIM_DIR") != ""
 	const readerCount = 16
 	start := make(chan struct{})
 	stop := make(chan struct{})
@@ -523,7 +523,7 @@ func TestConcurrentLoadAndFunctionCalls(t *testing.T) {
 	}
 	if !IsLoaded() {
 		if requireShim {
-			t.Fatal("shim configured through FFGO_SHIM_DIR was not loaded")
+			t.Fatal("shim configured through FFMPEG_SHIM_DIR was not loaded")
 		}
 		if err != nil {
 			t.Logf("shim unavailable: %v", err)
@@ -579,7 +579,7 @@ func TestSearchError(t *testing.T) {
 		} else {
 			t.Logf("SearchError: %s", searchErr)
 			// Should mention something useful
-			if !strings.Contains(searchErr, "shim") && !strings.Contains(searchErr, "not found") && !strings.Contains(searchErr, "FFGO_SHIM_DIR") {
+			if !strings.Contains(searchErr, "shim") && !strings.Contains(searchErr, "not found") && !strings.Contains(searchErr, "FFMPEG_SHIM_DIR") {
 				t.Error("SearchError should contain useful diagnostic information")
 			}
 		}

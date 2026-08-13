@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 import (
 	"errors"
@@ -48,7 +48,7 @@ type RemuxerConfig struct {
 // The decoder is used to get input stream information.
 func NewRemuxer(outputPath string, decoder *Decoder, cfg *RemuxerConfig) (*Remuxer, error) {
 	if decoder == nil {
-		return nil, errors.New("ffgo: decoder is required for remuxing")
+		return nil, errors.New("ffmpeg: decoder is required for remuxing")
 	}
 
 	if err := bindings.Load(); err != nil {
@@ -64,7 +64,7 @@ func NewRemuxer(outputPath string, decoder *Decoder, cfg *RemuxerConfig) (*Remux
 	// Determine output format from filename
 	formatName := guessFormatFromPath(outputPath)
 	if formatName == "" {
-		return nil, errors.New("ffgo: cannot determine output format from filename")
+		return nil, errors.New("ffmpeg: cannot determine output format from filename")
 	}
 
 	// Create output format context
@@ -100,7 +100,7 @@ func NewRemuxer(outputPath string, decoder *Decoder, cfg *RemuxerConfig) (*Remux
 	r.packet = avcodec.PacketAlloc()
 	if r.packet == nil {
 		r.cleanup()
-		return nil, errors.New("ffgo: failed to allocate packet")
+		return nil, errors.New("ffmpeg: failed to allocate packet")
 	}
 
 	return r, nil
@@ -126,24 +126,24 @@ func (r *Remuxer) copyDecoderStreams(decoder *Decoder, requested []int) error {
 	seen := make(map[int]struct{}, len(streamsToCopy))
 	for _, inputIdx := range streamsToCopy {
 		if _, duplicate := seen[inputIdx]; duplicate {
-			return fmt.Errorf("ffgo: duplicate input stream index %d", inputIdx)
+			return fmt.Errorf("ffmpeg: duplicate input stream index %d", inputIdx)
 		}
 		seen[inputIdx] = struct{}{}
 
 		inputStream := avformat.GetStream(decoder.formatCtx, inputIdx)
 		if inputStream == nil {
-			return fmt.Errorf("ffgo: invalid input stream index %d", inputIdx)
+			return fmt.Errorf("ffmpeg: invalid input stream index %d", inputIdx)
 		}
 
 		outputStream := avformat.NewStream(r.outputCtx, nil)
 		if outputStream == nil {
-			return errors.New("ffgo: failed to create output stream")
+			return errors.New("ffmpeg: failed to create output stream")
 		}
 
 		inputCodecPar := avformat.GetStreamCodecPar(inputStream)
 		outputCodecPar := avformat.GetStreamCodecPar(outputStream)
 		if inputCodecPar == nil || outputCodecPar == nil {
-			return errors.New("ffgo: stream has no codec parameters")
+			return errors.New("ffmpeg: stream has no codec parameters")
 		}
 		if err := avcodec.ParametersCopy(outputCodecPar, inputCodecPar); err != nil {
 			return err
@@ -152,7 +152,7 @@ func (r *Remuxer) copyDecoderStreams(decoder *Decoder, requested []int) error {
 		avcodec.SetCodecParTag(outputCodecPar, 0)
 		outputIdx := int(avformat.GetStreamIndex(outputStream))
 		if outputIdx < 0 {
-			return errors.New("ffgo: output stream has no valid index")
+			return errors.New("ffmpeg: output stream has no valid index")
 		}
 		r.streamMap[inputIdx] = outputIdx
 
@@ -207,7 +207,7 @@ func (r *Remuxer) WritePacket(pkt avcodec.Packet, inputStreamIdx int) error {
 		return closedError("remuxer")
 	}
 	if pkt == nil {
-		return errors.New("ffgo: remux packet is nil")
+		return errors.New("ffmpeg: remux packet is nil")
 	}
 
 	// Check if this stream is being copied
