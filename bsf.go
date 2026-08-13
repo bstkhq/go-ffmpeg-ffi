@@ -4,6 +4,7 @@ package ffgo
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"unsafe"
 
@@ -16,10 +17,12 @@ import (
 // BitstreamFilter represents an FFmpeg bitstream filter.
 // Bitstream filters modify packet data without decoding.
 type BitstreamFilter struct {
-	mu     sync.Mutex
-	ctx    bsfContext
-	packet avcodec.Packet
-	closed bool
+	mu      sync.Mutex
+	ctx     bsfContext
+	packet  avcodec.Packet
+	state   bitstreamFilterState
+	pending []avcodec.Packet
+	closed  bool
 }
 
 // bsfContext is an opaque FFmpeg AVBSFContext pointer.
@@ -34,40 +37,68 @@ var (
 	avBsfSendPacket    func(ctx, pkt uintptr) int32
 	avBsfReceivePacket func(ctx, pkt uintptr) int32
 
-	bsfBindingsRegistered bool
-	offsetBsfParIn        uintptr
-	offsetBsfParOut       uintptr
-	offsetBsfTimeBaseIn   uintptr
-	offsetBsfTimeBaseOut  uintptr
+	bsfBindingsOnce sync.Once
+	bsfBindingsErr  error
+
+	offsetBsfParIn       uintptr
+	offsetBsfParOut      uintptr
+	offsetBsfTimeBaseIn  uintptr
+	offsetBsfTimeBaseOut uintptr
 )
 
-func registerBSFBindings() {
-	if bsfBindingsRegistered {
-		return
-	}
+func registerBSFBindings() error {
+	bsfBindingsOnce.Do(func() {
+		bsfBindingsErr = loadBSFBindings()
+	})
+	return bsfBindingsErr
+}
 
+func loadBSFBindings() (err error) {
 	if err := bindings.Load(); err != nil {
-		return
+		return err
 	}
 
 	lib := bindings.LibAVCodec()
 	if lib == 0 {
-		return
+		return bindings.ErrNotLoaded
 	}
+
+	// Register into locals first so a missing symbol cannot publish a partial
+	// binding set to another goroutine. RegisterLibFunc reports lookup failures
+	// by panicking, so translate that into the package's normal error path.
+	var (
+		getByName     func(name string) unsafe.Pointer
+		allocContext  func(filter uintptr, ctx *unsafe.Pointer) int32
+		initContext   func(ctx uintptr) int32
+		freeContext   func(ctx *unsafe.Pointer)
+		sendPacket    func(ctx, pkt uintptr) int32
+		receivePacket func(ctx, pkt uintptr) int32
+	)
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("ffgo: register bitstream filter bindings: %v", recovered)
+		}
+	}()
+
+	purego.RegisterLibFunc(&getByName, lib, "av_bsf_get_by_name")
+	purego.RegisterLibFunc(&allocContext, lib, "av_bsf_alloc")
+	purego.RegisterLibFunc(&initContext, lib, "av_bsf_init")
+	purego.RegisterLibFunc(&freeContext, lib, "av_bsf_free")
+	purego.RegisterLibFunc(&sendPacket, lib, "av_bsf_send_packet")
+	purego.RegisterLibFunc(&receivePacket, lib, "av_bsf_receive_packet")
+
 	layout := bindings.ABI().BSFContext
+	avBsfGetByName = getByName
+	avBsfAllocContext = allocContext
+	avBsfInit = initContext
+	avBsfFree = freeContext
+	avBsfSendPacket = sendPacket
+	avBsfReceivePacket = receivePacket
 	offsetBsfParIn = layout.ParametersIn
 	offsetBsfParOut = layout.ParametersOut
 	offsetBsfTimeBaseIn = layout.TimeBaseIn
 	offsetBsfTimeBaseOut = layout.TimeBaseOut
-
-	purego.RegisterLibFunc(&avBsfGetByName, lib, "av_bsf_get_by_name")
-	purego.RegisterLibFunc(&avBsfAllocContext, lib, "av_bsf_alloc")
-	purego.RegisterLibFunc(&avBsfInit, lib, "av_bsf_init")
-	purego.RegisterLibFunc(&avBsfFree, lib, "av_bsf_free")
-	purego.RegisterLibFunc(&avBsfSendPacket, lib, "av_bsf_send_packet")
-	purego.RegisterLibFunc(&avBsfReceivePacket, lib, "av_bsf_receive_packet")
-
-	bsfBindingsRegistered = true
+	return nil
 }
 
 // Common bitstream filter names
@@ -99,10 +130,8 @@ const (
 // NewBitstreamFilter creates a new bitstream filter.
 // filterName is the name of the filter (e.g., BSFNameH264Mp4ToAnnexB).
 func NewBitstreamFilter(filterName string) (*BitstreamFilter, error) {
-	registerBSFBindings()
-
-	if avBsfGetByName == nil || avBsfAllocContext == nil {
-		return nil, bindings.ErrNotLoaded
+	if err := registerBSFBindings(); err != nil {
+		return nil, err
 	}
 
 	// Find the filter
@@ -183,9 +212,10 @@ func (f *BitstreamFilter) Init() error {
 	return nil
 }
 
-// Filter sends a packet through the filter and receives the filtered packet.
-// The input packet's data is consumed. Returns the filtered packet or error.
-// Returns nil, nil if more input is needed (EAGAIN).
+// Filter sends a packet through the filter and returns the next filtered packet.
+// The input packet's data is consumed once accepted by FFmpeg. The returned
+// packet is borrowed and remains valid until the next filter operation. Returns
+// nil, nil if more input is needed.
 func (f *BitstreamFilter) Filter(pkt avcodec.Packet) (avcodec.Packet, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -193,30 +223,19 @@ func (f *BitstreamFilter) Filter(pkt avcodec.Packet) (avcodec.Packet, error) {
 	if f.closed || f.ctx == nil {
 		return nil, errors.New("ffgo: filter is closed")
 	}
-
-	// Send packet
-	ret := avBsfSendPacket(uintptr(f.ctx), uintptr(pkt))
-	if ret < 0 {
-		if isEAGAIN(ret) {
-			return nil, nil
-		}
-		return nil, avutil.NewError(ret, "av_bsf_send_packet")
+	if pkt == nil {
+		return nil, errors.New("ffgo: bitstream filter input packet is nil; use Flush")
 	}
 
-	// Receive filtered packet
-	ret = avBsfReceivePacket(uintptr(f.ctx), uintptr(f.packet))
-	if ret < 0 {
-		if isEAGAIN(ret) || isEOF(ret) {
-			return nil, nil
-		}
-		return nil, avutil.NewError(ret, "av_bsf_receive_packet")
+	avcodec.PacketUnref(f.packet)
+	if err := f.state.filter(f.ctx, pkt, f.packet, f.enqueueOutputLocked); err != nil {
+		return nil, err
 	}
-
-	return f.packet, nil
+	return f.nextOutputLocked()
 }
 
-// Flush flushes any remaining packets from the filter.
-// Call this after all input packets have been sent.
+// Flush returns remaining packets from the filter. Call it repeatedly after all
+// input has been sent until it returns nil, nil.
 func (f *BitstreamFilter) Flush() (avcodec.Packet, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -225,21 +244,41 @@ func (f *BitstreamFilter) Flush() (avcodec.Packet, error) {
 		return nil, errors.New("ffgo: filter is closed")
 	}
 
-	// Send NULL packet to flush
-	ret := avBsfSendPacket(uintptr(f.ctx), 0)
-	if ret < 0 && !isEAGAIN(ret) {
-		return nil, avutil.NewError(ret, "av_bsf_send_packet")
+	avcodec.PacketUnref(f.packet)
+	if err := f.state.flush(f.ctx, f.packet, f.enqueueOutputLocked); err != nil {
+		return nil, err
+	}
+	return f.nextOutputLocked()
+}
+
+func (f *BitstreamFilter) enqueueOutputLocked(packet avcodec.Packet) error {
+	clone := avcodec.PacketAlloc()
+	if clone == nil {
+		return errors.New("ffgo: failed to allocate bitstream filter output packet")
+	}
+	if err := avcodec.PacketRef(clone, packet); err != nil {
+		avcodec.PacketFree(&clone)
+		return err
+	}
+	f.pending = append(f.pending, clone)
+	return nil
+}
+
+func (f *BitstreamFilter) nextOutputLocked() (avcodec.Packet, error) {
+	if len(f.pending) == 0 {
+		return nil, nil
 	}
 
-	// Receive flushed packet
-	ret = avBsfReceivePacket(uintptr(f.ctx), uintptr(f.packet))
-	if ret < 0 {
-		if isEAGAIN(ret) || isEOF(ret) {
-			return nil, nil
-		}
-		return nil, avutil.NewError(ret, "av_bsf_receive_packet")
+	next := f.pending[0]
+	if err := avcodec.PacketRef(f.packet, next); err != nil {
+		return nil, err
 	}
-
+	avcodec.PacketFree(&next)
+	f.pending[0] = nil
+	f.pending = f.pending[1:]
+	if len(f.pending) == 0 {
+		f.pending = nil
+	}
 	return f.packet, nil
 }
 
@@ -281,6 +320,10 @@ func (f *BitstreamFilter) Close() error {
 	if f.packet != nil {
 		avcodec.PacketFree(&f.packet)
 	}
+	for i := range f.pending {
+		avcodec.PacketFree(&f.pending[i])
+	}
+	f.pending = nil
 	if f.ctx != nil && avBsfFree != nil {
 		avBsfFree(&f.ctx)
 	}
@@ -288,21 +331,9 @@ func (f *BitstreamFilter) Close() error {
 	return nil
 }
 
-// Helper functions for error checking
-func isEAGAIN(ret int32) bool {
-	return ret == -11 || ret == -35 // EAGAIN on Linux/macOS
-}
-
-func isEOF(ret int32) bool {
-	// AVERROR_EOF is typically FFERRTAG('E','O','F',' ') = -541478725
-	return ret == -541478725
-}
-
 // BitstreamFilterExists checks if a bitstream filter with the given name exists.
 func BitstreamFilterExists(name string) bool {
-	registerBSFBindings()
-
-	if avBsfGetByName == nil {
+	if err := registerBSFBindings(); err != nil {
 		return false
 	}
 
