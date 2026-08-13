@@ -28,8 +28,9 @@ release line.
 | 6.0 and 6.1 | Official support target. |
 | 7.0 and 7.1 | Official support target. |
 | 8.0 and 8.1 | Official support target. |
+| 9.0 | Official support target, validated with 9.0.1. |
 | 4.x and older | Unsupported. |
-| 9 and development snapshots | Unsupported until FFmpeg 9 is released and validated. |
+| Development snapshots and future major releases | Unsupported until an official release is ABI-qualified. |
 
 Support means that the exact loaded library family is recognized and that the
 same required test suite passes. It does not mean that every FFmpeg build has
@@ -44,7 +45,7 @@ Desktop validation is tracked separately by operating system and architecture:
 | Windows `arm64` | Complete package and test compilation; native runtime qualification awaits a public runner. |
 
 Desktop Go applications remain buildable with `CGO_ENABLED=0`. They must ship
-or install a coherent FFmpeg 6, 7, or 8 shared-library family for their target
+or install a coherent FFmpeg 6, 7, 8, or 9 shared-library family for their target
 OS. The optional C shim is built separately and is required for features that
 cannot be expressed safely through direct PureGo calls.
 

@@ -86,7 +86,7 @@ func Init() error {
 
 func initLibrary() error {
 	var err error
-	// libavfilter versions: 9.x (FFmpeg 6), 10.x (FFmpeg 7), 11.x (FFmpeg 8).
+	// libavfilter versions: 9.x (FFmpeg 6), 10.x (FFmpeg 7), 11.x (FFmpeg 8), 12.x (FFmpeg 9).
 	libAVFilter, err = bindings.LoadOptionalLibrary("avfilter")
 	if err != nil {
 		return fmt.Errorf("avfilter: failed to load library: %w", err)

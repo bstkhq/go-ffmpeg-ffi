@@ -22,7 +22,7 @@ bootstrap as an Android-first program with its own evidence gates.
 Complete when a clean clone builds under the new module path and no public
 document presents inherited claims as go-ffmpeg-ffi guarantees.
 
-## PR 2: make FFmpeg 6-8 ABI selection safe
+## PR 2: make FFmpeg 6-9 ABI selection safe
 
 - Centralize library discovery and registration instead of binding the complete
   API from package `init()` functions.
@@ -30,12 +30,12 @@ document presents inherited claims as go-ffmpeg-ffi guarantees.
   ABI family.
 - Inventory every direct FFmpeg structure access and move verified layouts into
   `internal/abi`; no private magic offsets remain.
-- Generate or verify layouts for FFmpeg 6, 7, and 8 against matching headers.
+- Generate or verify layouts for FFmpeg 6, 7, 8, and 9 against matching headers.
 - Establish a pinned Linux amd64 gate for the latest patch of the 6.0, 6.1,
-  7.0, 7.1, 8.0, and 8.1 release lines.
+  7.0, 7.1, 8.0, 8.1, and 9.0 release lines.
 - Version the C shim by operating system, architecture, shim API, and FFmpeg
   family; add a startup handshake and reject mismatches.
-- Reject mixed families, FFmpeg 4, FFmpeg 9/master, and unknown layouts with a
+- Reject mixed families, FFmpeg 4, future development majors, and unknown layouts with a
   diagnostic error before unsafe field access.
 - Decide whether FFmpeg 5.1 earns a narrowly scoped Debian 12 legacy tier, a CI
   job, and a sunset date. Otherwise remove it from the matrix.
@@ -85,9 +85,10 @@ suite, using the latest patched release pinned for each line:
 | 7.1 | `7.1.5` | Yes. |
 | 8.0 | `8.0.3` | Yes. |
 | 8.1 | `8.1.2` | Yes. |
+| 9.0 | `9.0.1` | Yes. |
 
-These initial pins were checked on 2026-08-11 against the
-[official FFmpeg download page](https://ffmpeg.org/download.html).
+These pins were checked on 2026-08-13 against the
+[official FFmpeg release index](https://ffmpeg.org/releases/).
 
 Testing every release line catches header and build differences without running
 every historical patch that shares the same stable library ABI. A scheduled job

@@ -395,11 +395,15 @@ func (m *Muxer) WriteHeaderWithOptions(opts map[string]string) error {
 }
 
 func (m *Muxer) writeHeaderLocked(dict *avutil.Dictionary) error {
-	// Open output file
-	if err := avformat.IOOpen(&m.ioCtx, m.path, avformat.IOFlagWrite); err != nil {
-		return err
+	// Formats marked AVFMT_NOFILE, such as HLS and DASH, open and atomically
+	// replace their own manifests and segments. Holding the primary path open
+	// here prevents those replacements on Windows.
+	if !avformat.HasNoFile(m.formatCtx) {
+		if err := avformat.IOOpen(&m.ioCtx, m.path, avformat.IOFlagWrite); err != nil {
+			return err
+		}
+		avformat.SetIOContext(m.formatCtx, m.ioCtx)
 	}
-	avformat.SetIOContext(m.formatCtx, m.ioCtx)
 
 	// Write header
 	if err := avformat.WriteHeader(m.formatCtx, dict); err != nil {
@@ -519,6 +523,12 @@ func (m *Muxer) flushEncoder(ms *MuxerStream) error {
 func (m *Muxer) packetWriter(ms *MuxerStream) func(avcodec.Packet) error {
 	return func(packet avcodec.Packet) error {
 		avcodec.SetPacketStreamIndex(packet, int32(ms.index))
+		// Some video encoders, including FFmpeg 9's native MPEG-4 encoder,
+		// leave CFR packet duration unset. MP4 then excludes the final delayed
+		// frame from the track duration and marks its packet for discard.
+		if ms.mediaType == MediaTypeVideo && avcodec.GetPacketDuration(packet) <= 0 {
+			avcodec.SetPacketDuration(packet, 1)
+		}
 		streamTbNum, streamTbDen := avformat.GetStreamTimeBase(ms.stream)
 		streamTb := NewRational(streamTbNum, streamTbDen)
 		avcodec.RescalePacketTS(packet, ms.timeBase, streamTb)

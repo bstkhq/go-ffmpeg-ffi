@@ -158,16 +158,18 @@ var (
 	ffmpeg6 = makeFFmpeg6Layout()
 	ffmpeg7 = makeFFmpeg7Layout()
 	ffmpeg8 = makeFFmpeg8Layout()
+	ffmpeg9 = makeFFmpeg9Layout()
 
 	layouts = map[[3]int]Layout{
 		{58, 60, 60}: ffmpeg6,
 		{59, 61, 61}: ffmpeg7,
 		{60, 62, 62}: ffmpeg8,
+		{61, 63, 63}: ffmpeg9,
 	}
 )
 
 // commonLayout contains offsets verified to be identical in the pinned public
-// headers for the FFmpeg 6.0, 6.1, 7.0, 7.1, 8.0, and 8.1 release lines.
+// headers for the FFmpeg 6.0, 6.1, 7.0, 7.1, 8.0, 8.1, and 9.0 release lines.
 // Family-specific constructors fill every structure that changed layout.
 func commonLayout() Layout {
 	return Layout{
@@ -346,6 +348,22 @@ func makeFFmpeg8Layout() Layout {
 	return layout
 }
 
+func makeFFmpeg9Layout() Layout {
+	// FFmpeg 9.0.1 retains the FFmpeg 8 offsets for every public structure
+	// field accessed by Go. Keep a distinct family so the loader still requires
+	// a coherent 61/63/63 runtime tuple and validates all optional libraries.
+	layout := makeFFmpeg8Layout()
+	layout.FFmpegMajor = 9
+	layout.AVUtilMajor = 61
+	layout.AVCodecMajor = 63
+	layout.AVFormatMajor = 63
+	layout.SWScaleMajor = 10
+	layout.SWResampleMajor = 7
+	layout.AVFilterMajor = 12
+	layout.AVDeviceMajor = 63
+	return layout
+}
+
 // Detect selects a layout from the runtime library versions. Version values
 // use FFmpeg's AV_VERSION_INT representation.
 func Detect(avutilVersion, avcodecVersion, avformatVersion uint32) (Layout, error) {
@@ -354,7 +372,7 @@ func Detect(avutilVersion, avcodecVersion, avformatVersion uint32) (Layout, erro
 		return layout, nil
 	}
 	return Layout{}, fmt.Errorf(
-		"%w: libavutil %d, libavcodec %d, libavformat %d; supported combinations are FFmpeg 6 (58/60/60), FFmpeg 7 (59/61/61), and FFmpeg 8 (60/62/62)",
+		"%w: libavutil %d, libavcodec %d, libavformat %d; supported combinations are FFmpeg 6 (58/60/60), FFmpeg 7 (59/61/61), FFmpeg 8 (60/62/62), and FFmpeg 9 (61/63/63)",
 		ErrUnsupported, key[0], key[1], key[2],
 	)
 }
@@ -368,6 +386,8 @@ func ForFFmpegMajor(ffmpegMajor int) (Layout, bool) {
 		return ffmpeg7, true
 	case 8:
 		return ffmpeg8, true
+	case 9:
+		return ffmpeg9, true
 	default:
 		return Layout{}, false
 	}
@@ -375,7 +395,7 @@ func ForFFmpegMajor(ffmpegMajor int) (Layout, bool) {
 
 // Supported returns supported layouts in loader preference order.
 func Supported() []Layout {
-	return []Layout{ffmpeg8, ffmpeg7, ffmpeg6}
+	return []Layout{ffmpeg9, ffmpeg8, ffmpeg7, ffmpeg6}
 }
 
 // LibraryMajor returns the shared-library major expected by this FFmpeg ABI.
