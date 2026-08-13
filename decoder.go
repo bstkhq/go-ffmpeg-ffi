@@ -360,7 +360,7 @@ func (d *Decoder) NumStreams() int {
 	if d.formatCtx == nil {
 		return 0
 	}
-	return avformat.GetNumStreams(d.formatCtx)
+	return avformat.GetNbStreams(d.formatCtx)
 }
 
 // Duration returns the duration as time.Duration.

@@ -36,7 +36,7 @@ func (d *Decoder) GetStreamMetadata(streamIndex int) Metadata {
 		return nil
 	}
 
-	numStreams := avformat.GetNumStreams(d.formatCtx)
+	numStreams := avformat.GetNbStreams(d.formatCtx)
 	if streamIndex < 0 || streamIndex >= numStreams {
 		return nil
 	}

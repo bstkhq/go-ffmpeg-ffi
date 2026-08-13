@@ -133,7 +133,7 @@ func TestFindStreamInfo(t *testing.T) {
 	}
 
 	// Should have at least one stream
-	numStreams := GetNumStreams(ctx)
+	numStreams := GetNbStreams(ctx)
 	if numStreams < 1 {
 		t.Errorf("Expected at least 1 stream, got %d", numStreams)
 	}
@@ -157,7 +157,7 @@ func TestFindBestStream(t *testing.T) {
 	}
 
 	// Find video stream
-	videoIdx := FindBestStream(ctx, MediaTypeVideo, -1, -1, nil, 0)
+	videoIdx := FindBestStream(ctx, avutil.MediaTypeVideo, -1, -1, nil, 0)
 	if videoIdx < 0 {
 		t.Error("No video stream found")
 	} else {
@@ -165,7 +165,7 @@ func TestFindBestStream(t *testing.T) {
 	}
 
 	// Find audio stream
-	audioIdx := FindBestStream(ctx, MediaTypeAudio, -1, -1, nil, 0)
+	audioIdx := FindBestStream(ctx, avutil.MediaTypeAudio, -1, -1, nil, 0)
 	if audioIdx < 0 {
 		t.Error("No audio stream found")
 	} else {

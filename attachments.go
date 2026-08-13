@@ -30,7 +30,7 @@ func (d *Decoder) GetAttachments() []Attachment {
 		return nil
 	}
 
-	numStreams := avformat.GetNumStreams(d.formatCtx)
+	numStreams := avformat.GetNbStreams(d.formatCtx)
 	if numStreams == 0 {
 		return nil
 	}
@@ -98,7 +98,7 @@ func (d *Decoder) HasAttachments() bool {
 		return false
 	}
 
-	numStreams := avformat.GetNumStreams(d.formatCtx)
+	numStreams := avformat.GetNbStreams(d.formatCtx)
 	for i := 0; i < numStreams; i++ {
 		stream := avformat.GetStream(d.formatCtx, i)
 		if stream == nil {

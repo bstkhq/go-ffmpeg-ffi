@@ -28,7 +28,7 @@ func TestMuxerFailedEncoderDoesNotRegisterStream(t *testing.T) {
 	}); err == nil {
 		t.Fatal("opening a video encoder without dimensions succeeded")
 	}
-	if got := avformat.GetNumStreams(muxer.formatCtx); got != 0 {
+	if got := avformat.GetNbStreams(muxer.formatCtx); got != 0 {
 		t.Fatalf("native streams after failed encoder setup = %d, want 0", got)
 	}
 

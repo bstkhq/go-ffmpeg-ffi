@@ -45,7 +45,7 @@ func NewFrameTiming(timebase Rational, fps float64) (*FrameTiming, error) {
 // Next returns the next (pts, dts) pair and advances the internal counters.
 func (t *FrameTiming) Next() (pts, dts int64) {
 	if t == nil {
-		return avutil.NoPTSValue, avutil.NoPTSValue
+		return avutil.AV_NOPTS_VALUE, avutil.AV_NOPTS_VALUE
 	}
 	pts = t.NextPTS
 	dts = t.NextDTS
@@ -73,7 +73,7 @@ func GenerateTimestamps(count int, timebase Rational, fps float64) []int64 {
 
 // ValidateTimestamps checks that frame PTS values are non-decreasing (ignoring AV_NOPTS_VALUE).
 func ValidateTimestamps(frames []*Frame) error {
-	var last int64 = avutil.NoPTSValue
+	var last int64 = avutil.AV_NOPTS_VALUE
 	for i, f := range frames {
 		if f == nil || f.ptr == nil {
 			continue
@@ -82,10 +82,10 @@ func ValidateTimestamps(frames []*Frame) error {
 			return fmt.Errorf("ffgo: frame at index %d: %w", i, err)
 		}
 		pts := f.PTS()
-		if pts == avutil.NoPTSValue {
+		if pts == avutil.AV_NOPTS_VALUE {
 			continue
 		}
-		if last != avutil.NoPTSValue && pts < last {
+		if last != avutil.AV_NOPTS_VALUE && pts < last {
 			return fmt.Errorf("ffgo: non-monotonic PTS at index %d: prev=%d curr=%d", i, last, pts)
 		}
 		last = pts
@@ -140,8 +140,8 @@ func FrameRateDetect(decoder *Decoder) (float64, error) {
 const frameRateDetectionSampleSize = 90
 
 func estimateFrameRateFromPTS(next func() (int64, bool, error), tb Rational) (float64, error) {
-	var firstPTS int64 = avutil.NoPTSValue
-	var lastPTS int64 = avutil.NoPTSValue
+	var firstPTS int64 = avutil.AV_NOPTS_VALUE
+	var lastPTS int64 = avutil.AV_NOPTS_VALUE
 	var count int
 
 	for decoded := 0; decoded < frameRateDetectionSampleSize; decoded++ {
@@ -152,17 +152,17 @@ func estimateFrameRateFromPTS(next func() (int64, bool, error), tb Rational) (fl
 		if !ok {
 			break
 		}
-		if pts == avutil.NoPTSValue {
+		if pts == avutil.AV_NOPTS_VALUE {
 			continue
 		}
-		if firstPTS == avutil.NoPTSValue {
+		if firstPTS == avutil.AV_NOPTS_VALUE {
 			firstPTS = pts
 		}
 		lastPTS = pts
 		count++
 	}
 
-	if count < 2 || firstPTS == avutil.NoPTSValue || lastPTS == avutil.NoPTSValue || lastPTS <= firstPTS {
+	if count < 2 || firstPTS == avutil.AV_NOPTS_VALUE || lastPTS == avutil.AV_NOPTS_VALUE || lastPTS <= firstPTS {
 		return 0, errors.New("ffgo: insufficient PTS data to estimate frame rate")
 	}
 

@@ -99,10 +99,10 @@ func TestAudioFrameAllocAndSetup(t *testing.T) {
 	}
 	defer FrameFree(&frame)
 
-	FrameSetSampleRate(frame, 48000)
+	SetFrameSampleRate(frame, 48000)
 	FrameSetChannels(frame, 2)
-	FrameSetFormat(frame, int32(SampleFormatS16))
-	FrameSetNbSamples(frame, 1024)
+	SetFrameFormat(frame, int32(SampleFormatS16))
+	SetFrameNbSamples(frame, 1024)
 
 	if got := GetFrameSampleRate(frame); got != 48000 {
 		t.Fatalf("sample rate = %d, want 48000", got)

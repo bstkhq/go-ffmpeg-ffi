@@ -316,7 +316,7 @@ func (d *Decoder) HasSubtitle() bool {
 	if d.formatCtx == nil {
 		return false
 	}
-	numStreams := avformat.GetNumStreams(d.formatCtx)
+	numStreams := avformat.GetNbStreams(d.formatCtx)
 	for i := 0; i < numStreams; i++ {
 		stream := avformat.GetStream(d.formatCtx, i)
 		codecPar := avformat.GetStreamCodecPar(stream)
@@ -336,7 +336,7 @@ func (d *Decoder) SubtitleStream() *StreamInfo {
 	if d.formatCtx == nil {
 		return nil
 	}
-	numStreams := avformat.GetNumStreams(d.formatCtx)
+	numStreams := avformat.GetNbStreams(d.formatCtx)
 	for i := 0; i < numStreams; i++ {
 		stream := avformat.GetStream(d.formatCtx, i)
 		codecPar := avformat.GetStreamCodecPar(stream)
