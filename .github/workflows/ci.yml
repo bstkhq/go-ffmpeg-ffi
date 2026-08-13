@@ -219,8 +219,8 @@ jobs:
     name: Test (Windows amd64)
     timeout-minutes: 45
     env:
-      WINDOWS_FFMPEG_VERSION: "8.0.3"
-      WINDOWS_FFMPEG_SHA256: "6136812ea6d4e68bdba27e33c2a94382711cdf4f8602ffef056ff792bd6f9818"
+      WINDOWS_FFMPEG_VERSION: "9.0.1"
+      WINDOWS_FFMPEG_SHA256: "cf38e0e28c7e5605942c4a77755349b0145804a397af37eb1fb4c77cb237f635"
     steps:
       - uses: actions/checkout@v4
 
