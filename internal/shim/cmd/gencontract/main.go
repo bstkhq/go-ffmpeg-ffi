@@ -40,12 +40,12 @@ func main() {
 	for path, want := range files {
 		got, err := os.ReadFile(path)
 		if *check {
-			if err != nil || !bytes.Equal(got, want) {
+			if err != nil || !generatedFileMatches(got, want) {
 				fatal(fmt.Errorf("generated shim contract is stale: run go generate ./internal/shim (%s)", filepath.ToSlash(path)))
 			}
 			continue
 		}
-		if err == nil && bytes.Equal(got, want) {
+		if err == nil && generatedFileMatches(got, want) {
 			continue
 		}
 		if err := os.WriteFile(path, want, 0o644); err != nil {
@@ -79,12 +79,24 @@ func contractID(root string) (uint64, error) {
 			return 0, fmt.Errorf("read %s: %w", name, err)
 		}
 		_, _ = fmt.Fprintf(hash, "%s\x00", name)
-		_, _ = hash.Write(contents)
+		_, _ = hash.Write(normalizeLineEndings(contents))
 		_, _ = hash.Write([]byte{0})
 	}
 	sum := hash.Sum(nil)
 	return uint64(sum[0])<<56 | uint64(sum[1])<<48 | uint64(sum[2])<<40 | uint64(sum[3])<<32 |
 		uint64(sum[4])<<24 | uint64(sum[5])<<16 | uint64(sum[6])<<8 | uint64(sum[7]), nil
+}
+
+// normalizeLineEndings makes the contract independent of Git's checkout
+// policy. In particular, core.autocrlf converts source files to CRLF on
+// Windows, but that must not change the ABI contract or mark generated files
+// as stale.
+func normalizeLineEndings(contents []byte) []byte {
+	return bytes.ReplaceAll(contents, []byte("\r\n"), []byte("\n"))
+}
+
+func generatedFileMatches(got, want []byte) bool {
+	return bytes.Equal(normalizeLineEndings(got), want)
 }
 
 func goOutput(id uint64) []byte {
