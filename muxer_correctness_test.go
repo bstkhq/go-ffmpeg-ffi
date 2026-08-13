@@ -97,6 +97,71 @@ func TestMuxerGlobalHeaderFollowsContainer(t *testing.T) {
 	}
 }
 
+func TestMuxerDoesNotMutateStreamConfigs(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+
+	muxer, err := NewMuxer(filepath.Join(t.TempDir(), "configs.mp4"), "mp4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer muxer.Close()
+
+	videoConfig := VideoStreamConfig{
+		Codec:  avcodec.CodecIDMPEG4,
+		Width:  16,
+		Height: 16,
+	}
+	wantVideo := videoConfig
+	if _, err := muxer.AddVideoStream(&videoConfig); err != nil {
+		t.Fatal(err)
+	}
+	if videoConfig != wantVideo {
+		t.Fatalf("AddVideoStream mutated config: got %+v, want %+v", videoConfig, wantVideo)
+	}
+
+	audioConfig := AudioStreamConfig{
+		Codec:        avcodec.CodecIDAAC,
+		SampleFormat: SampleFormatNone,
+	}
+	wantAudio := audioConfig
+	if _, err := muxer.AddAudioStream(&audioConfig); err != nil {
+		t.Fatal(err)
+	}
+	if audioConfig != wantAudio {
+		t.Fatalf("AddAudioStream mutated config: got %+v, want %+v", audioConfig, wantAudio)
+	}
+}
+
+func TestMuxerStreamsReturnsSnapshot(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+
+	muxer, err := NewMuxer(filepath.Join(t.TempDir(), "streams.mp4"), "mp4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer muxer.Close()
+
+	stream, err := muxer.AddVideoStream(testMuxerVideoConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	streams := muxer.Streams()
+	if len(streams) != 1 || streams[0] != stream {
+		t.Fatalf("Streams() = %v, want [%p]", streams, stream)
+	}
+	streams[0] = nil
+	streams = append(streams, nil)
+
+	got := muxer.Streams()
+	if len(got) != 1 || got[0] != stream {
+		t.Fatalf("caller mutation changed muxer streams: %v", got)
+	}
+}
+
 func testMuxerVideoConfig() *VideoStreamConfig {
 	return &VideoStreamConfig{
 		Codec:       avcodec.CodecIDMPEG4,

@@ -106,6 +106,8 @@ func (m *Muxer) AddVideoStream(config *VideoStreamConfig) (*MuxerStream, error) 
 	if config == nil {
 		return nil, errors.New("ffgo: video config is required")
 	}
+	configCopy := *config
+	config = &configCopy
 
 	// Apply defaults
 	if config.Codec == CodecIDNone {
@@ -221,6 +223,8 @@ func (m *Muxer) AddAudioStream(config *AudioStreamConfig) (*MuxerStream, error) 
 	if config == nil {
 		return nil, errors.New("ffgo: audio config is required")
 	}
+	configCopy := *config
+	config = &configCopy
 
 	// Apply defaults
 	if config.Codec == CodecIDNone {
@@ -609,7 +613,9 @@ func (m *Muxer) Close() error {
 func (m *Muxer) Streams() []*MuxerStream {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.streams
+	streams := make([]*MuxerStream, len(m.streams))
+	copy(streams, m.streams)
+	return streams
 }
 
 // Index returns the stream index.
