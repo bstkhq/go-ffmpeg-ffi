@@ -17,7 +17,8 @@ import (
 // FilterGraph represents a filter processing pipeline for video or audio.
 // It abstracts the complexity of FFmpeg filter graphs into a simple push/pull interface.
 // Close is safe to call concurrently; it blocks until an in-flight Filter or
-// Flush returns.
+// Flush returns. A FilterGraph owns native resources and must be closed when
+// it is no longer needed.
 type FilterGraph struct {
 	mu         sync.Mutex
 	graph      avfilter.Graph
@@ -138,7 +139,6 @@ func newFilterGraph(cfg FilterGraphConfig, videoSpecs []filterSpec) (*FilterGrap
 		return nil, errors.New("ffmpeg: failed to allocate output frame")
 	}
 
-	runtime.SetFinalizer(g, (*FilterGraph).cleanup)
 	return g, nil
 }
 
@@ -590,7 +590,6 @@ func (g *FilterGraph) Flush() ([]*Frame, error) {
 
 // Close releases all resources associated with the filter graph.
 func (g *FilterGraph) Close() error {
-	runtime.SetFinalizer(g, nil)
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
@@ -602,13 +601,6 @@ func (g *FilterGraph) Close() error {
 	return nil
 }
 
-func (g *FilterGraph) cleanup() {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	g.closed = true
-	g.cleanupLocked()
-}
-
 func (g *FilterGraph) cleanupLocked() {
 	if g.outFrame != nil {
 		avutil.FrameFree(&g.outFrame)
@@ -618,6 +610,8 @@ func (g *FilterGraph) cleanupLocked() {
 		avfilter.GraphFree(&g.graph)
 		g.graph = nil
 	}
+	g.bufferSrc = nil
+	g.bufferSink = nil
 }
 
 // IsVideo returns true if this is a video filter graph.
