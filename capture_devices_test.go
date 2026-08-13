@@ -6,6 +6,9 @@ import (
 	"errors"
 	"runtime"
 	"testing"
+
+	"github.com/bstkhq/go-ffmpeg-ffi/avdevice"
+	"github.com/bstkhq/go-ffmpeg-ffi/avformat"
 )
 
 func TestGetInputFormat_Defaults(t *testing.T) {
@@ -52,3 +55,57 @@ func TestListDevices_Smoke(t *testing.T) {
 	// Allow other FFmpeg/platform errors too.
 }
 
+func TestCaptureDecoderOwnsPacketAndFrameBeforeFirstUse(t *testing.T) {
+	if testing.Short() {
+		t.Skip("capture integration requires FFmpeg device libraries")
+	}
+	if !requireFFmpeg(t) {
+		return
+	}
+	if err := avdevice.RegisterAll(); err != nil {
+		t.Skipf("libavdevice unavailable: %v", err)
+	}
+
+	input := avformat.FindInputFormat("lavfi")
+	if input == nil {
+		t.Skip("FFmpeg build has no lavfi input device")
+	}
+
+	d := newDecoder(newDecoderInterrupt())
+	if err := avformat.OpenInput(
+		&d.formatCtx,
+		"testsrc=duration=1:size=16x16:rate=5",
+		input,
+		nil,
+	); err != nil {
+		t.Fatalf("open virtual capture input: %v", err)
+	}
+	d.interrupt.attach(d.formatCtx)
+	if err := d.initializeCaptureDecoder(); err != nil {
+		_ = d.Close()
+		t.Fatalf("initialize capture decoder: %v", err)
+	}
+	defer func() {
+		if err := d.Close(); err != nil {
+			t.Errorf("close capture decoder: %v", err)
+		}
+	}()
+
+	if d.packet == nil || d.frame == nil {
+		t.Fatalf("capture decoder published incomplete resources: packet=%p frame=%p", d.packet, d.frame)
+	}
+	packet, err := d.ReadPacket()
+	if err != nil {
+		t.Fatalf("first capture ReadPacket: %v", err)
+	}
+	if packet == nil || packet.IsNil() {
+		t.Fatal("first capture ReadPacket returned no packet")
+	}
+	frame, err := d.DecodeVideo()
+	if err != nil {
+		t.Fatalf("first capture DecodeVideo: %v", err)
+	}
+	if frame.IsNil() {
+		t.Fatal("first capture DecodeVideo returned no frame")
+	}
+}

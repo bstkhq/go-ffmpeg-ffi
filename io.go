@@ -758,12 +758,8 @@ func NewDecoderFromIOWithOptionsContext(ctx context.Context, callbacks *IOCallba
 		return nil, err
 	}
 
-	d := &Decoder{
-		formatCtx:      formatCtx,
-		videoStreamIdx: -1,
-		audioStreamIdx: -1,
-		interrupt:      interrupt,
-	}
+	d := newDecoder(interrupt)
+	d.formatCtx = formatCtx
 
 	// Ensure the custom I/O stays alive and is cleaned up.
 	d.customIO = ioCtx
@@ -780,17 +776,9 @@ func NewDecoderFromIOWithOptionsContext(ctx context.Context, callbacks *IOCallba
 		d.audioInfo = d.getStreamInfo(d.audioStreamIdx)
 	}
 
-	// Allocate packet and frame
-	d.packet = avcodec.PacketAlloc()
-	if d.packet == nil {
+	if err := d.allocateDecodeResources(); err != nil {
 		d.Close()
-		return nil, errors.New("ffgo: failed to allocate packet")
-	}
-
-	d.frame = avutil.FrameAlloc()
-	if d.frame == nil {
-		d.Close()
-		return nil, errors.New("ffgo: failed to allocate frame")
+		return nil, err
 	}
 
 	return d, nil

@@ -225,6 +225,9 @@ func SendPacket(ctx Context, pkt Packet) error {
 // ReceiveFrame receives a decoded frame from the decoder.
 // Returns nil frame and nil error if more data is needed (EAGAIN) or EOF.
 func ReceiveFrame(ctx Context, frame avutil.Frame) error {
+	if ctx == nil || frame == nil {
+		return avutil.NewError(avutil.AVERROR_EINVAL, "avcodec_receive_frame")
+	}
 	if avcodecReceiveFrame == nil {
 		return bindings.ErrNotLoaded
 	}

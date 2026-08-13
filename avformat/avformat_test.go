@@ -50,6 +50,24 @@ func TestAllocContext(t *testing.T) {
 	FreeContext(ctx)
 }
 
+func TestReadFrameRejectsNilPointers(t *testing.T) {
+	valid := unsafe.Pointer(new(byte))
+	for _, tt := range []struct {
+		name string
+		ctx  FormatContext
+		pkt  unsafe.Pointer
+	}{
+		{name: "context", ctx: nil, pkt: valid},
+		{name: "packet", ctx: valid, pkt: nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if code := avutil.Code(ReadFrame(tt.ctx, tt.pkt)); code != avutil.AVERROR_EINVAL {
+				t.Fatalf("ReadFrame error code = %d, want %d", code, avutil.AVERROR_EINVAL)
+			}
+		})
+	}
+}
+
 func TestIOContextFreeOwnsCurrentBuffer(t *testing.T) {
 	if !requireFFmpeg(t) {
 		return

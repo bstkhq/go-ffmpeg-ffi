@@ -55,6 +55,34 @@ type Decoder struct {
 	closed           bool
 }
 
+func newDecoder(interrupt *decoderInterrupt) *Decoder {
+	return &Decoder{
+		videoStreamIdx: -1,
+		audioStreamIdx: -1,
+		interrupt:      interrupt,
+	}
+}
+
+// allocateDecodeResources installs the reusable packet and frame required by
+// every Decoder entry point. Keep this allocation centralized so constructors
+// for files, custom I/O, and capture devices cannot publish a partial Decoder.
+func (d *Decoder) allocateDecodeResources() error {
+	packet := avcodec.PacketAlloc()
+	if packet == nil {
+		return errors.New("ffgo: failed to allocate packet")
+	}
+
+	frame := avutil.FrameAlloc()
+	if frame == nil {
+		avcodec.PacketFree(&packet)
+		return errors.New("ffgo: failed to allocate frame")
+	}
+
+	d.packet = packet
+	d.frame = frame
+	return nil
+}
+
 // DecoderOptions configures decoder behavior.
 type DecoderOptions struct {
 	// Format hint (e.g., "mp4", "mkv") - optional
@@ -253,11 +281,7 @@ func NewDecoderWithOptionsContext(ctx context.Context, path string, opts *Decode
 		opts = &DecoderOptions{}
 	}
 
-	d := &Decoder{
-		videoStreamIdx: -1,
-		audioStreamIdx: -1,
-		interrupt:      newDecoderInterrupt(),
-	}
+	d := newDecoder(newDecoderInterrupt())
 	if err := d.beginInterrupt(ctx); err != nil {
 		d.interrupt.release(nil)
 		return nil, err
@@ -314,17 +338,9 @@ func NewDecoderWithOptionsContext(ctx context.Context, path string, opts *Decode
 		}
 	}
 
-	// Allocate packet and frame
-	d.packet = avcodec.PacketAlloc()
-	if d.packet == nil {
+	if err := d.allocateDecodeResources(); err != nil {
 		d.Close()
-		return nil, errors.New("ffgo: failed to allocate packet")
-	}
-
-	d.frame = avutil.FrameAlloc()
-	if d.frame == nil {
-		d.Close()
-		return nil, errors.New("ffgo: failed to allocate frame")
+		return nil, err
 	}
 
 	return d, nil
