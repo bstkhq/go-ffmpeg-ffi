@@ -55,7 +55,7 @@ func main() {
 	videoInfo := decoder.VideoStream()
 	fmt.Printf("Input video: %dx%d, codec=%s\n",
 		videoInfo.Width, videoInfo.Height, videoInfo.CodecID.String())
-	fmt.Printf("Duration: %v\n", decoder.DurationTime())
+	fmt.Printf("Duration: %v\n", decoder.Duration())
 
 	if decoder.HasAudio() {
 		audioInfo := decoder.AudioStream()

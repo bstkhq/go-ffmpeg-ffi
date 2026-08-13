@@ -84,8 +84,8 @@ func main() {
 		if f.IsNil() {
 			continue
 		}
-		if err := enc.WriteVideoFrame(f); err != nil {
-			fmt.Fprintf(os.Stderr, "WriteVideoFrame failed: %v\n", err)
+		if err := enc.WriteFrame(f); err != nil {
+			fmt.Fprintf(os.Stderr, "WriteFrame failed: %v\n", err)
 			os.Exit(1)
 		}
 	}

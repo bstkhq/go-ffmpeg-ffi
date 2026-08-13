@@ -19,7 +19,6 @@ import (
 	"github.com/bstkhq/go-ffmpeg-ffi/avcodec"
 	"github.com/bstkhq/go-ffmpeg-ffi/avdevice"
 	"github.com/bstkhq/go-ffmpeg-ffi/avfilter"
-	"github.com/bstkhq/go-ffmpeg-ffi/avformat"
 	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/bindings"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/shim"
@@ -388,16 +387,6 @@ const (
 	CodecIDBMP   = avcodec.CodecIDBMP
 	CodecIDGIF   = avcodec.CodecIDGIF
 
-	// Codec aliases (shorter names for convenience, as shown in user-guide)
-	CodecH264 = CodecIDH264
-	CodecHEVC = CodecIDHEVC
-	CodecAV1  = CodecIDAV1
-	CodecVP8  = CodecIDVP8
-	CodecVP9  = CodecIDVP9
-	CodecAAC  = CodecIDAAC
-	CodecMP3  = CodecIDMP3
-	CodecOpus = CodecIDOPUS
-
 	// Sample formats
 	SampleFormatNone = avutil.SampleFormatNone
 	SampleFormatU8   = avutil.SampleFormatU8
@@ -409,7 +398,6 @@ const (
 	SampleFormatS16P = avutil.SampleFormatS16P
 	SampleFormatS32P = avutil.SampleFormatS32P
 	SampleFormatFLTP = avutil.SampleFormatFltP // Float 32-bit planar (AAC default)
-	SampleFormatFltP = avutil.SampleFormatFltP // Alias
 	SampleFormatDblP = avutil.SampleFormatDblP
 	SampleFormatS64  = avutil.SampleFormatS64
 	SampleFormatS64P = avutil.SampleFormatS64P
@@ -574,72 +562,3 @@ func IsEOF(err error) bool {
 func IsAgain(err error) bool {
 	return avutil.IsAgain(err)
 }
-
-// Low-level package access (for advanced users)
-var (
-	// AVUtil provides access to avutil package functions.
-	AVUtil = struct {
-		FrameAlloc        func() Frame
-		FrameFree         func(frame *Frame) error
-		FrameRef          func(dst, src Frame) error
-		FrameUnref        func(frame Frame)
-		FrameGetBuffer    func(frame Frame, align int32) error
-		FrameMakeWritable func(frame Frame) error
-		GetFrameWidth     func(frame Frame) int32
-		GetFrameHeight    func(frame Frame) int32
-		GetFrameFormat    func(frame Frame) int32
-		SetFrameWidth     func(frame Frame, width int32)
-		SetFrameHeight    func(frame Frame, height int32)
-		SetFrameFormat    func(frame Frame, format int32)
-	}{
-		FrameAlloc: FrameAlloc,
-		FrameFree:  FrameFree,
-		FrameRef:   FrameRef,
-		FrameUnref: FrameUnref,
-		FrameGetBuffer: func(frame Frame, align int32) error {
-			return frame.GetBuffer(align)
-		},
-		FrameMakeWritable: func(frame Frame) error {
-			return frame.MakeWritable()
-		},
-		GetFrameWidth: func(frame Frame) int32 {
-			return int32(frame.Width())
-		},
-		GetFrameHeight: func(frame Frame) int32 {
-			return int32(frame.Height())
-		},
-		GetFrameFormat: func(frame Frame) int32 {
-			return frame.Format()
-		},
-		SetFrameWidth: func(frame Frame, width int32) {
-			frame.SetWidth(int(width))
-		},
-		SetFrameHeight: func(frame Frame, height int32) {
-			frame.SetHeight(int(height))
-		},
-		SetFrameFormat: func(frame Frame, format int32) {
-			frame.SetFormat(format)
-		},
-	}
-
-	// AVFormat provides access to avformat package functions.
-	AVFormat = struct {
-		OpenInput         func(ctx *avformat.FormatContext, url string, fmt avformat.InputFormat, options *avutil.Dictionary) error
-		CloseInput        func(ctx *avformat.FormatContext)
-		FindStreamInfo    func(ctx avformat.FormatContext, options *avutil.Dictionary) error
-		ReadFrame         func(ctx avformat.FormatContext, pkt RawPacket) error
-		FindBestStream    func(ctx avformat.FormatContext, mediaType MediaType, wanted, related int32, decoder *avcodec.Codec, flags int32) int32
-		GetNumStreams     func(ctx avformat.FormatContext) int
-		GetStream         func(ctx avformat.FormatContext, index int) avformat.Stream
-		GetStreamCodecPar func(stream avformat.Stream) avcodec.Parameters
-	}{
-		OpenInput:         avformat.OpenInput,
-		CloseInput:        avformat.CloseInput,
-		FindStreamInfo:    avformat.FindStreamInfo,
-		ReadFrame:         avformat.ReadFrame,
-		FindBestStream:    avformat.FindBestStream,
-		GetNumStreams:     avformat.GetNumStreams,
-		GetStream:         avformat.GetStream,
-		GetStreamCodecPar: avformat.GetStreamCodecPar,
-	}
-)

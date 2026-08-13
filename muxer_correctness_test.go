@@ -80,7 +80,7 @@ func TestMuxerGlobalHeaderFollowsContainer(t *testing.T) {
 				Codec:        avcodec.CodecIDAAC,
 				SampleRate:   48000,
 				Channels:     2,
-				SampleFormat: SampleFormatFltP,
+				SampleFormat: SampleFormatFLTP,
 				BitRate:      128000,
 			})
 			if err != nil {

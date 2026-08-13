@@ -163,7 +163,7 @@ func runPass(dec *Decoder, videoInfo *StreamInfo, output string, baseOpts *Encod
 			outFrame = sf
 		}
 
-		if err := enc.WriteVideoFrame(outFrame); err != nil {
+		if err := enc.WriteFrame(outFrame); err != nil {
 			return err
 		}
 	}

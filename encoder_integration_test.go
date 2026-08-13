@@ -87,7 +87,7 @@ func TestEncoderFlushPreservesDelayedFrames(t *testing.T) {
 			t.Fatal(err)
 		}
 		fillTestFrame(frame, i, 160, 120)
-		if err := encoder.WriteVideoFrame(frame); err != nil {
+		if err := encoder.WriteFrame(frame); err != nil {
 			encoder.Close()
 			t.Fatalf("write frame %d: %v", i, err)
 		}
@@ -100,7 +100,7 @@ func TestEncoderFlushPreservesDelayedFrames(t *testing.T) {
 		encoder.Close()
 		t.Fatalf("second flush: %v", err)
 	}
-	if err := encoder.WriteVideoFrame(frame); !errors.Is(err, errEncoderFlushed) {
+	if err := encoder.WriteFrame(frame); !errors.Is(err, errEncoderFlushed) {
 		encoder.Close()
 		t.Fatalf("write after flush = %v, want %v", err, errEncoderFlushed)
 	}

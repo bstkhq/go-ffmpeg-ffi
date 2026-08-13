@@ -71,7 +71,7 @@ func main() {
 			audioInfo.SampleRate, audioInfo.Channels, audioInfo.CodecID)
 	}
 
-	fmt.Printf("Duration: %v\n", decoder.DurationTime())
+	fmt.Printf("Duration: %v\n", decoder.Duration())
 
 	// Read frames
 	fmt.Println("\nReading frames...")

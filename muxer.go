@@ -238,7 +238,7 @@ func (m *Muxer) AddAudioStream(config *AudioStreamConfig) (*MuxerStream, error) 
 		config.Channels = 2
 	}
 	if config.SampleFormat == SampleFormatNone {
-		config.SampleFormat = SampleFormatFltP
+		config.SampleFormat = SampleFormatFLTP
 	}
 	if config.BitRate <= 0 {
 		config.BitRate = 128000
