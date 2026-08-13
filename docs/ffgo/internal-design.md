@@ -1,9 +1,9 @@
 # ffgo Internal Design Document
 
-> **Inherited document:** this is the original ffgo design and is retained as
-> historical reference. It is not the canonical architecture of
-> go-ffmpeg-ffi. See [architecture.md](architecture.md) and
-> [roadmap.md](roadmap.md).
+> **Archived inherited document:** this is the original ffgo design and is
+> retained as historical reference. It is not the architecture of
+> go-ffmpeg-ffi. See [architecture.md](../architecture.md) and
+> [roadmap.md](../roadmap.md).
 
 > **Audience**: Library implementers and contributors only.
 >

@@ -4,14 +4,15 @@ Thank you for helping build go-ffmpeg-ffi. This is a hard fork of
 [ffgo](https://github.com/obinnaokechukwu/ffgo); please preserve the original
 authors' attribution when moving or modifying inherited work.
 
-The source tree remains transitional until the first release. See the
-[architecture](docs/architecture.md) for technical decisions and the
-[roadmap](docs/roadmap.md) for the six bootstrap PRs and platform rollout.
+The API continues to evolve and is not compatible with the original ffgo API.
+See the [architecture](docs/architecture.md) for technical decisions, the
+[support matrix](docs/support.md) for current evidence, and the
+[roadmap](docs/roadmap.md) for remaining qualification work.
 
 ## Before opening a change
 
 - Search existing issues and PRs.
-- Use a focused branch and keep changes inside one roadmap subsystem.
+- Use a focused branch and keep each PR within one coherent subsystem.
 - State the operating system, architecture, Go version, complete FFmpeg library
   versions, shim status, and reproduction steps for bugs.
 - Prefer small redistributable media fixtures; include sound when testing the
@@ -51,7 +52,7 @@ to its base pointer. Any unavoidable integer-to-pointer conversion requires
 ABI-specific review and integration or stress coverage.
 
 FFmpeg-facing changes must also run the relevant pinned integration job from the
-[test matrix](docs/roadmap.md#pr-5-make-compatibility-claims-executable). ABI,
+[test matrix](docs/support.md#ffmpeg-versions). ABI,
 ownership, callbacks, or native cleanup changes require the corresponding
 stress or sanitizer coverage. PR descriptions must report exactly what was run;
 “all versions” is not sufficient.
@@ -59,12 +60,15 @@ stress or sanitizer coverage. PR descriptions must report exactly what was run;
 ## Commits and pull requests
 
 Use clear imperative commit subjects and explain why unsafe or ABI-sensitive
-code is correct. A bootstrap PR may contain several logical commits, but its
-scope must remain one of the six roadmap units.
+code is correct. A PR may contain several logical commits, but its scope must
+remain coherent and reviewable.
 
-Development may be assisted by OpenAI Codex. Human contributors remain the
-authors, reviewers, and accountable maintainers. When Codex materially helped a
-commit, add this trailer after the commit message body:
+Development uses Agentic Coding with OpenAI Codex, based on the GPT-5 model
+family. The agent may inspect and edit the workspace, run builds and tests, and
+use configured GitHub and Android integration tools. Human contributors remain
+the authors, reviewers, and accountable maintainers: they define scope, approve
+privileged actions, review evidence, and decide what is merged. When Codex
+materially helped a commit, add this trailer after the commit message body:
 
 ```text
 Assisted-by: OpenAI Codex
