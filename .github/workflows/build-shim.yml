@@ -183,7 +183,17 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $env:Path = "C:\\msys64\\mingw64\\bin;$env:Path"
+          $mingwBin = 'C:\msys64\mingw64\bin'
+          if (-not (Test-Path -LiteralPath $mingwBin)) {
+            throw "MSYS2 MINGW64 runtime directory is missing: $mingwBin"
+          }
+          $avutil = Get-ChildItem -Path (Join-Path $mingwBin 'avutil-*.dll') -File |
+            Select-Object -First 1
+          if ($null -eq $avutil) {
+            throw "MSYS2 did not install an avutil runtime DLL in $mingwBin"
+          }
+          Write-Host "Using FFmpeg runtime: $($avutil.Name)"
+          $env:Path = "$mingwBin;$env:Path"
           $major = (go run ./cmd/ffshim-manifest -shim-dir "$PWD/shim" -field ffmpeg-major).Trim()
           $destination = "$PWD/dist/shim/prebuilt/windows-amd64/ffmpeg-$major"
           New-Item -ItemType Directory -Force -Path $destination | Out-Null
