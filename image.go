@@ -248,11 +248,11 @@ func (d *Decoder) GetKeyframes() ([]Keyframe, error) {
 	defer d.mu.Unlock()
 
 	if d.closed {
-		return nil, errors.New("ffgo: decoder is closed")
+		return nil, errDecoderClosed
 	}
 
 	if d.videoStreamIdx < 0 {
-		return nil, errors.New("ffgo: no video stream")
+		return nil, ErrNoVideoStream
 	}
 
 	// Save current position - seek back to beginning (errors are non-fatal)

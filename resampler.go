@@ -135,7 +135,7 @@ func NewResampler(src, dst AudioFormat) (*Resampler, error) {
 // Returns a new frame with resampled audio, or nil if more input needed
 func (r *Resampler) Resample(frame Frame) (Frame, error) {
 	if r.closed {
-		return Frame{}, fmt.Errorf("resampler is closed")
+		return Frame{}, closedError("resampler")
 	}
 	if err := frame.poolLeaseError(); err != nil {
 		return Frame{}, err
@@ -182,7 +182,7 @@ func (r *Resampler) Resample(frame Frame) (Frame, error) {
 // Flush drains any remaining samples from the resampler
 func (r *Resampler) Flush() (Frame, error) {
 	if r.closed {
-		return Frame{}, fmt.Errorf("resampler is closed")
+		return Frame{}, closedError("resampler")
 	}
 
 	// Check if there's any delay

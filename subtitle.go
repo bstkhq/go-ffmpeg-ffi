@@ -160,7 +160,7 @@ func (r *SubtitleRenderer) Render(frame Frame) (Frame, error) {
 	}
 
 	if r.graph == nil {
-		return Frame{}, errors.New("ffgo: subtitle renderer is closed")
+		return Frame{}, closedError("subtitle renderer")
 	}
 
 	// Recreate the filter graph if the input pixel format differs from what the current

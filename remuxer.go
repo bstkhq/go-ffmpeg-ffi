@@ -171,7 +171,7 @@ func (r *Remuxer) WriteHeader() error {
 	defer r.mu.Unlock()
 
 	if r.closed {
-		return errors.New("ffgo: remuxer is closed")
+		return closedError("remuxer")
 	}
 	if r.headerWritten {
 		return nil
@@ -204,7 +204,7 @@ func (r *Remuxer) WritePacket(pkt avcodec.Packet, inputStreamIdx int) error {
 	defer r.mu.Unlock()
 
 	if r.closed {
-		return errors.New("ffgo: remuxer is closed")
+		return closedError("remuxer")
 	}
 	if pkt == nil {
 		return errors.New("ffgo: remux packet is nil")

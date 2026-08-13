@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"image/color"
+	"io"
 	"log"
 	"runtime"
 	"strings"
@@ -200,6 +201,9 @@ func (g *probeGame) decodeAndPlayAudio(ctx context.Context, mediaPath string) (f
 	for {
 		frame, decodeErr := decoder.DecodeAudioContext(ctx)
 		if decodeErr != nil {
+			if errors.Is(decodeErr, io.EOF) {
+				break
+			}
 			return frames, samples, fmt.Errorf("decode audio frame %d: %w", frames, decodeErr)
 		}
 		if frame.IsNil() {
@@ -327,6 +331,9 @@ func (g *probeGame) decodeVideo(ctx context.Context, mediaPath string) (frames, 
 	for {
 		frame, decodeErr := decoder.DecodeVideoContext(ctx)
 		if decodeErr != nil {
+			if errors.Is(decodeErr, io.EOF) {
+				break
+			}
 			return frames, width, height, fmt.Errorf("decode frame %d: %w", frames, decodeErr)
 		}
 		if frame.IsNil() {
@@ -361,8 +368,8 @@ func (g *probeGame) decodeVideo(ctx context.Context, mediaPath string) (frames, 
 
 	// EOF must remain stable until a seek resets the decoder state.
 	eofFrame, eofErr := decoder.DecodeVideoContext(ctx)
-	if eofErr != nil {
-		return frames, width, height, fmt.Errorf("repeat video EOF: %w", eofErr)
+	if !errors.Is(eofErr, io.EOF) {
+		return frames, width, height, fmt.Errorf("repeat video EOF = %v, want io.EOF", eofErr)
 	}
 	if !eofFrame.IsNil() {
 		return frames, width, height, fmt.Errorf("decoder produced a frame after EOF")

@@ -899,10 +899,10 @@ func TestEncoderWriteVideoAndAudioFrames(t *testing.T) {
 	for {
 		frame, err := decoder.ReadFrame()
 		if err != nil {
+			if IsEOF(err) {
+				break
+			}
 			t.Fatal(err)
-		}
-		if frame == nil {
-			break
 		}
 		decoded[frame.MediaType()]++
 	}

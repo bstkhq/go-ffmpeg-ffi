@@ -61,11 +61,14 @@ func main() {
 	for i := 0; i < maxFrames; i++ {
 		f, err := dec.DecodeVideo()
 		if err != nil {
+			if ffgo.IsEOF(err) {
+				break
+			}
 			fmt.Fprintf(os.Stderr, "DecodeVideo failed: %v\n", err)
 			os.Exit(1)
 		}
 		if f.IsNil() {
-			break
+			continue
 		}
 		info := ffgo.GetFrameInfo(f)
 		secs := float64(info.PTS) * float64(tb.Num) / float64(tb.Den)

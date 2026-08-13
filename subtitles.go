@@ -180,7 +180,7 @@ func (d *SubtitleDecoder) Decode(packet *Packet) (*Subtitle, error) {
 	defer d.mu.Unlock()
 
 	if d.closed {
-		return nil, errors.New("ffgo: decoder is closed")
+		return nil, errDecoderClosed
 	}
 
 	if packet == nil || packet.ptr == nil {

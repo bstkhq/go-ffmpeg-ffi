@@ -116,7 +116,7 @@ func main() {
 			os.Exit(1)
 		}
 		if frame.IsNil() {
-			break // EOF
+			continue // Decoder needs more input; EOF is reported as an error above.
 		}
 
 		// Scale if necessary

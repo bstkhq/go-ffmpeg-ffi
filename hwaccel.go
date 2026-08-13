@@ -4,6 +4,7 @@ package ffgo
 
 import (
 	"errors"
+	"io"
 	"sync"
 
 	"github.com/bstkhq/go-ffmpeg-ffi/avcodec"
@@ -164,7 +165,7 @@ func NewHWDecoder(inputPath string, cfg *HWDecoderConfig) (*HWDecoder, error) {
 	videoStreamIdx := avformat.FindBestStream(formatCtx, avutil.MediaTypeVideo, -1, -1, nil, 0)
 	if videoStreamIdx < 0 {
 		avformat.CloseInput(&formatCtx)
-		return nil, errors.New("ffgo: no video stream found")
+		return nil, ErrNoVideoStream
 	}
 
 	// Get stream and codec info
@@ -280,7 +281,7 @@ func (d *HWDecoder) DecodeVideo() (Frame, error) {
 	defer d.mu.Unlock()
 
 	if d.closed {
-		return Frame{}, errors.New("ffgo: decoder is closed")
+		return Frame{}, errDecoderClosed
 	}
 
 	return d.nextVideoFrameLocked(d.outputSoftwareFrame)
@@ -295,7 +296,7 @@ func (d *HWDecoder) ReadHWFrame() (Frame, error) {
 	defer d.mu.Unlock()
 
 	if d.closed {
-		return Frame{}, errors.New("ffgo: decoder is closed")
+		return Frame{}, errDecoderClosed
 	}
 
 	return d.nextVideoFrameLocked(false)
@@ -308,6 +309,9 @@ func (d *HWDecoder) nextVideoFrameLocked(outputSoftware bool) (Frame, error) {
 	for {
 		ready, err := d.decodeState.next(d.videoCodecCtx, d.frame)
 		if err != nil {
+			if avutil.IsEOF(err) {
+				return Frame{}, io.EOF
+			}
 			return Frame{}, err
 		}
 		if ready {
@@ -321,7 +325,7 @@ func (d *HWDecoder) nextVideoFrameLocked(outputSoftware bool) (Frame, error) {
 			return Frame{ptr: d.frame, owned: false}, nil
 		}
 		if d.decodeState.drained {
-			return Frame{}, nil
+			return Frame{}, io.EOF
 		}
 		if d.demuxEOF {
 			d.decodeState.requestFlush()

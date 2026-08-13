@@ -158,11 +158,8 @@ func getMetadataFromDict(dict avutil.Dictionary) Metadata {
 }
 
 // ErrEncoderClosed is returned when operating on a closed encoder.
-var ErrEncoderClosed = errEncoderClosed{}
-
-type errEncoderClosed struct{}
-
-func (e errEncoderClosed) Error() string { return "ffgo: encoder is closed" }
+// It matches ErrClosed with errors.Is.
+var ErrEncoderClosed = resourceClosedError("encoder")
 
 // ErrHeaderAlreadyWritten is returned when trying to modify settings after header was written.
 var ErrHeaderAlreadyWritten = errHeaderAlreadyWritten{}

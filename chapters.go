@@ -110,7 +110,7 @@ func (e *Encoder) SetChapters(chapters []Chapter) error {
 	defer e.mu.Unlock()
 
 	if e.closed {
-		return errors.New("ffgo: encoder is closed")
+		return ErrEncoderClosed
 	}
 	if e.headerWritten {
 		return errors.New("ffgo: SetChapters must be called before WriteHeader")

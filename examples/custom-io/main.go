@@ -90,7 +90,7 @@ func main() {
 			os.Exit(1)
 		}
 		if frame == nil {
-			break // EOF
+			continue
 		}
 
 		switch frame.MediaType() {
@@ -160,8 +160,15 @@ func demonstrateCustomCallbacks(inputFile string) {
 	frameCount := 0
 	for frameCount < 10 {
 		frame, err := decoder.ReadFrame()
-		if err != nil || frame == nil {
-			break
+		if err != nil {
+			if ffgo.IsEOF(err) {
+				break
+			}
+			fmt.Fprintf(os.Stderr, "Read error: %v\n", err)
+			return
+		}
+		if frame == nil {
+			continue
 		}
 		if frame.MediaType() == ffgo.MediaTypeVideo {
 			frameCount++

@@ -76,7 +76,7 @@ const (
 // directly applied by swscale, but can be set on frames for downstream consumers.
 func (s *Scaler) SetColorspace(src, dst ColorSpace) error {
 	if s == nil || s.ctx == nil {
-		return errors.New("ffgo: scaler is closed")
+		return closedError("scaler")
 	}
 	if !swscale.HasColorspaceDetails() {
 		return errors.New("ffgo: swscale colorspace details not available")

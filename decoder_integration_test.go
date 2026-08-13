@@ -3,6 +3,8 @@
 package ffgo
 
 import (
+	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,10 +27,10 @@ func TestDecoderReadFrameDrainsAllSelectedStreams(t *testing.T) {
 	for {
 		frame, err := decoder.ReadFrame()
 		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
 			t.Fatal(err)
-		}
-		if frame == nil {
-			break
 		}
 
 		mediaType := frame.MediaType()
@@ -119,12 +121,12 @@ func drainDecodedFrames(t *testing.T, next func() (Frame, error)) int {
 	t.Helper()
 	count := 0
 	for {
-		frame, err := next()
+		_, err := next()
 		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return count
+			}
 			t.Fatal(err)
-		}
-		if frame.IsNil() {
-			return count
 		}
 		count++
 	}

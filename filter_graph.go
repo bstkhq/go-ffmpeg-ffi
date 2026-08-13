@@ -54,7 +54,8 @@ type FilterGraphConfig struct {
 }
 
 // ErrFilterGraphClosed is returned when operating on a closed filter graph.
-var ErrFilterGraphClosed = errors.New("ffgo: filter graph is closed")
+// It matches ErrClosed with errors.Is.
+var ErrFilterGraphClosed = resourceClosedError("filter graph")
 
 // NewVideoFilterGraph creates a video filter graph with the specified parameters.
 // The filters string uses FFmpeg's filter graph syntax (e.g., "scale=320:240,transpose=1").

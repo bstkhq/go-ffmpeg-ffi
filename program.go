@@ -53,7 +53,7 @@ func (d *Decoder) Programs() []ProgramInfo {
 
 func (d *Decoder) selectProgramStreams(programID int, wantVideo, wantAudio bool) error {
 	if d == nil || d.formatCtx == nil {
-		return errors.New("ffgo: decoder is not initialized")
+		return ErrDecoderNotOpened
 	}
 	if programID <= 0 {
 		return errors.New("ffgo: invalid program id")

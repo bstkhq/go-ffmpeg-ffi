@@ -98,7 +98,7 @@ func (m *Muxer) AddVideoStream(config *VideoStreamConfig) (*MuxerStream, error) 
 	defer m.mu.Unlock()
 
 	if m.closed {
-		return nil, errors.New("ffgo: muxer is closed")
+		return nil, closedError("muxer")
 	}
 	if m.headerWritten {
 		return nil, errors.New("ffgo: cannot add streams after header is written")
@@ -215,7 +215,7 @@ func (m *Muxer) AddAudioStream(config *AudioStreamConfig) (*MuxerStream, error) 
 	defer m.mu.Unlock()
 
 	if m.closed {
-		return nil, errors.New("ffgo: muxer is closed")
+		return nil, closedError("muxer")
 	}
 	if m.headerWritten {
 		return nil, errors.New("ffgo: cannot add streams after header is written")
@@ -326,7 +326,7 @@ func (m *Muxer) AddCopyStream(config *CopyStreamConfig) (*MuxerStream, error) {
 	defer m.mu.Unlock()
 
 	if m.closed {
-		return nil, errors.New("ffgo: muxer is closed")
+		return nil, closedError("muxer")
 	}
 	if m.headerWritten {
 		return nil, errors.New("ffgo: cannot add streams after header is written")
@@ -370,7 +370,7 @@ func (m *Muxer) WriteHeader() error {
 	defer m.mu.Unlock()
 
 	if m.closed {
-		return errors.New("ffgo: muxer is closed")
+		return closedError("muxer")
 	}
 	if m.headerWritten {
 		return errors.New("ffgo: header already written")
@@ -389,7 +389,7 @@ func (m *Muxer) WriteHeaderWithOptions(opts map[string]string) error {
 	defer m.mu.Unlock()
 
 	if m.closed {
-		return errors.New("ffgo: muxer is closed")
+		return closedError("muxer")
 	}
 	if m.headerWritten {
 		return errors.New("ffgo: header already written")
@@ -446,7 +446,7 @@ func (m *Muxer) WriteFrame(ms *MuxerStream, frame Frame) error {
 	defer m.mu.Unlock()
 
 	if m.closed {
-		return errors.New("ffgo: muxer is closed")
+		return closedError("muxer")
 	}
 	if !m.headerWritten {
 		return errors.New("ffgo: header not written")
@@ -477,7 +477,7 @@ func (m *Muxer) WritePacket(ms *MuxerStream, packet *Packet) error {
 	defer m.mu.Unlock()
 
 	if m.closed {
-		return errors.New("ffgo: muxer is closed")
+		return closedError("muxer")
 	}
 	if !m.headerWritten {
 		return errors.New("ffgo: header not written")
@@ -514,7 +514,7 @@ func (m *Muxer) WriteTrailer() error {
 	defer m.mu.Unlock()
 
 	if m.closed {
-		return errors.New("ffgo: muxer is closed")
+		return closedError("muxer")
 	}
 	if !m.headerWritten {
 		return errors.New("ffgo: header not written")

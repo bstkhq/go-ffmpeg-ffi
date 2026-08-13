@@ -145,7 +145,7 @@ func NewScalerWithConfig(cfg ScalerConfig) (*Scaler, error) {
 // Returns the scaled frame (owned by Scaler, copy if you need to keep it).
 func (s *Scaler) Scale(src Frame) (Frame, error) {
 	if s.ctx == nil {
-		return Frame{}, errors.New("ffgo: scaler is closed")
+		return Frame{}, closedError("scaler")
 	}
 	if err := src.useError(); err != nil {
 		return Frame{}, err
@@ -171,7 +171,7 @@ func (s *Scaler) Scale(src Frame) (Frame, error) {
 // and must have buffers allocated.
 func (s *Scaler) ScaleTo(dst, src Frame) error {
 	if s.ctx == nil {
-		return errors.New("ffgo: scaler is closed")
+		return closedError("scaler")
 	}
 	if err := dst.useError(); err != nil {
 		return err
@@ -194,7 +194,7 @@ func (s *Scaler) ScaleTo(dst, src Frame) error {
 // colorspace detail APIs, it returns an error.
 func (s *Scaler) SetColorConversion(src, dst ColorSpec) error {
 	if s.ctx == nil {
-		return errors.New("ffgo: scaler is closed")
+		return closedError("scaler")
 	}
 	if !swscale.HasColorspaceDetails() {
 		return errors.New("ffgo: swscale colorspace details not available")

@@ -3,6 +3,8 @@
 package ffgo
 
 import (
+	"io"
+
 	"github.com/bstkhq/go-ffmpeg-ffi/avcodec"
 	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 )
@@ -22,13 +24,16 @@ func (d *Decoder) nextFrameLocked(mediaType MediaType) (Frame, error) {
 	for {
 		ready, err := state.next(ctx, d.frame)
 		if err != nil {
+			if avutil.IsEOF(err) {
+				return Frame{}, io.EOF
+			}
 			return Frame{}, err
 		}
 		if ready {
 			return Frame{ptr: d.frame, owned: false}, nil
 		}
 		if state.drained {
-			return Frame{}, nil
+			return Frame{}, io.EOF
 		}
 
 		if packet := d.popQueuedPacketLocked(mediaType); packet != nil {
@@ -67,6 +72,9 @@ func (d *Decoder) readFrameLocked() (*FrameWrapper, error) {
 			}
 			ready, err := state.next(ctx, d.frame)
 			if err != nil {
+				if avutil.IsEOF(err) {
+					return nil, io.EOF
+				}
 				return nil, err
 			}
 			if ready {
@@ -94,7 +102,7 @@ func (d *Decoder) readFrameLocked() (*FrameWrapper, error) {
 		if d.activateFlushLocked(MediaTypeVideo) || d.activateFlushLocked(MediaTypeAudio) {
 			continue
 		}
-		return nil, nil
+		return nil, io.EOF
 	}
 }
 
