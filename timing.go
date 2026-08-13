@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 import (
 	"errors"
@@ -26,10 +26,10 @@ type FrameTiming struct {
 // NewFrameTiming constructs a FrameTiming for the given time base and nominal frame rate.
 func NewFrameTiming(timebase Rational, fps float64) (*FrameTiming, error) {
 	if timebase.Den <= 0 || timebase.Num <= 0 {
-		return nil, errors.New("ffgo: invalid time base")
+		return nil, errors.New("ffmpeg: invalid time base")
 	}
 	if fps <= 0 {
-		return nil, errors.New("ffgo: fps must be positive")
+		return nil, errors.New("ffmpeg: fps must be positive")
 	}
 	step := int64(math.Round(float64(timebase.Den) / (float64(timebase.Num) * fps)))
 	if step <= 0 {
@@ -79,14 +79,14 @@ func ValidateTimestamps(frames []*Frame) error {
 			continue
 		}
 		if err := f.poolLeaseError(); err != nil {
-			return fmt.Errorf("ffgo: frame at index %d: %w", i, err)
+			return fmt.Errorf("ffmpeg: frame at index %d: %w", i, err)
 		}
 		pts := f.PTS()
 		if pts == avutil.AV_NOPTS_VALUE {
 			continue
 		}
 		if last != avutil.AV_NOPTS_VALUE && pts < last {
-			return fmt.Errorf("ffgo: non-monotonic PTS at index %d: prev=%d curr=%d", i, last, pts)
+			return fmt.Errorf("ffmpeg: non-monotonic PTS at index %d: prev=%d curr=%d", i, last, pts)
 		}
 		last = pts
 	}
@@ -115,7 +115,7 @@ func FrameRateDetect(decoder *Decoder) (float64, error) {
 
 	tb := decoder.VideoStream().TimeBase
 	if tb.Den <= 0 || tb.Num <= 0 {
-		return 0, errors.New("ffgo: invalid stream time base")
+		return 0, errors.New("ffmpeg: invalid stream time base")
 	}
 
 	if err := decoder.OpenVideoDecoder(); err != nil {
@@ -163,12 +163,12 @@ func estimateFrameRateFromPTS(next func() (int64, bool, error), tb Rational) (fl
 	}
 
 	if count < 2 || firstPTS == avutil.AV_NOPTS_VALUE || lastPTS == avutil.AV_NOPTS_VALUE || lastPTS <= firstPTS {
-		return 0, errors.New("ffgo: insufficient PTS data to estimate frame rate")
+		return 0, errors.New("ffmpeg: insufficient PTS data to estimate frame rate")
 	}
 
 	seconds := float64(lastPTS-firstPTS) * float64(tb.Num) / float64(tb.Den)
 	if seconds <= 0 {
-		return 0, errors.New("ffgo: invalid duration while estimating frame rate")
+		return 0, errors.New("ffmpeg: invalid duration while estimating frame rate")
 	}
 	return float64(count-1) / seconds, nil
 }

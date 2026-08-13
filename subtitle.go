@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 import (
 	"errors"
@@ -62,23 +62,23 @@ func NewSubtitleRenderer(subtitlePath string, width, height int) (*SubtitleRende
 // NewSubtitleRendererWithOptions creates a subtitle renderer with custom options.
 func NewSubtitleRendererWithOptions(subtitlePath string, width, height int, opts *SubtitleRendererOptions) (*SubtitleRenderer, error) {
 	if subtitlePath == "" {
-		return nil, errors.New("ffgo: subtitle path cannot be empty")
+		return nil, errors.New("ffmpeg: subtitle path cannot be empty")
 	}
 
 	// Check if file exists
 	if _, err := os.Stat(subtitlePath); err != nil {
-		return nil, fmt.Errorf("ffgo: subtitle file not found: %w", err)
+		return nil, fmt.Errorf("ffmpeg: subtitle file not found: %w", err)
 	}
 
 	if width <= 0 || height <= 0 {
-		return nil, errors.New("ffgo: width and height must be positive")
+		return nil, errors.New("ffmpeg: width and height must be positive")
 	}
 
 	spec := subtitleFilterSpec(subtitlePath, width, height, opts)
 
 	graph, err := newVideoFilterGraphWithSpecs([]filterSpec{spec}, width, height, PixelFormatYUV420P)
 	if err != nil {
-		return nil, fmt.Errorf("ffgo: failed to create subtitle filter: %w", err)
+		return nil, fmt.Errorf("ffmpeg: failed to create subtitle filter: %w", err)
 	}
 
 	return &SubtitleRenderer{
@@ -149,12 +149,12 @@ func (r *SubtitleRenderer) Render(frame Frame) (Frame, error) {
 		return Frame{}, err
 	}
 	if frame.IsNil() {
-		return Frame{}, errors.New("ffgo: input frame is nil")
+		return Frame{}, errors.New("ffmpeg: input frame is nil")
 	}
 
 	inFmt := frame.PixelFormat()
 	if inFmt == PixelFormatNone {
-		return Frame{}, errors.New("ffgo: input frame has unknown pixel format")
+		return Frame{}, errors.New("ffmpeg: input frame has unknown pixel format")
 	}
 
 	if r.graph == nil {
@@ -169,7 +169,7 @@ func (r *SubtitleRenderer) Render(frame Frame) (Frame, error) {
 
 		graph, err := newVideoFilterGraphWithSpecs([]filterSpec{r.filterSpec}, r.width, r.height, inFmt)
 		if err != nil {
-			return Frame{}, fmt.Errorf("ffgo: failed to recreate subtitle filter: %w", err)
+			return Frame{}, fmt.Errorf("ffmpeg: failed to recreate subtitle filter: %w", err)
 		}
 		r.graph = graph
 	}
@@ -180,7 +180,7 @@ func (r *SubtitleRenderer) Render(frame Frame) (Frame, error) {
 	}
 
 	if len(frames) == 0 {
-		return Frame{}, errors.New("ffgo: no output frame from subtitle filter")
+		return Frame{}, errors.New("ffmpeg: no output frame from subtitle filter")
 	}
 
 	// Return the first frame (subtitles filter outputs one frame per input).

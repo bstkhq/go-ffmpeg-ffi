@@ -6,7 +6,7 @@ tags: [index]
 
 # Common Pitfalls and Debugging Guide
 
-This section documents the most common mistakes when building streaming servers with ffgo and how to debug them.
+This section documents the most common mistakes when building streaming servers with ffmpeg and how to debug them.
 
 ## Major Gotchas
 
@@ -33,10 +33,10 @@ This section documents the most common mistakes when building streaming servers 
 
 ```go
 // Enable FFmpeg debug logging
-ffgo.SetLogLevel(ffgo.LogDebug)
+ffmpeg.SetLogLevel(ffmpeg.LogDebug)
 
 // Or use callback for custom handling
-ffgo.SetLogCallback(func(level, msg string) {
+ffmpeg.SetLogCallback(func(level, msg string) {
     if level == "error" || level == "fatal" {
         log.Printf("[FFmpeg %s] %s", level, msg)
     }

@@ -18,13 +18,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := ffgo.Init(); err != nil {
+	if err := ffmpeg.Init(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize FFmpeg: %v\n", err)
 		os.Exit(1)
 	}
 
 	files := os.Args[1:]
-	dec, err := ffgo.NewConcatDecoder(files, nil)
+	dec, err := ffmpeg.NewConcatDecoder(files, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to open concat decoder: %v\n", err)
 		os.Exit(1)
@@ -52,7 +52,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	tb := ffgo.NewRational(1, 1)
+	tb := ffmpeg.NewRational(1, 1)
 	if dec.VideoStream() != nil {
 		tb = dec.VideoStream().TimeBase
 	}
@@ -61,7 +61,7 @@ func main() {
 	for i := 0; i < maxFrames; i++ {
 		f, err := dec.DecodeVideo()
 		if err != nil {
-			if ffgo.IsEOF(err) {
+			if ffmpeg.IsEOF(err) {
 				break
 			}
 			fmt.Fprintf(os.Stderr, "DecodeVideo failed: %v\n", err)
@@ -70,7 +70,7 @@ func main() {
 		if f.IsNil() {
 			continue
 		}
-		info := ffgo.GetFrameInfo(f)
+		info := ffmpeg.GetFrameInfo(f)
 		secs := float64(info.PTS) * float64(tb.Num) / float64(tb.Den)
 		fmt.Printf("Frame %3d: pts=%d (%0.3fs)\n", i+1, info.PTS, secs)
 	}

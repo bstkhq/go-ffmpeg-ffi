@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 import (
 	"errors"
@@ -10,8 +10,8 @@ import (
 )
 
 var (
-	errEncoderProtocolStalled = errors.New("ffgo: encoder send/receive protocol stalled")
-	errEncoderFlushed         = errors.New("ffgo: encoder already flushed")
+	errEncoderProtocolStalled = errors.New("ffmpeg: encoder send/receive protocol stalled")
+	errEncoderFlushed         = errors.New("ffmpeg: encoder already flushed")
 )
 
 type encoderCodecState struct {

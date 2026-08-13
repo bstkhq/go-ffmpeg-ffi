@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 import (
 	"errors"
@@ -9,7 +9,7 @@ import (
 	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 )
 
-var errDecoderProtocolStalled = errors.New("ffgo: decoder send/receive protocol stalled")
+var errDecoderProtocolStalled = errors.New("ffmpeg: decoder send/receive protocol stalled")
 
 // decoderCodecState owns packets until FFmpeg accepts them and tracks the
 // one-way transition from regular input to draining at end of stream.
@@ -30,7 +30,7 @@ func (s *decoderCodecState) enqueueOwned(packet avcodec.Packet) error {
 		return nil
 	}
 	if s.flushRequested || s.flushSent || s.drained {
-		return errors.New("ffgo: cannot submit a packet after decoder flush")
+		return errors.New("ffmpeg: cannot submit a packet after decoder flush")
 	}
 	s.pending = append(s.pending, packet)
 	return nil

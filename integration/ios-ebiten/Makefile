@@ -1,6 +1,6 @@
 IOS_VERSION ?= 13.0
 IOS_TARGET ?= ios
-OUTPUT ?= .build/FFGoProbe.xcframework
+OUTPUT ?= .build/FFmpegProbe.xcframework
 
 .PHONY: compile clean
 

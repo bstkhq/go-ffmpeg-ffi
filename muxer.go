@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 import (
 	"errors"
@@ -57,7 +57,7 @@ func NewMuxer(path string, format string) (*Muxer, error) {
 	}
 
 	if path == "" {
-		return nil, errors.New("ffgo: output path cannot be empty")
+		return nil, errors.New("ffmpeg: output path cannot be empty")
 	}
 
 	// If format not specified, guess from extension
@@ -65,7 +65,7 @@ func NewMuxer(path string, format string) (*Muxer, error) {
 		format = guessFormatFromPath(path)
 	}
 	if format == "" {
-		return nil, errors.New("ffgo: cannot determine output format")
+		return nil, errors.New("ffmpeg: cannot determine output format")
 	}
 
 	m := &Muxer{
@@ -102,10 +102,10 @@ func (m *Muxer) AddVideoStream(config *VideoStreamConfig) (*MuxerStream, error) 
 		return nil, closedError("muxer")
 	}
 	if m.headerWritten {
-		return nil, errors.New("ffgo: cannot add streams after header is written")
+		return nil, errors.New("ffmpeg: cannot add streams after header is written")
 	}
 	if config == nil {
-		return nil, errors.New("ffgo: video config is required")
+		return nil, errors.New("ffmpeg: video config is required")
 	}
 	configCopy := *config
 	config = &configCopy
@@ -130,13 +130,13 @@ func (m *Muxer) AddVideoStream(config *VideoStreamConfig) (*MuxerStream, error) 
 	// Find encoder
 	codec := avcodec.FindEncoder(config.Codec)
 	if codec == nil {
-		return nil, errors.New("ffgo: video encoder not found")
+		return nil, errors.New("ffmpeg: video encoder not found")
 	}
 
 	// Create codec context
 	codecCtx := avcodec.AllocContext3(codec)
 	if codecCtx == nil {
-		return nil, errors.New("ffgo: failed to allocate video codec context")
+		return nil, errors.New("ffmpeg: failed to allocate video codec context")
 	}
 
 	// Configure codec
@@ -163,7 +163,7 @@ func (m *Muxer) AddVideoStream(config *VideoStreamConfig) (*MuxerStream, error) 
 	packet := avcodec.PacketAlloc()
 	if packet == nil {
 		avcodec.FreeContext(&codecCtx)
-		return nil, errors.New("ffgo: failed to allocate video packet")
+		return nil, errors.New("ffmpeg: failed to allocate video packet")
 	}
 
 	// Register the stream only after encoder setup succeeds. AVStream entries
@@ -173,7 +173,7 @@ func (m *Muxer) AddVideoStream(config *VideoStreamConfig) (*MuxerStream, error) 
 	if stream == nil {
 		avcodec.PacketFree(&packet)
 		avcodec.FreeContext(&codecCtx)
-		return nil, errors.New("ffgo: failed to create video stream")
+		return nil, errors.New("ffmpeg: failed to create video stream")
 	}
 
 	// Copy parameters to stream
@@ -219,10 +219,10 @@ func (m *Muxer) AddAudioStream(config *AudioStreamConfig) (*MuxerStream, error) 
 		return nil, closedError("muxer")
 	}
 	if m.headerWritten {
-		return nil, errors.New("ffgo: cannot add streams after header is written")
+		return nil, errors.New("ffmpeg: cannot add streams after header is written")
 	}
 	if config == nil {
-		return nil, errors.New("ffgo: audio config is required")
+		return nil, errors.New("ffmpeg: audio config is required")
 	}
 	configCopy := *config
 	config = &configCopy
@@ -247,13 +247,13 @@ func (m *Muxer) AddAudioStream(config *AudioStreamConfig) (*MuxerStream, error) 
 	// Find encoder
 	codec := avcodec.FindEncoder(config.Codec)
 	if codec == nil {
-		return nil, errors.New("ffgo: audio encoder not found")
+		return nil, errors.New("ffmpeg: audio encoder not found")
 	}
 
 	// Create codec context
 	codecCtx := avcodec.AllocContext3(codec)
 	if codecCtx == nil {
-		return nil, errors.New("ffgo: failed to allocate audio codec context")
+		return nil, errors.New("ffmpeg: failed to allocate audio codec context")
 	}
 
 	// Configure codec
@@ -279,14 +279,14 @@ func (m *Muxer) AddAudioStream(config *AudioStreamConfig) (*MuxerStream, error) 
 	packet := avcodec.PacketAlloc()
 	if packet == nil {
 		avcodec.FreeContext(&codecCtx)
-		return nil, errors.New("ffgo: failed to allocate audio packet")
+		return nil, errors.New("ffmpeg: failed to allocate audio packet")
 	}
 
 	stream := avformat.NewStream(m.formatCtx, codec)
 	if stream == nil {
 		avcodec.PacketFree(&packet)
 		avcodec.FreeContext(&codecCtx)
-		return nil, errors.New("ffgo: failed to create audio stream")
+		return nil, errors.New("ffmpeg: failed to create audio stream")
 	}
 
 	// Copy parameters to stream
@@ -330,16 +330,16 @@ func (m *Muxer) AddCopyStream(config *CopyStreamConfig) (*MuxerStream, error) {
 		return nil, closedError("muxer")
 	}
 	if m.headerWritten {
-		return nil, errors.New("ffgo: cannot add streams after header is written")
+		return nil, errors.New("ffmpeg: cannot add streams after header is written")
 	}
 	if config == nil || config.CodecParameters == nil {
-		return nil, errors.New("ffgo: codec parameters are required for copy stream")
+		return nil, errors.New("ffmpeg: codec parameters are required for copy stream")
 	}
 
 	// Create stream
 	stream := avformat.NewStream(m.formatCtx, nil)
 	if stream == nil {
-		return nil, errors.New("ffgo: failed to create copy stream")
+		return nil, errors.New("ffmpeg: failed to create copy stream")
 	}
 
 	// Copy codec parameters
@@ -374,10 +374,10 @@ func (m *Muxer) WriteHeader() error {
 		return closedError("muxer")
 	}
 	if m.headerWritten {
-		return errors.New("ffgo: header already written")
+		return errors.New("ffmpeg: header already written")
 	}
 	if len(m.streams) == 0 {
-		return errors.New("ffgo: no streams added")
+		return errors.New("ffmpeg: no streams added")
 	}
 
 	return m.writeHeaderWithOptionsLocked(m.headerOptions)
@@ -393,10 +393,10 @@ func (m *Muxer) WriteHeaderWithOptions(opts map[string]string) error {
 		return closedError("muxer")
 	}
 	if m.headerWritten {
-		return errors.New("ffgo: header already written")
+		return errors.New("ffmpeg: header already written")
 	}
 	if len(m.streams) == 0 {
-		return errors.New("ffgo: no streams added")
+		return errors.New("ffmpeg: no streams added")
 	}
 
 	merged := cloneStringMap(m.headerOptions)
@@ -461,19 +461,19 @@ func (m *Muxer) WriteFrame(ms *MuxerStream, frame Frame) error {
 		return closedError("muxer")
 	}
 	if !m.headerWritten {
-		return errors.New("ffgo: header not written")
+		return errors.New("ffmpeg: header not written")
 	}
 	if m.trailerWritten {
-		return errors.New("ffgo: trailer already written")
+		return errors.New("ffmpeg: trailer already written")
 	}
 	if ms == nil || ms.muxer != m {
-		return errors.New("ffgo: invalid stream")
+		return errors.New("ffmpeg: invalid stream")
 	}
 	if ms.copyMode {
-		return errors.New("ffgo: cannot write frames to copy-mode stream, use WritePacket")
+		return errors.New("ffmpeg: cannot write frames to copy-mode stream, use WritePacket")
 	}
 	if ms.encoder == nil {
-		return errors.New("ffgo: stream has no encoder")
+		return errors.New("ffmpeg: stream has no encoder")
 	}
 	if err := frame.poolLeaseError(); err != nil {
 		return err
@@ -492,16 +492,16 @@ func (m *Muxer) WritePacket(ms *MuxerStream, packet *Packet) error {
 		return closedError("muxer")
 	}
 	if !m.headerWritten {
-		return errors.New("ffgo: header not written")
+		return errors.New("ffmpeg: header not written")
 	}
 	if m.trailerWritten {
-		return errors.New("ffgo: trailer already written")
+		return errors.New("ffmpeg: trailer already written")
 	}
 	if ms == nil || ms.muxer != m {
-		return errors.New("ffgo: invalid stream")
+		return errors.New("ffmpeg: invalid stream")
 	}
 	if packet == nil || packet.ptr == nil {
-		return errors.New("ffgo: packet cannot be nil")
+		return errors.New("ffmpeg: packet cannot be nil")
 	}
 
 	// Set stream index
@@ -529,10 +529,10 @@ func (m *Muxer) WriteTrailer() error {
 		return closedError("muxer")
 	}
 	if !m.headerWritten {
-		return errors.New("ffgo: header not written")
+		return errors.New("ffmpeg: header not written")
 	}
 	if m.trailerWritten {
-		return errors.New("ffgo: trailer already written")
+		return errors.New("ffmpeg: trailer already written")
 	}
 
 	return m.writeTrailerLocked()
@@ -543,7 +543,7 @@ func (m *Muxer) writeTrailerLocked() error {
 	for _, ms := range m.streams {
 		if ms.encoder != nil && ms.codecCtx != nil {
 			if err := m.flushEncoder(ms); err != nil {
-				trailerErrors = append(trailerErrors, fmt.Errorf("ffgo: flush stream %d: %w", ms.index, err))
+				trailerErrors = append(trailerErrors, fmt.Errorf("ffmpeg: flush stream %d: %w", ms.index, err))
 			}
 		}
 	}

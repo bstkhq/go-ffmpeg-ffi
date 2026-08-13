@@ -27,7 +27,7 @@ Input Buffer
     ↓
 Protocol Demuxer
     ↓
-ffgo.Decoder
+ffmpeg.Decoder
     ↓
 Frame Stream → Transcoding
 ```
@@ -70,5 +70,5 @@ stream.Stop()      // Graceful shutdown
 
 ## Related Topics
 
-- [Decoder lifecycle](../media/decoder-lifecycle.md) - Input parsing with ffgo
+- [Decoder lifecycle](../media/decoder-lifecycle.md) - Input parsing with ffmpeg
 - [Adaptive bitrate](../transcoding/adaptive-bitrate.md) - Transcoding after ingest

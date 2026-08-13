@@ -1,5 +1,5 @@
 /*
- * ffshim.c - FFmpeg shim library for ffgo
+ * ffshim.c - FFmpeg shim library for ffmpeg
  *
  * Provides wrappers for FFmpeg functionality that purego cannot handle directly.
  */

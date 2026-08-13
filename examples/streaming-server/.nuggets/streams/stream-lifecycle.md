@@ -43,8 +43,8 @@ type Stream struct {
     mu       sync.RWMutex
 
     config   StreamConfig
-    decoder  *ffgo.Decoder
-    encoders map[string]*ffgo.Encoder
+    decoder  *ffmpeg.Decoder
+    encoders map[string]*ffmpeg.Encoder
     variants map[string]*VariantEncoder
 
     // Timing
@@ -116,8 +116,8 @@ func (s *Stream) initialize() {
     }()
 
     // 1. Open input decoder
-    decoder, err := ffgo.NewDecoder(s.config.SourceURL,
-        ffgo.WithHWDevice(s.config.HWDevice),
+    decoder, err := ffmpeg.NewDecoder(s.config.SourceURL,
+        ffmpeg.WithHWDevice(s.config.HWDevice),
     )
     if err != nil {
         s.transitionToError(fmt.Errorf("decoder init failed: %w", err))
@@ -201,7 +201,7 @@ func (s *Stream) process() {
         default:
             frame, err := s.decoder.ReadFrame()
             if err != nil {
-                if ffgo.IsEOF(err) {
+                if ffmpeg.IsEOF(err) {
                     s.drain()
                     return
                 }

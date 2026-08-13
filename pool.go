@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 import (
 	"errors"
@@ -44,7 +44,7 @@ func (p *FramePool) Get() (Frame, error) {
 		return Frame{}, closedError("frame pool")
 	}
 	if p.maxInUse > 0 && p.inUse >= p.maxInUse {
-		return Frame{}, errors.New("ffgo: frame pool exhausted")
+		return Frame{}, errors.New("ffmpeg: frame pool exhausted")
 	}
 
 	var fr avutil.Frame
@@ -77,10 +77,10 @@ func (p *FramePool) Put(f *Frame) error {
 		return nil
 	}
 	if !f.owned {
-		return errors.New("ffgo: cannot put borrowed frame into pool")
+		return errors.New("ffmpeg: cannot put borrowed frame into pool")
 	}
 	if f.poolLease == nil || f.poolLease.pool != p {
-		return errors.New("ffgo: frame was not leased by this pool")
+		return errors.New("ffmpeg: frame was not leased by this pool")
 	}
 	if !f.poolLease.returned.CompareAndSwap(false, true) {
 		return ErrFrameLeaseReturned
@@ -89,7 +89,7 @@ func (p *FramePool) Put(f *Frame) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.inUse <= 0 {
-		return errors.New("ffgo: frame pool lease accounting underflow")
+		return errors.New("ffmpeg: frame pool lease accounting underflow")
 	}
 	p.inUse--
 
@@ -144,7 +144,7 @@ var (
 	wrapPinnedCount atomic.Int64
 )
 
-var errWrappedBufferMemoryLimit = errors.New("ffgo: WrapBuffer exceeds configured memory limit")
+var errWrappedBufferMemoryLimit = errors.New("ffmpeg: WrapBuffer exceeds configured memory limit")
 
 // SetWrappedBufferMemoryLimit sets a best-effort limit for total bytes pinned by Frame.WrapBuffer.
 // A limit <= 0 disables enforcement.
@@ -223,19 +223,19 @@ type wrappedBufferHold struct {
 // - PixelFormatNV12
 func (f *Frame) WrapBuffer(data []byte, width, height int, format PixelFormat) error {
 	if f == nil {
-		return errors.New("ffgo: frame is nil")
+		return errors.New("ffmpeg: frame is nil")
 	}
 	if err := f.poolLeaseError(); err != nil {
 		return err
 	}
 	if f.ptr != nil && !f.owned {
-		return errors.New("ffgo: cannot WrapBuffer into a borrowed frame")
+		return errors.New("ffmpeg: cannot WrapBuffer into a borrowed frame")
 	}
 	if width <= 0 || height <= 0 {
-		return errors.New("ffgo: invalid dimensions")
+		return errors.New("ffmpeg: invalid dimensions")
 	}
 	if len(data) == 0 {
-		return errors.New("ffgo: data cannot be empty")
+		return errors.New("ffmpeg: data cannot be empty")
 	}
 
 	if f.ptr == nil {
@@ -251,7 +251,7 @@ func (f *Frame) WrapBuffer(data []byte, width, height int, format PixelFormat) e
 		return err
 	}
 	if len(data) < need {
-		return errors.New("ffgo: buffer is too small for frame layout")
+		return errors.New("ffmpeg: buffer is too small for frame layout")
 	}
 
 	initWrapCallback()
@@ -278,7 +278,7 @@ func (f *Frame) WrapBuffer(data []byte, width, height int, format PixelFormat) e
 		}
 		wrapPinnedBytes.Add(-int64(need))
 		wrapPinnedCount.Add(-1)
-		return errors.New("ffgo: av_buffer_create failed")
+		return errors.New("ffmpeg: av_buffer_create failed")
 	}
 
 	// Fill frame fields.
@@ -302,7 +302,7 @@ func (f *Frame) WrapBuffer(data []byte, width, height int, format PixelFormat) e
 
 func planVideoLayout(w, h int, fmt PixelFormat) (planeOffsets []int, linesizes []int, total int, err error) {
 	if w <= 0 || h <= 0 {
-		return nil, nil, 0, errors.New("ffgo: invalid frame dimensions")
+		return nil, nil, 0, errors.New("ffmpeg: invalid frame dimensions")
 	}
 
 	type plane struct{ linesize, rows int }
@@ -311,13 +311,13 @@ func planVideoLayout(w, h int, fmt PixelFormat) (planeOffsets []int, linesizes [
 	case PixelFormatRGB24:
 		ls, ok := checkedLayoutMul(w, 3)
 		if !ok {
-			return nil, nil, 0, errors.New("ffgo: frame layout size overflows int")
+			return nil, nil, 0, errors.New("ffmpeg: frame layout size overflows int")
 		}
 		planes = []plane{{ls, h}}
 	case PixelFormatRGBA, PixelFormatBGRA:
 		ls, ok := checkedLayoutMul(w, 4)
 		if !ok {
-			return nil, nil, 0, errors.New("ffgo: frame layout size overflows int")
+			return nil, nil, 0, errors.New("ffmpeg: frame layout size overflows int")
 		}
 		planes = []plane{{ls, h}}
 	case PixelFormatNV12:
@@ -325,7 +325,7 @@ func planVideoLayout(w, h int, fmt PixelFormat) (planeOffsets []int, linesizes [
 		chromaHeight := h/2 + h%2
 		uvLinesize, ok := checkedLayoutMul(chromaWidth, 2)
 		if !ok {
-			return nil, nil, 0, errors.New("ffgo: frame layout size overflows int")
+			return nil, nil, 0, errors.New("ffmpeg: frame layout size overflows int")
 		}
 		planes = []plane{{w, h}, {uvLinesize, chromaHeight}}
 	case PixelFormatYUV420P:
@@ -333,19 +333,19 @@ func planVideoLayout(w, h int, fmt PixelFormat) (planeOffsets []int, linesizes [
 		chromaHeight := h/2 + h%2
 		planes = []plane{{w, h}, {chromaWidth, chromaHeight}, {chromaWidth, chromaHeight}}
 	default:
-		return nil, nil, 0, errors.New("ffgo: unsupported pixel format for WrapBuffer")
+		return nil, nil, 0, errors.New("ffmpeg: unsupported pixel format for WrapBuffer")
 	}
 
 	for _, p := range planes {
 		planeSize, ok := checkedLayoutMul(p.linesize, p.rows)
 		if !ok {
-			return nil, nil, 0, errors.New("ffgo: frame layout size overflows int")
+			return nil, nil, 0, errors.New("ffmpeg: frame layout size overflows int")
 		}
 		planeOffsets = append(planeOffsets, total)
 		linesizes = append(linesizes, p.linesize)
 		total, ok = checkedLayoutAdd(total, planeSize)
 		if !ok {
-			return nil, nil, 0, errors.New("ffgo: frame layout size overflows int")
+			return nil, nil, 0, errors.New("ffmpeg: frame layout size overflows int")
 		}
 	}
 	return planeOffsets, linesizes, total, nil

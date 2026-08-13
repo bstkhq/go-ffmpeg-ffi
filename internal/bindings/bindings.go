@@ -21,10 +21,10 @@ import (
 )
 
 // ErrNotLoaded is returned when FFmpeg functions are called before Load().
-var ErrNotLoaded = errors.New("ffgo: FFmpeg libraries not loaded; call ffgo.Init() first")
+var ErrNotLoaded = errors.New("ffmpeg: FFmpeg libraries not loaded; call ffmpeg.Init() first")
 
 // ErrLibraryNotFound is returned when a required FFmpeg library cannot be found.
-var ErrLibraryNotFound = errors.New("ffgo: FFmpeg library not found")
+var ErrLibraryNotFound = errors.New("ffmpeg: FFmpeg library not found")
 
 type loadedLibrary struct {
 	handle uintptr
@@ -441,7 +441,7 @@ func ValidateLibraryVersion(name string, version uint32) error {
 func validateLibraryVersion(layout abi.Layout, name string, version uint32) error {
 	expected, ok := layout.LibraryMajor(name)
 	if !ok {
-		return fmt.Errorf("ffgo: unknown FFmpeg library %q", name)
+		return fmt.Errorf("ffmpeg: unknown FFmpeg library %q", name)
 	}
 	actual := int(version >> 16)
 	if actual != expected {
@@ -496,7 +496,7 @@ func LoadOptionalLibrary(name string) (uintptr, error) {
 	}
 	expected, ok := currentABI.LibraryMajor(name)
 	if !ok {
-		return 0, fmt.Errorf("ffgo: unknown FFmpeg library %q", name)
+		return 0, fmt.Errorf("ffmpeg: unknown FFmpeg library %q", name)
 	}
 	library, err := openLibrary(systemLoader, name, []int{expected}, true)
 	if err != nil {

@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 import (
 	"errors"
@@ -30,11 +30,11 @@ func (d *Decoder) SeekPrecise(ts time.Duration) error {
 	// Get video stream time base for conversion
 	stream := avformat.GetStream(d.formatCtx, d.videoStreamIdx)
 	if stream == nil {
-		return errors.New("ffgo: failed to get video stream")
+		return errors.New("ffmpeg: failed to get video stream")
 	}
 	tbNum, tbDen := avformat.GetStreamTimeBase(stream)
 	if tbNum <= 0 || tbDen <= 0 {
-		return errors.New("ffgo: invalid video stream time base")
+		return errors.New("ffmpeg: invalid video stream time base")
 	}
 
 	// Convert target to stream time base
@@ -61,13 +61,13 @@ func (d *Decoder) SeekPrecise(ts time.Duration) error {
 		frame, err := d.nextFrameLocked(MediaTypeVideo)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				return errors.New("ffgo: reached end of video before precise seek target")
+				return errors.New("ffmpeg: reached end of video before precise seek target")
 			}
 			return err
 		}
 		pts := frame.PTS()
 		if pts == avutil.AV_NOPTS_VALUE {
-			return errors.New("ffgo: precise seek requires frame timestamps")
+			return errors.New("ffmpeg: precise seek requires frame timestamps")
 		}
 		if pts >= targetPTS {
 			return d.prefetchCurrentFrameLocked(MediaTypeVideo)
@@ -93,12 +93,12 @@ func (d *Decoder) SeekToFrame(frameNum int64) error {
 	// Get frame rate to calculate timestamp
 	stream := avformat.GetStream(d.formatCtx, d.videoStreamIdx)
 	if stream == nil {
-		return errors.New("ffgo: failed to get video stream")
+		return errors.New("ffmpeg: failed to get video stream")
 	}
 
 	fpsNum, fpsDen := avformat.GetStreamAvgFrameRate(stream)
 	if fpsNum == 0 {
-		return errors.New("ffgo: cannot determine frame rate")
+		return errors.New("ffmpeg: cannot determine frame rate")
 	}
 
 	// Calculate timestamp in microseconds
@@ -155,7 +155,7 @@ func (d *Decoder) ExtractThumbnailAtFrame(frameNum int64) (Frame, error) {
 // The returned frames must be freed by the caller when done.
 func (d *Decoder) ExtractThumbnails(count int) ([]Frame, error) {
 	if count <= 0 {
-		return nil, errors.New("ffgo: count must be positive")
+		return nil, errors.New("ffmpeg: count must be positive")
 	}
 
 	// Ensure video decoder is open
@@ -165,7 +165,7 @@ func (d *Decoder) ExtractThumbnails(count int) ([]Frame, error) {
 
 	duration := d.Duration()
 	if duration <= 0 {
-		return nil, errors.New("ffgo: cannot determine duration")
+		return nil, errors.New("ffmpeg: cannot determine duration")
 	}
 
 	frames := make([]Frame, 0, count)

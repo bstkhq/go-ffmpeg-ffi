@@ -25,12 +25,12 @@ func main() {
 	in := os.Args[1]
 	outURL := os.Args[2]
 
-	if err := ffgo.Init(); err != nil {
+	if err := ffmpeg.Init(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize FFmpeg: %v\n", err)
 		os.Exit(1)
 	}
 
-	dec, err := ffgo.NewDecoder(in, nil)
+	dec, err := ffmpeg.NewDecoder(in, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to open input: %v\n", err)
 		os.Exit(1)
@@ -47,16 +47,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	enc, err := ffgo.NewStreamingEncoder(outURL, &ffgo.EncoderOptions{
-		Video: &ffgo.VideoEncoderConfig{
-			Codec:       ffgo.CodecIDH264,
+	enc, err := ffmpeg.NewStreamingEncoder(outURL, &ffmpeg.EncoderOptions{
+		Video: &ffmpeg.VideoEncoderConfig{
+			Codec:       ffmpeg.CodecIDH264,
 			Width:       v.Width,
 			Height:      v.Height,
 			FrameRate:   v.FrameRate,
 			PixelFormat: v.PixelFmt,
-			RateControl: ffgo.RateControlCRF,
+			RateControl: ffmpeg.RateControlCRF,
 			CRF:         23,
-			Preset:      ffgo.PresetVeryfast,
+			Preset:      ffmpeg.PresetVeryfast,
 		},
 		IOOptions: map[string]string{
 			"timeout":    "10000000",
@@ -75,7 +75,7 @@ func main() {
 	for i := 0; i < maxFrames; i++ {
 		f, err := dec.DecodeVideo()
 		if err != nil {
-			if ffgo.IsEOF(err) {
+			if ffmpeg.IsEOF(err) {
 				break
 			}
 			fmt.Fprintf(os.Stderr, "DecodeVideo failed: %v\n", err)

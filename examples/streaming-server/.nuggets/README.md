@@ -1,6 +1,6 @@
 # Streaming Server Knowledge Vault
 
-A comprehensive technical reference documenting the internals of a production-grade streaming server built on the ffgo library.
+A comprehensive technical reference documenting the internals of a production-grade streaming server built on the ffmpeg library.
 
 ## Quick Facts
 
@@ -13,20 +13,20 @@ A comprehensive technical reference documenting the internals of a production-gr
 
 ## What's Inside
 
-This vault documents a **fictional but plausible** production streaming server like SRS, Nginx-RTMP, or Wowza, implemented entirely using ffgo for media processing.
+This vault documents a **fictional but plausible** production streaming server like SRS, Nginx-RTMP, or Wowza, implemented entirely using ffmpeg for media processing.
 
 Written from a **contributor perspective**, emphasizing:
 - Internal architecture and design decisions
 - Implementation patterns with real Go code
 - Performance optimization techniques
 - Debugging and troubleshooting strategies
-- Integration with ffgo library
+- Integration with ffmpeg library
 
 ## Quick Navigation
 
 ### Start Here
 - [Master Index](./index.md) - Architecture overview and learning paths
-- [ffgo Integration Pattern](./patterns/ffgo-integration-pattern.md) - How ffgo powers the server
+- [ffmpeg Integration Pattern](./patterns/ffmpeg-integration-pattern.md) - How ffmpeg powers the server
 
 ### Core Media Processing
 - [Decoder Lifecycle](./media/decoder-lifecycle.md) - Input parsing and frame extraction
@@ -62,7 +62,7 @@ Written from a **contributor perspective**, emphasizing:
 ## Learning Paths
 
 ### If You're Building an Encoder
-1. [patterns/ffgo-integration-pattern.md](./patterns/ffgo-integration-pattern.md)
+1. [patterns/ffmpeg-integration-pattern.md](./patterns/ffmpeg-integration-pattern.md)
 2. [media/decoder-lifecycle.md](./media/decoder-lifecycle.md)
 3. [media/encoder-lifecycle.md](./media/encoder-lifecycle.md)
 4. [performance/encoding-performance.md](./performance/encoding-performance.md)
@@ -124,20 +124,20 @@ All nuggets include realistic Go code examples that can be adapted for productio
 
 ```go
 // Decoding
-decoder, _ := ffgo.NewDecoder("rtmp://source.com/live")
+decoder, _ := ffmpeg.NewDecoder("rtmp://source.com/live")
 frame, _ := decoder.ReadFrame()
 
 // Encoding
-encoder, _ := ffgo.NewEncoder("output.mp4")
-encoder.AddVideoStream(ffgo.VideoEncoderConfig{
-    Codec:   ffgo.CodecIDH264,
+encoder, _ := ffmpeg.NewEncoder("output.mp4")
+encoder.AddVideoStream(ffmpeg.VideoEncoderConfig{
+    Codec:   ffmpeg.CodecIDH264,
     BitRate: 5_000_000,
     Preset:  "fast",
 })
 encoder.EncodeFrame(frame)
 
 // Stream copy (fast remuxing)
-remuxer, _ := ffgo.NewRemuxer("input.mp4", "output.mkv")
+remuxer, _ := ffmpeg.NewRemuxer("input.mp4", "output.mkv")
 remuxer.Remux()
 ```
 
@@ -157,7 +157,7 @@ Typical performance on modern hardware (8 cores, 1 GPU):
 | Symptom | Cause | Solution |
 |---------|-------|----------|
 | Encoder returns EAGAIN | Input buffer full | Call ReceivePacket() loop |
-| Memory grows over time | Frame leak | Add `ffgo.FrameFree(&frame)` calls |
+| Memory grows over time | Frame leak | Add `ffmpeg.FrameFree(&frame)` calls |
 | Frames not processed | CPU bottleneck | Enable GPU, reduce preset |
 | A/V sync issues | Timestamp errors | Rescale PTS to output time base |
 | Encoder stalls | Output backpressure | Add async buffering |
@@ -165,7 +165,7 @@ Typical performance on modern hardware (8 cores, 1 GPU):
 ## Related Resources
 
 - [FFmpeg Documentation](https://ffmpeg.org/documentation.html)
-- [ffgo GitHub Repository](https://github.com/obinnaokechukwu/ffgo)
+- [ffmpeg GitHub Repository](https://github.com/bstkhq/go-ffmpeg-ffi)
 - [SRS (Simple Real-time Server)](https://github.com/ossrs/srs)
 - [Nginx-RTMP Module](https://github.com/arut/nginx-rtmp-module)
 - [HLS Specification](https://tools.ietf.org/html/draft-pantos-http-live-streaming)
@@ -174,7 +174,7 @@ Typical performance on modern hardware (8 cores, 1 GPU):
 ## Conventions
 
 - **Naming**: Functions with context: `func (x *X) Op(ctx context.Context) error`
-- **Errors**: Fatal errors returned directly, EAGAIN checked with `ffgo.IsAgain()`
+- **Errors**: Fatal errors returned directly, EAGAIN checked with `ffmpeg.IsAgain()`
 - **Cleanup**: Always defer resource cleanup with `defer close()`
 - **Frames**: Caller responsible for freeing returned frames
 - **Threads**: Decoder/Encoder NOT thread-safe, use per-stream goroutines
@@ -191,7 +191,7 @@ When adding to this vault:
 
 ## License
 
-This documentation is part of the ffgo project and follows the same license.
+This documentation is part of the ffmpeg project and follows the same license.
 
 ---
 

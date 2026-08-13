@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 import (
 	"fmt"
@@ -28,7 +28,7 @@ type ImageSequenceConfig struct {
 // The sequence is decoded as a video stream with the specified frame rate.
 func NewImageSequenceDecoder(config ImageSequenceConfig) (*Decoder, error) {
 	if config.Pattern == "" {
-		return nil, fmt.Errorf("ffgo: image sequence pattern cannot be empty")
+		return nil, fmt.Errorf("ffmpeg: image sequence pattern cannot be empty")
 	}
 
 	opts := map[string]string{
@@ -55,7 +55,7 @@ func NewImageSequenceDecoder(config ImageSequenceConfig) (*Decoder, error) {
 // The output format is determined by the file extension in the pattern.
 func NewImageSequenceEncoder(config ImageSequenceConfig, width, height int, pixFmt PixelFormat) (*Encoder, error) {
 	if config.Pattern == "" {
-		return nil, fmt.Errorf("ffgo: image sequence pattern cannot be empty")
+		return nil, fmt.Errorf("ffmpeg: image sequence pattern cannot be empty")
 	}
 
 	// Determine codec from pattern extension

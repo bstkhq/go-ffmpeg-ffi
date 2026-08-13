@@ -1,4 +1,4 @@
-# ffshim - FFmpeg Shim Library for ffgo
+# ffshim - FFmpeg Shim Library for ffmpeg
 
 This directory contains a small C shim library that wraps FFmpeg functionality that purego cannot handle directly:
 
@@ -9,11 +9,11 @@ This directory contains a small C shim library that wraps FFmpeg functionality t
 
 ## Important: The Shim is Optional
 
-**Core ffgo functionality (decode, encode, transcode, scale, filter) works WITHOUT the shim.**
+**Core ffmpeg functionality (decode, encode, transcode, scale, filter) works WITHOUT the shim.**
 
 The shim is only required for:
-- Custom log callbacks (`ffgo.SetLogCallback`)
-- Log level control (`ffgo.SetLogLevel`)
+- Custom log callbacks (`ffmpeg.SetLogCallback`)
+- Log level control (`ffmpeg.SetLogLevel`)
 - Chapter writing
 - AVFrame color offset discovery
 - Device enumeration (with libavdevice)
@@ -81,9 +81,9 @@ After building, the shim library needs to be discoverable. Options:
    sudo make install
    ```
 
-2. **Set FFGO_SHIM_DIR** (recommended for development):
+2. **Set FFMPEG_SHIM_DIR** (recommended for development):
    ```bash
-   export FFGO_SHIM_DIR=/path/to/ffgo/shim
+   export FFMPEG_SHIM_DIR=/path/to/ffmpeg/shim
    ```
 
 3. **Copy to application directory**:
@@ -106,14 +106,14 @@ prebuilt/
 ```
 
 Pre-built shims may be included in releases or you can build them yourself.
-Set `FFGO_SHIM_DIR` to the matching platform directory, install the shim, or
+Set `FFMPEG_SHIM_DIR` to the matching platform directory, install the shim, or
 copy it beside the application executable.
 
 ## Search Paths
 
 The shim library is searched in the following order:
 
-1. `FFGO_SHIM_DIR` environment variable
+1. `FFMPEG_SHIM_DIR` environment variable
 2. Standard library paths (`/usr/local/lib`, `/usr/lib`, etc.)
 3. Executable directory
 
@@ -128,21 +128,21 @@ deliberately excluded.
 import "github.com/bstkhq/go-ffmpeg-ffi"
 
 func main() {
-    // Initialize ffgo (loads FFmpeg and shim if available)
-    ffgo.Init()
+    // Initialize ffmpeg (loads FFmpeg and shim if available)
+    ffmpeg.Init()
 
     // Check shim status
-    fmt.Println("Shim status:", ffgo.ShimStatus())
+    fmt.Println("Shim status:", ffmpeg.ShimStatus())
 
     // Check if logging is available
-    if ffgo.IsLoggingAvailable() {
+    if ffmpeg.IsLoggingAvailable() {
         fmt.Println("Logging is available")
     } else {
-        fmt.Println("Logging not available:", ffgo.ShimBuildInstructions())
+        fmt.Println("Logging not available:", ffmpeg.ShimBuildInstructions())
     }
 
     // Full diagnostics
-    fmt.Println(ffgo.Diagnose())
+    fmt.Println(ffmpeg.Diagnose())
 }
 ```
 
@@ -150,7 +150,7 @@ func main() {
 
 **"shim library not found"**
 - Build the shim: `cd shim && ./build.sh`
-- Set `FFGO_SHIM_DIR` to the directory containing the shim
+- Set `FFMPEG_SHIM_DIR` to the directory containing the shim
 - Or install it: `cd shim && ./build.sh install`
 
 **"FFmpeg development libraries not found"**

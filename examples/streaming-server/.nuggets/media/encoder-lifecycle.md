@@ -2,7 +2,7 @@
 title: Encoder Lifecycle and Streaming Output
 keywords: [encoder, output, muxing, packets, transcoding]
 tags: [core-concept, internal, advanced]
-related: [../patterns/ffgo-integration-pattern.md, ./decoder-lifecycle.md, ./stream-copy-optimization.md]
+related: [../patterns/ffmpeg-integration-pattern.md, ./decoder-lifecycle.md, ./stream-copy-optimization.md]
 source: [server/media/encoder.go, server/media/output_writer.go]
 ---
 
@@ -69,11 +69,11 @@ type EncoderConfig struct {
 }
 
 type VideoEncoderConfig struct {
-    Codec        ffgo.CodecID
+    Codec        ffmpeg.CodecID
     Width        int
     Height       int
-    PixelFormat  ffgo.PixelFormat
-    FrameRate    ffgo.Rational
+    PixelFormat  ffmpeg.PixelFormat
+    FrameRate    ffmpeg.Rational
     BitRate      int64
     CRF          int     // Quality (H.264/H.265)
     Preset       string  // "fast", "medium", "slow"
@@ -82,10 +82,10 @@ type VideoEncoderConfig struct {
 }
 
 type AudioEncoderConfig struct {
-    Codec       ffgo.CodecID
+    Codec       ffmpeg.CodecID
     SampleRate  int
     Channels    int
-    SampleFmt   ffgo.SampleFormat
+    SampleFmt   ffmpeg.SampleFormat
     BitRate     int64
 }
 
@@ -148,7 +148,7 @@ func (e *Encoder) AddVideoStream(cfg VideoEncoderConfig) error {
 
     // Hardware acceleration
     if cfg.HWDevice != "" {
-        hwCtx, err := ffgo.NewHWDevice(cfg.HWDevice)
+        hwCtx, err := ffmpeg.NewHWDevice(cfg.HWDevice)
         if err == nil {
             avcodec.SetHWDeviceContext(e.videoCodecCtx, hwCtx)
         }
@@ -227,7 +227,7 @@ func (e *Encoder) WriteHeader() error {
 The core encoding loop is asynchronous:
 
 ```go
-func (e *Encoder) EncodeVideoFrame(frame ffgo.Frame) error {
+func (e *Encoder) EncodeVideoFrame(frame ffmpeg.Frame) error {
     e.mu.RLock()
     if !e.headerWritten {
         e.mu.RUnlock()
@@ -237,7 +237,7 @@ func (e *Encoder) EncodeVideoFrame(frame ffgo.Frame) error {
 
     // Encoding is asynchronous - send frame, receive packets
     if err := avcodec.SendFrame(e.videoCodecCtx, frame); err != nil {
-        if ffgo.IsAgain(err) {
+        if ffmpeg.IsAgain(err) {
             // Encoder buffer full, must flush before sending more
             return e.flushVideoPackets()
         }
@@ -254,10 +254,10 @@ func (e *Encoder) flushVideoPackets() error {
     for {
         err := avcodec.ReceivePacket(e.videoCodecCtx, pkt)
         if err != nil {
-            if ffgo.IsAgain(err) {
+            if ffmpeg.IsAgain(err) {
                 return nil  // Normal - no more packets available
             }
-            if ffgo.IsEOF(err) {
+            if ffmpeg.IsEOF(err) {
                 return nil  // Flushing complete
             }
             return fmt.Errorf("receive packet failed: %w", err)
@@ -270,7 +270,7 @@ func (e *Encoder) flushVideoPackets() error {
     }
 }
 
-func (e *Encoder) writePacket(pkt ffgo.Packet, stream avformat.Stream) error {
+func (e *Encoder) writePacket(pkt ffmpeg.Packet, stream avformat.Stream) error {
     // Rescale packet timing to output stream's time base
     avcodec.RescalePacket(
         pkt,

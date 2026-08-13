@@ -59,7 +59,7 @@ echo "Verifying Android ${GOARCH}, API ${android_api}, NDK ${ndk_version}"
 # public implementation. These files collectively cover initialization, decode,
 # encode, frames, hardware capability discovery, and audio resampling.
 readonly root_go_files="$(go list -f '{{range .GoFiles}}{{println .}}{{end}}' .)"
-for required_file in ffgo.go decoder.go encoder.go frame.go hwaccel.go resampler.go; do
+for required_file in ffmpeg.go decoder.go encoder.go frame.go hwaccel.go resampler.go; do
 	if ! grep -Fxq "${required_file}" <<<"${root_go_files}"; then
 		echo "Android source set is missing ${required_file}" >&2
 		exit 1

@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 import (
 	"errors"
@@ -21,7 +21,7 @@ import (
 // frame must be in a pixel format compatible with the image encoder (RGB24 recommended).
 func SaveFrame(frame Frame, filename string) error {
 	if frame.IsNil() {
-		return errors.New("ffgo: frame is nil")
+		return errors.New("ffmpeg: frame is nil")
 	}
 
 	// Determine format from extension
@@ -39,7 +39,7 @@ func SaveFrame(frame Frame, filename string) error {
 		encoderName = "bmp"
 		targetPixFmtConst = PixelFormatBGR24
 	default:
-		return errors.New("ffgo: unsupported image format: " + ext)
+		return errors.New("ffmpeg: unsupported image format: " + ext)
 	}
 
 	// Get frame dimensions
@@ -48,19 +48,19 @@ func SaveFrame(frame Frame, filename string) error {
 	pixFmt := frame.Format()
 
 	if width == 0 || height == 0 {
-		return errors.New("ffgo: frame has invalid dimensions")
+		return errors.New("ffmpeg: frame has invalid dimensions")
 	}
 
 	// Find encoder by name
 	encoder := avcodec.FindEncoderByName(encoderName)
 	if encoder == nil {
-		return errors.New("ffgo: image encoder not found: " + encoderName)
+		return errors.New("ffmpeg: image encoder not found: " + encoderName)
 	}
 
 	// Allocate codec context
 	codecCtx := avcodec.AllocContext3(encoder)
 	if codecCtx == nil {
-		return errors.New("ffgo: failed to allocate encoder context")
+		return errors.New("ffmpeg: failed to allocate encoder context")
 	}
 
 	// Configure encoder
@@ -109,7 +109,7 @@ func SaveFrame(frame Frame, filename string) error {
 		}
 		avcodec.Close(codecCtx)
 		avcodec.FreeContext(&codecCtx)
-		return errors.New("ffgo: failed to allocate packet")
+		return errors.New("ffmpeg: failed to allocate packet")
 	}
 
 	defer avcodec.PacketFree(&packet)
@@ -127,7 +127,7 @@ func SaveFrame(frame Frame, filename string) error {
 		packetData := avcodec.GetPacketData(packet)
 		packetSize := avcodec.GetPacketSize(packet)
 		if packetData == nil || packetSize <= 0 {
-			return errors.New("ffgo: image encoder produced an empty packet")
+			return errors.New("ffmpeg: image encoder produced an empty packet")
 		}
 		data = append(data, unsafe.Slice((*byte)(packetData), packetSize)...)
 		return nil
@@ -139,7 +139,7 @@ func SaveFrame(frame Frame, filename string) error {
 		return err
 	}
 	if len(data) == 0 {
-		return errors.New("ffgo: encoder produced no data")
+		return errors.New("ffmpeg: encoder produced no data")
 	}
 
 	// Write to file
@@ -169,7 +169,7 @@ func ExtractFrame(inputPath string, ts time.Duration, outputPath string) error {
 		return err
 	}
 	if frame.IsNil() {
-		return errors.New("ffgo: no video frame at the specified timestamp")
+		return errors.New("ffmpeg: no video frame at the specified timestamp")
 	}
 
 	return SaveFrame(frame, outputPath)
@@ -180,7 +180,7 @@ func ExtractFrame(inputPath string, ts time.Duration, outputPath string) error {
 // interval is the time between thumbnails, maxCount limits the number of thumbnails.
 func GenerateThumbnails(inputPath string, interval time.Duration, maxCount int, outputPattern string) ([]string, error) {
 	if interval <= 0 {
-		return nil, errors.New("ffgo: thumbnail interval must be positive")
+		return nil, errors.New("ffmpeg: thumbnail interval must be positive")
 	}
 
 	decoder, err := NewDecoder(inputPath, nil)
@@ -191,7 +191,7 @@ func GenerateThumbnails(inputPath string, interval time.Duration, maxCount int, 
 
 	duration := decoder.Duration()
 	if duration <= 0 {
-		return nil, errors.New("ffgo: cannot determine duration")
+		return nil, errors.New("ffmpeg: cannot determine duration")
 	}
 
 	// Calculate number of thumbnails
@@ -260,7 +260,7 @@ func (d *Decoder) GetKeyframes() ([]Keyframe, error) {
 
 	stream := avformat.GetStream(d.formatCtx, d.videoStreamIdx)
 	if stream == nil {
-		return nil, errors.New("ffgo: failed to get video stream")
+		return nil, errors.New("ffmpeg: failed to get video stream")
 	}
 
 	tbNum, tbDen := avformat.GetStreamTimeBase(stream)

@@ -5,7 +5,7 @@ package dynlib
 import "testing"
 
 func TestOpenMissingLibrary(t *testing.T) {
-	handle, err := Open("ffgo-library-that-does-not-exist-7b1fb3f2")
+	handle, err := Open("ffmpeg-library-that-does-not-exist-7b1fb3f2")
 	if err == nil {
 		if handle != 0 {
 			_ = Close(handle)

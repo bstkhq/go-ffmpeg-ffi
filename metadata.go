@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 import (
 	"unsafe"
@@ -166,11 +166,11 @@ var ErrHeaderAlreadyWritten = errHeaderAlreadyWritten{}
 
 type errHeaderAlreadyWritten struct{}
 
-func (e errHeaderAlreadyWritten) Error() string { return "ffgo: header already written" }
+func (e errHeaderAlreadyWritten) Error() string { return "ffmpeg: header already written" }
 
 // ErrInvalidStream is returned when accessing an invalid stream index.
 var ErrInvalidStream = errInvalidStream{}
 
 type errInvalidStream struct{}
 
-func (e errInvalidStream) Error() string { return "ffgo: invalid stream index" }
+func (e errInvalidStream) Error() string { return "ffmpeg: invalid stream index" }

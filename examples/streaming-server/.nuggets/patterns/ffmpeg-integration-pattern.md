@@ -1,14 +1,14 @@
 ---
-title: ffgo Integration Pattern in Streaming Server
-keywords: [ffgo, integration, media-processing, initialization, lifecycle]
+title: FFmpeg Integration Pattern in Streaming Server
+keywords: [ffmpeg, integration, media-processing, initialization, lifecycle]
 tags: [core-concept, pattern, advanced]
 related: [../media/decoder-lifecycle.md, ../media/encoder-lifecycle.md, ../performance/memory-efficiency.md]
 source: [server/media/processor.go, server/media/pool.go]
 ---
 
-# ffgo Integration Pattern in Streaming Server
+# FFmpeg Integration Pattern in Streaming Server
 
-The streaming server uses ffgo as its fundamental media processing layer. Understanding how ffgo integrates with the streaming architecture is critical for contributors working on transcoding, ingest, and delivery pipelines.
+The streaming server uses ffmpeg as its fundamental media processing layer. Understanding how ffmpeg integrates with the streaming architecture is critical for contributors working on transcoding, ingest, and delivery pipelines.
 
 ## Initialization Strategy
 
@@ -19,20 +19,20 @@ Unlike typical CLI tools that initialize FFmpeg once at startup, the streaming s
 type StreamTranscoder struct {
     mu sync.RWMutex
 
-    decoder *ffgo.Decoder
-    encoder *ffgo.Encoder
-    scaler  *ffgo.Scaler
+    decoder *ffmpeg.Decoder
+    encoder *ffmpeg.Encoder
+    scaler  *ffmpeg.Scaler
 
     sourceURL string
     destFile  string
 }
 
 func (st *StreamTranscoder) Start(ctx context.Context) error {
-    // FFmpeg is auto-initialized on first ffgo.Decoder call
+    // FFmpeg is auto-initialized on first ffmpeg.Decoder call
     // This happens in the transcoding goroutine, so errors are goroutine-local
-    decoder, err := ffgo.NewDecoder(st.sourceURL,
-        ffgo.WithHWDevice("cuda"),
-        ffgo.WithStreams(ffgo.MediaTypeVideo, ffgo.MediaTypeAudio),
+    decoder, err := ffmpeg.NewDecoder(st.sourceURL,
+        ffmpeg.WithHWDevice("cuda"),
+        ffmpeg.WithStreams(ffmpeg.MediaTypeVideo, ffmpeg.MediaTypeAudio),
     )
     if err != nil {
         return fmt.Errorf("decoder init failed: %w", err)
@@ -48,18 +48,18 @@ func (st *StreamTranscoder) Start(ctx context.Context) error {
 
 ## Resource Pooling
 
-ffgo objects (Decoder, Encoder, Frame) are relatively expensive to allocate. The server maintains object pools:
+ffmpeg objects (Decoder, Encoder, Frame) are relatively expensive to allocate. The server maintains object pools:
 
 ```go
 // In server/media/pool.go
 type DecoderPool struct {
-    available chan *ffgo.Decoder
-    factory   func() (*ffgo.Decoder, error)
+    available chan *ffmpeg.Decoder
+    factory   func() (*ffmpeg.Decoder, error)
     size      int
     mu        sync.Mutex
 }
 
-func (p *DecoderPool) Acquire(ctx context.Context) (*ffgo.Decoder, error) {
+func (p *DecoderPool) Acquire(ctx context.Context) (*ffmpeg.Decoder, error) {
     select {
     case decoder := <-p.available:
         return decoder, nil
@@ -70,7 +70,7 @@ func (p *DecoderPool) Acquire(ctx context.Context) (*ffgo.Decoder, error) {
     }
 }
 
-func (p *DecoderPool) Release(decoder *ffgo.Decoder) error {
+func (p *DecoderPool) Release(decoder *ffmpeg.Decoder) error {
     // Reset decoder state if needed
     select {
     case p.available <- decoder:
@@ -86,13 +86,13 @@ func (p *DecoderPool) Release(decoder *ffgo.Decoder) error {
 
 ## Error Handling Pattern
 
-ffgo's error system uses EAGAIN (try again) and EOF semantics. The streaming server wraps these:
+ffmpeg's error system uses EAGAIN (try again) and EOF semantics. The streaming server wraps these:
 
 ```go
-func (st *StreamTranscoder) ProcessFrame(frame ffgo.Frame) error {
-    // Encoding is asynchronous - ffgo.IsAgain means buffer is full, try again
+func (st *StreamTranscoder) ProcessFrame(frame ffmpeg.Frame) error {
+    // Encoding is asynchronous - ffmpeg.IsAgain means buffer is full, try again
     if err := st.encoder.EncodeFrame(frame); err != nil {
-        if ffgo.IsAgain(err) {
+        if ffmpeg.IsAgain(err) {
             // Encoder needs output flushed, normal operation
             return st.flushEncodedPackets()
         }
@@ -104,7 +104,7 @@ func (st *StreamTranscoder) ProcessFrame(frame ffgo.Frame) error {
 
 ## Integration with Custom I/O
 
-The server uses ffgo's custom I/O for RTMP ingest and protocol abstraction:
+The server uses ffmpeg's custom I/O for RTMP ingest and protocol abstraction:
 
 ```go
 // Custom reader wrapping RTMP connection
@@ -119,15 +119,15 @@ func (r *RTMPStreamReader) Read(p []byte) (int, error) {
 }
 
 // Use in decoder
-decoder, err := ffgo.NewDecoderFromReader(
+decoder, err := ffmpeg.NewDecoderFromReader(
     r,
-    ffgo.WithFormat("flv"),  // RTMP uses FLV container
+    ffmpeg.WithFormat("flv"),  // RTMP uses FLV container
 )
 ```
 
 ## Hardware Acceleration Integration
 
-The server's hardware acceleration strategy maps to ffgo's HWDevice pattern:
+The server's hardware acceleration strategy maps to ffmpeg's HWDevice pattern:
 
 ```go
 // Hardware device assignment based on availability
@@ -142,8 +142,8 @@ func selectHWDevice() string {
 }
 
 // Per-transcode job
-transcoder.decoder = ffgo.NewDecoder(source,
-    ffgo.WithHWDevice(selectHWDevice()),
+transcoder.decoder = ffmpeg.NewDecoder(source,
+    ffmpeg.WithHWDevice(selectHWDevice()),
 )
 ```
 
@@ -153,7 +153,7 @@ When doing stream copy or remuxing, metadata must be preserved:
 
 ```go
 // Remuxing pattern (fast path)
-remuxer, err := ffgo.NewRemuxer(sourceFile, outputFile)
+remuxer, err := ffmpeg.NewRemuxer(sourceFile, outputFile)
 if err != nil {
     return err
 }

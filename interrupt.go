@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 import (
 	"context"
@@ -72,7 +72,7 @@ func (s *decoderInterrupt) begin(ctx context.Context) error {
 
 func (s *decoderInterruptState) begin(ctx context.Context) error {
 	if ctx == nil {
-		return errors.New("ffgo: context cannot be nil")
+		return errors.New("ffmpeg: context cannot be nil")
 	}
 	if err := ctx.Err(); err != nil {
 		return err
@@ -148,7 +148,7 @@ func (s *decoderInterrupt) release(formatCtx avformat.FormatContext) {
 
 func (d *Decoder) beginInterrupt(ctx context.Context) error {
 	if ctx == nil {
-		return errors.New("ffgo: context cannot be nil")
+		return errors.New("ffmpeg: context cannot be nil")
 	}
 	if d.interrupt == nil {
 		return ctx.Err()

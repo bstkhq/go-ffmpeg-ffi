@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 import (
 	"bytes"
@@ -11,17 +11,17 @@ import (
 
 // NewConcatDecoder opens a list of input files using FFmpeg's concat demuxer.
 //
-// This helper produces an in-memory ffconcat script and opens it via ffgo's custom I/O,
+// This helper produces an in-memory ffconcat script and opens it via ffmpeg's custom I/O,
 // so no temporary files are required.
 //
 // Example:
 //
-//	dec, err := ffgo.NewConcatDecoder([]string{"a.mp4", "b.mp4"}, nil)
+//	dec, err := ffmpeg.NewConcatDecoder([]string{"a.mp4", "b.mp4"}, nil)
 //	if err != nil { ... }
 //	defer dec.Close()
 func NewConcatDecoder(files []string, opts *DecoderOptions) (*Decoder, error) {
 	if len(files) == 0 {
-		return nil, errors.New("ffgo: concat file list cannot be empty")
+		return nil, errors.New("ffmpeg: concat file list cannot be empty")
 	}
 	script, err := buildFFConcatScript(files)
 	if err != nil {
@@ -33,7 +33,7 @@ func NewConcatDecoder(files []string, opts *DecoderOptions) (*Decoder, error) {
 // NewConcatDecoderFromFile opens an ffconcat list file from disk using the concat demuxer.
 func NewConcatDecoderFromFile(listPath string, opts *DecoderOptions) (*Decoder, error) {
 	if strings.TrimSpace(listPath) == "" {
-		return nil, errors.New("ffgo: concat list path cannot be empty")
+		return nil, errors.New("ffmpeg: concat list path cannot be empty")
 	}
 
 	opts = cloneDecoderOptions(opts)
@@ -51,7 +51,7 @@ func NewConcatDecoderFromFile(listPath string, opts *DecoderOptions) (*Decoder, 
 //	file '/path/to/b.mp4'
 func NewConcatDecoderFromFFConcat(script []byte, opts *DecoderOptions) (*Decoder, error) {
 	if len(script) == 0 {
-		return nil, errors.New("ffgo: ffconcat script cannot be empty")
+		return nil, errors.New("ffmpeg: ffconcat script cannot be empty")
 	}
 
 	opts = cloneDecoderOptions(opts)
@@ -83,7 +83,7 @@ func buildFFConcatScript(files []string) ([]byte, error) {
 	b.WriteString("ffconcat version 1.0\n")
 	for _, f := range files {
 		if strings.TrimSpace(f) == "" {
-			return nil, errors.New("ffgo: concat file path cannot be empty")
+			return nil, errors.New("ffmpeg: concat file path cannot be empty")
 		}
 		abs, err := filepath.Abs(f)
 		if err != nil {

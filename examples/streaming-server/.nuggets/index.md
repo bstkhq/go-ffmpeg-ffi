@@ -1,12 +1,12 @@
 ---
 title: Streaming Server Knowledge Vault
-keywords: [streaming, ffgo, server, transcoding]
+keywords: [streaming, ffmpeg, server, transcoding]
 tags: [index]
 ---
 
 # Streaming Server Knowledge Vault
 
-Welcome to the knowledge vault for the ffgo streaming server project. This vault documents the architecture, implementation patterns, and internal mechanics of a production-grade streaming server built on ffgo.
+Welcome to the knowledge vault for the ffmpeg streaming server project. This vault documents the architecture, implementation patterns, and internal mechanics of a production-grade streaming server built on ffmpeg.
 
 ## What is This?
 
@@ -24,7 +24,7 @@ The vault is organized by subsystem:
 
 ### Core Subsystems
 
-- **[Media Processing](./media/index.md)** - Decoding, encoding, frame handling with ffgo
+- **[Media Processing](./media/index.md)** - Decoding, encoding, frame handling with ffmpeg
 - **[Transcoding](./transcoding/index.md)** - Adaptive bitrate encoding, quality control
 - **[Delivery](./delivery/index.md)** - HLS/DASH segmentation and streaming
 - **[Ingest](./ingest/index.md)** - Input protocols and stream handling
@@ -38,7 +38,7 @@ The vault is organized by subsystem:
 ## Quick Start by Role
 
 **If you're implementing:**
-- Input handler → Read `media/decoder-lifecycle`, `patterns/ffgo-integration-pattern`
+- Input handler → Read `media/decoder-lifecycle`, `patterns/ffmpeg-integration-pattern`
 - Transcoding → Read `transcoding/adaptive-bitrate`, `performance/encoding-performance`
 - Output delivery → Read `delivery/hls-segmentation`, `media/stream-copy-optimization`
 
@@ -57,7 +57,7 @@ The vault is organized by subsystem:
 ```
 Ingest Layer (RTMP/RTSP/HTTP)
          ↓
-    Decoder (ffgo)
+    Decoder (ffmpeg)
          ↓
     Frame Distribution (Reference counting)
          ↓
@@ -83,26 +83,26 @@ Ingest Layer (RTMP/RTSP/HTTP)
 
 **Stream:** Complete processing pipeline from ingest to delivery
 
-## ffgo Basics
+## ffmpeg Basics
 
-The server uses ffgo for all media processing:
+The server uses ffmpeg for all media processing:
 
 ```go
 // Decoding
-decoder, _ := ffgo.NewDecoder("input.mp4")
+decoder, _ := ffmpeg.NewDecoder("input.mp4")
 frame, _ := decoder.ReadFrame()
 
 // Encoding
-encoder, _ := ffgo.NewEncoder("output.mp4")
+encoder, _ := ffmpeg.NewEncoder("output.mp4")
 encoder.EncodeFrame(frame)
 
 // Scaling
-scaler, _ := ffgo.NewScaler(1920, 1080, ffgo.PixelFormatYUV420P,
-    1280, 720, ffgo.PixelFormatYUV420P)
+scaler, _ := ffmpeg.NewScaler(1920, 1080, ffmpeg.PixelFormatYUV420P,
+    1280, 720, ffmpeg.PixelFormatYUV420P)
 scaler.ScaleFrame(srcFrame, dstFrame)
 
 // Remuxing (fast stream copy)
-remuxer, _ := ffgo.NewRemuxer("input.mp4", "output.mkv")
+remuxer, _ := ffmpeg.NewRemuxer("input.mp4", "output.mkv")
 remuxer.Remux()
 ```
 
@@ -110,7 +110,7 @@ remuxer.Remux()
 
 **Add support for new input protocol:**
 1. Implement io.Reader wrapper around protocol
-2. Use `NewDecoderFromReader()` to feed ffgo
+2. Use `NewDecoderFromReader()` to feed ffmpeg
 3. See [decoder lifecycle](./media/decoder-lifecycle.md)
 
 **Optimize encoding speed:**
@@ -122,7 +122,7 @@ remuxer.Remux()
 **Debug memory leak:**
 1. Add frame accounting (count alloc/free)
 2. Monitor heap size with `runtime.ReadMemStats()`
-3. Check for missing `ffgo.FrameFree(&frame)` calls
+3. Check for missing `ffmpeg.FrameFree(&frame)` calls
 4. Use Valgrind for low-level debugging
 5. See [frame leaks](./gotchas/frame-leaks.md)
 
@@ -140,8 +140,8 @@ remuxer.Remux()
 - Stream indices: -1 means not found/not applicable
 
 **Error Handling:**
-- `ffgo.IsEOF(err)` - Check for end-of-file
-- `ffgo.IsAgain(err)` - Check for EAGAIN (try again)
+- `ffmpeg.IsEOF(err)` - Check for end-of-file
+- `ffmpeg.IsAgain(err)` - Check for EAGAIN (try again)
 - Fatal errors returned directly
 
 **Resource Cleanup:**
@@ -156,7 +156,7 @@ remuxer.Remux()
 | "Rescale timestamp error" | Time base mismatch in muxer | Rescale PTS/DTS before writing packet |
 | "Codec not found" | FFmpeg missing codec | Check FFmpeg build includes codec |
 | "EAGAIN (try again)" | Encoder buffer full | Flush encoder with `ReceivePacket()` loop |
-| "Memory growth over time" | Frame leak | Check for missing `ffgo.FrameFree(&frame)` calls |
+| "Memory growth over time" | Frame leak | Check for missing `ffmpeg.FrameFree(&frame)` calls |
 | "Frames not processed" | Encoding stalled | Check queue depth and backpressure |
 | "A/V sync issues" | Timestamp errors | Verify time bases match, rescale correctly |
 
@@ -174,7 +174,7 @@ Running on modern server hardware (8 cores, 1 GPU):
 ## Further Reading
 
 - [FFmpeg Wiki](https://trac.ffmpeg.org/wiki)
-- [ffgo project](https://github.com/obinnaokechukwu/ffgo)
+- [ffmpeg project](https://github.com/bstkhq/go-ffmpeg-ffi)
 - [HLS spec](https://datatracker.ietf.org/doc/html/draft-pantos-http-live-streaming)
 - [DASH spec](https://dashif.org/specs/)
 

@@ -10,12 +10,12 @@ source: [server/media/frame_pool.go, server/media/pipeline.go]
 
 Frames are the fundamental data unit flowing through the streaming server. Understanding frame lifetime and buffer management is critical for memory efficiency and avoiding leaks.
 
-## ffgo Frame Semantics
+## ffmpeg Frame Semantics
 
-ffgo frames are opaque pointers wrapping AVFrame structures from FFmpeg:
+ffmpeg frames are opaque pointers wrapping AVFrame structures from FFmpeg:
 
 ```go
-// ffgo.Frame is unsafe.Pointer internally
+// ffmpeg.Frame is unsafe.Pointer internally
 type Frame unsafe.Pointer
 
 // Decoding returns a frame holding video/audio data
@@ -25,25 +25,25 @@ frame, _ := decoder.ReadFrame()
 scaler.ScaleFrame(srcFrame, dstFrame)
 
 // Memory must be explicitly released
-ffgo.FrameUnref(frame)  // Unreference internal buffers
-ffgo.FrameFree(&frame)  // Free the AVFrame structure itself
+ffmpeg.FrameUnref(frame)  // Unreference internal buffers
+ffmpeg.FrameFree(&frame)  // Free the AVFrame structure itself
 ```
 
 **Critical:** Every allocated frame must be freed. The streaming server uses `defer`-based cleanup patterns to prevent leaks.
 
 ## Reference Counting
 
-ffgo frames use FFmpeg's internal reference counting:
+ffmpeg frames use FFmpeg's internal reference counting:
 
 ```go
 // When you decode a frame
 frame, _ := decoder.ReadFrame() // refcount = 1 (decoder owns)
 
 // Unreference decrements count, deallocates at 0
-ffgo.FrameUnref(frame)      // refcount = 0, buffers freed
+ffmpeg.FrameUnref(frame)      // refcount = 0, buffers freed
 
 // To pass frame ownership without copying buffers
-ffgo.FrameRef(dstFrame, srcFrame)  // dstFrame now references same buffers, refcount++
+ffmpeg.FrameRef(dstFrame, srcFrame)  // dstFrame now references same buffers, refcount++
 ```
 
 **Important:** When using FrameRef to alias frame data, both frames share the same underlying buffers. Unreferencing one affects the other.
@@ -71,11 +71,11 @@ type FramePipeline struct {
 
 // Wrapped frame with metadata
 type PipelineFrame struct {
-    Frame          ffgo.Frame
+    Frame          ffmpeg.Frame
     StreamIndex    int
     PTS            int64
     Duration       int64
-    TimeBase       ffgo.Rational
+    TimeBase       ffmpeg.Rational
     KeyFrame       bool
 
     // Reference tracking
@@ -90,8 +90,8 @@ func (pf *PipelineFrame) Retain() {
 func (pf *PipelineFrame) Release() {
     if atomic.AddInt32(&pf.refCount, -1) == 0 {
         // All stages done, free frame
-        ffgo.FrameUnref(pf.Frame)
-        ffgo.FrameFree(&pf.Frame)
+        ffmpeg.FrameUnref(pf.Frame)
+        ffmpeg.FrameFree(&pf.Frame)
     }
 }
 ```
@@ -105,9 +105,9 @@ type ScalerStage struct {
     input  <-chan *PipelineFrame
     output chan<- *PipelineFrame
 
-    scaler *ffgo.Scaler
-    srcFmt ffgo.PixelFormat
-    dstFmt ffgo.PixelFormat
+    scaler *ffmpeg.Scaler
+    srcFmt ffmpeg.PixelFormat
+    dstFmt ffmpeg.PixelFormat
 }
 
 func (s *ScalerStage) Run(ctx context.Context) error {
@@ -123,13 +123,13 @@ func (s *ScalerStage) Run(ctx context.Context) error {
             }
 
             // Create output frame
-            outFrame := ffgo.FrameAlloc()
-            ffgo.AVUtil.FrameGetBuffer(outFrame, 1)
+            outFrame := ffmpeg.FrameAlloc()
+            ffmpeg.AVUtil.FrameGetBuffer(outFrame, 1)
 
             // Scale
             if err := s.scaler.ScaleFrame(pf.Frame, outFrame); err != nil {
                 pf.Release()
-                ffgo.FrameFree(&outFrame)
+                ffmpeg.FrameFree(&outFrame)
                 return err
             }
 
@@ -149,7 +149,7 @@ func (s *ScalerStage) Run(ctx context.Context) error {
                 pf.Release()
             case <-ctx.Done():
                 pf.Release()
-                ffgo.FrameFree(&outFrame)
+                ffmpeg.FrameFree(&outFrame)
                 return ctx.Err()
             }
         }
@@ -165,28 +165,28 @@ Frame allocation is expensive. The server maintains pools of pre-allocated frame
 type FramePool struct {
     width    int
     height   int
-    pixFmt   ffgo.PixelFormat
-    available chan ffgo.Frame
+    pixFmt   ffmpeg.PixelFormat
+    available chan ffmpeg.Frame
     size     int
 }
 
-func NewFramePool(width, height int, pixFmt ffgo.PixelFormat, size int) (*FramePool, error) {
+func NewFramePool(width, height int, pixFmt ffmpeg.PixelFormat, size int) (*FramePool, error) {
     fp := &FramePool{
         width:     width,
         height:    height,
         pixFmt:    pixFmt,
-        available: make(chan ffgo.Frame, size),
+        available: make(chan ffmpeg.Frame, size),
         size:      size,
     }
 
     // Pre-allocate frames
     for i := 0; i < size; i++ {
-        frame := ffgo.FrameAlloc()
-        ffgo.AVUtil.SetFrameWidth(frame, int32(width))
-        ffgo.AVUtil.SetFrameHeight(frame, int32(height))
-        ffgo.AVUtil.SetFrameFormat(frame, int32(pixFmt))
+        frame := ffmpeg.FrameAlloc()
+        ffmpeg.AVUtil.SetFrameWidth(frame, int32(width))
+        ffmpeg.AVUtil.SetFrameHeight(frame, int32(height))
+        ffmpeg.AVUtil.SetFrameFormat(frame, int32(pixFmt))
 
-        if err := ffgo.AVUtil.FrameGetBuffer(frame, 1); err != nil {
+        if err := ffmpeg.AVUtil.FrameGetBuffer(frame, 1); err != nil {
             return nil, fmt.Errorf("frame buffer alloc failed: %w", err)
         }
 
@@ -196,7 +196,7 @@ func NewFramePool(width, height int, pixFmt ffgo.PixelFormat, size int) (*FrameP
     return fp, nil
 }
 
-func (fp *FramePool) Acquire(ctx context.Context) (ffgo.Frame, error) {
+func (fp *FramePool) Acquire(ctx context.Context) (ffmpeg.Frame, error) {
     select {
     case frame := <-fp.available:
         return frame, nil
@@ -204,28 +204,28 @@ func (fp *FramePool) Acquire(ctx context.Context) (ffgo.Frame, error) {
         return nil, ctx.Err()
     default:
         // Pool exhausted, allocate new frame
-        frame := ffgo.FrameAlloc()
-        ffgo.AVUtil.SetFrameWidth(frame, int32(fp.width))
-        ffgo.AVUtil.SetFrameHeight(frame, int32(fp.height))
-        ffgo.AVUtil.SetFrameFormat(frame, int32(fp.pixFmt))
-        if err := ffgo.AVUtil.FrameGetBuffer(frame, 1); err != nil {
-            ffgo.FrameFree(&frame)
+        frame := ffmpeg.FrameAlloc()
+        ffmpeg.AVUtil.SetFrameWidth(frame, int32(fp.width))
+        ffmpeg.AVUtil.SetFrameHeight(frame, int32(fp.height))
+        ffmpeg.AVUtil.SetFrameFormat(frame, int32(fp.pixFmt))
+        if err := ffmpeg.AVUtil.FrameGetBuffer(frame, 1); err != nil {
+            ffmpeg.FrameFree(&frame)
             return nil, err
         }
         return frame, nil
     }
 }
 
-func (fp *FramePool) Release(frame ffgo.Frame) error {
+func (fp *FramePool) Release(frame ffmpeg.Frame) error {
     // Clear frame state for reuse
-    ffgo.FrameUnref(frame)
+    ffmpeg.FrameUnref(frame)
 
     select {
     case fp.available <- frame:
         return nil
     default:
         // Pool full, dispose
-        ffgo.FrameFree(&frame)
+        ffmpeg.FrameFree(&frame)
         return nil
     }
 }
@@ -233,7 +233,7 @@ func (fp *FramePool) Release(frame ffgo.Frame) error {
 func (fp *FramePool) Close() error {
     close(fp.available)
     for frame := range fp.available {
-        ffgo.FrameFree(&frame)
+        ffmpeg.FrameFree(&frame)
     }
     return nil
 }
@@ -245,23 +245,23 @@ In adaptive bitrate streaming, frames are processed into multiple output formats
 
 ```go
 type AdaptiveTranscoder struct {
-    decoder       *ffgo.Decoder
+    decoder       *ffmpeg.Decoder
 
     // Multiple scalers for different bitrates
-    scalers       map[string]*ffgo.Scaler  // "720p", "480p", "360p"
-    encoders      map[string]*ffgo.Encoder
+    scalers       map[string]*ffmpeg.Scaler  // "720p", "480p", "360p"
+    encoders      map[string]*ffmpeg.Encoder
 
     // Per-stream output pipelines
     pipelines     map[string]*FramePipeline
 }
 
-func (at *AdaptiveTranscoder) TranscodeFrame(frame ffgo.Frame) error {
+func (at *AdaptiveTranscoder) TranscodeFrame(frame ffmpeg.Frame) error {
     // Clone frame for each output variant
     for variant, pipeline := range at.pipelines {
         // Create a reference to the frame
-        cloned := ffgo.FrameAlloc()
-        if err := ffgo.FrameRef(cloned, frame); err != nil {
-            ffgo.FrameFree(&cloned)
+        cloned := ffmpeg.FrameAlloc()
+        if err := ffmpeg.FrameRef(cloned, frame); err != nil {
+            ffmpeg.FrameFree(&cloned)
             return err
         }
 

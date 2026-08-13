@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	ffgo "github.com/bstkhq/go-ffmpeg-ffi"
+	"github.com/bstkhq/go-ffmpeg-ffi"
 	"github.com/bstkhq/go-ffmpeg-ffi-android-ebiten-test/internal/rgba"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/audio"
@@ -76,8 +76,8 @@ func (g *probeGame) start(mediaPath string) {
 }
 
 func (g *probeGame) run(ctx context.Context, mediaPath string) {
-	err := ffgo.Init()
-	diagnostic := ffgo.Diagnose()
+	err := ffmpeg.Init()
+	diagnostic := ffmpeg.Diagnose()
 	if err != nil {
 		status := fmt.Sprintf(
 			"Ebitengine + go-ffmpeg-ffi Android probe\n\n"+
@@ -156,8 +156,8 @@ func (g *probeGame) run(ctx context.Context, mediaPath string) {
 }
 
 func (g *probeGame) decodeAndPlayAudio(ctx context.Context, mediaPath string) (frames, samples int, err error) {
-	decoder, err := ffgo.NewDecoder(mediaPath, &ffgo.DecoderOptions{
-		Streams: []ffgo.MediaType{ffgo.MediaTypeAudio},
+	decoder, err := ffmpeg.NewDecoder(mediaPath, &ffmpeg.DecoderOptions{
+		Streams: []ffmpeg.MediaType{ffmpeg.MediaTypeAudio},
 	})
 	if err != nil {
 		return 0, 0, fmt.Errorf("open media fixture: %w", err)
@@ -172,12 +172,12 @@ func (g *probeGame) decodeAndPlayAudio(ctx context.Context, mediaPath string) (f
 	if stream == nil {
 		return 0, 0, fmt.Errorf("media fixture has no audio stream")
 	}
-	if stream.CodecID != ffgo.CodecIDAAC {
+	if stream.CodecID != ffmpeg.CodecIDAAC {
 		return 0, 0, fmt.Errorf("audio codec is %s, want AAC", stream.CodecName)
 	}
 
 	var pcm bytes.Buffer
-	var resampler *ffgo.Resampler
+	var resampler *ffmpeg.Resampler
 	defer func() {
 		if resampler != nil {
 			if closeErr := resampler.Close(); err == nil && closeErr != nil {
@@ -186,7 +186,7 @@ func (g *probeGame) decodeAndPlayAudio(ctx context.Context, mediaPath string) (f
 		}
 	}()
 
-	appendPCM := func(frame ffgo.Frame) error {
+	appendPCM := func(frame ffmpeg.Frame) error {
 		if frame.IsNil() {
 			return fmt.Errorf("resampler returned a nil frame")
 		}
@@ -216,17 +216,17 @@ func (g *probeGame) decodeAndPlayAudio(ctx context.Context, mediaPath string) (f
 			if sampleRate == 0 {
 				sampleRate = stream.SampleRate
 			}
-			resampler, err = ffgo.NewResampler(
-				ffgo.AudioFormat{
+			resampler, err = ffmpeg.NewResampler(
+				ffmpeg.AudioFormat{
 					SampleRate:   sampleRate,
 					Channels:     stream.Channels,
 					SampleFormat: frame.SampleFormat(),
 				},
-				ffgo.AudioFormat{
+				ffmpeg.AudioFormat{
 					SampleRate:    audioRate,
 					Channels:      2,
-					ChannelLayout: ffgo.ChannelLayoutStereo,
-					SampleFormat:  ffgo.SampleFormatS16,
+					ChannelLayout: ffmpeg.ChannelLayoutStereo,
+					SampleFormat:  ffmpeg.SampleFormatS16,
 				},
 			)
 			if err != nil {
@@ -240,10 +240,10 @@ func (g *probeGame) decodeAndPlayAudio(ctx context.Context, mediaPath string) (f
 		}
 		if !resampled.IsNil() {
 			if appendErr := appendPCM(resampled); appendErr != nil {
-				_ = ffgo.FrameFree(&resampled)
+				_ = ffmpeg.FrameFree(&resampled)
 				return frames, samples, appendErr
 			}
-			_ = ffgo.FrameFree(&resampled)
+			_ = ffmpeg.FrameFree(&resampled)
 		}
 		frames++
 	}
@@ -257,10 +257,10 @@ func (g *probeGame) decodeAndPlayAudio(ctx context.Context, mediaPath string) (f
 	}
 	if !flushed.IsNil() {
 		if appendErr := appendPCM(flushed); appendErr != nil {
-			_ = ffgo.FrameFree(&flushed)
+			_ = ffmpeg.FrameFree(&flushed)
 			return frames, samples, appendErr
 		}
-		_ = ffgo.FrameFree(&flushed)
+		_ = ffmpeg.FrameFree(&flushed)
 	}
 	if pcm.Len() == 0 {
 		return frames, samples, fmt.Errorf("resampler produced no PCM data")
@@ -301,8 +301,8 @@ func (g *probeGame) decodeVideo(ctx context.Context, mediaPath string) (frames, 
 		return 0, 0, 0, fmt.Errorf("media fixture path was not provided by Android")
 	}
 
-	decoder, err := ffgo.NewDecoder(mediaPath, &ffgo.DecoderOptions{
-		Streams: []ffgo.MediaType{ffgo.MediaTypeVideo},
+	decoder, err := ffmpeg.NewDecoder(mediaPath, &ffmpeg.DecoderOptions{
+		Streams: []ffmpeg.MediaType{ffmpeg.MediaTypeVideo},
 	})
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("open media fixture: %w", err)
@@ -317,11 +317,11 @@ func (g *probeGame) decodeVideo(ctx context.Context, mediaPath string) (frames, 
 	if stream == nil {
 		return 0, 0, 0, fmt.Errorf("media fixture has no video stream")
 	}
-	if stream.CodecID != ffgo.CodecIDH264 {
+	if stream.CodecID != ffmpeg.CodecIDH264 {
 		return 0, 0, 0, fmt.Errorf("video codec is %s, want H.264", stream.CodecName)
 	}
 
-	var scaler *ffgo.Scaler
+	var scaler *ffmpeg.Scaler
 	defer func() {
 		if scaler != nil {
 			if closeErr := scaler.Close(); err == nil && closeErr != nil {
@@ -342,12 +342,12 @@ func (g *probeGame) decodeVideo(ctx context.Context, mediaPath string) (frames, 
 			break
 		}
 
-		info := ffgo.GetFrameInfo(frame)
+		info := ffmpeg.GetFrameInfo(frame)
 		if scaler == nil {
 			width, height = info.Width, info.Height
-			scaler, err = ffgo.NewScaler(
-				width, height, ffgo.PixelFormat(info.Format),
-				width, height, ffgo.PixelFormatRGBA, ffgo.ScaleBilinear,
+			scaler, err = ffmpeg.NewScaler(
+				width, height, ffmpeg.PixelFormat(info.Format),
+				width, height, ffmpeg.PixelFormatRGBA, ffmpeg.ScaleBilinear,
 			)
 			if err != nil {
 				return frames, width, height, fmt.Errorf("create RGBA scaler: %w", err)
@@ -387,7 +387,7 @@ func (g *probeGame) decodeVideo(ctx context.Context, mediaPath string) (frames, 
 		return frames, width, height, fmt.Errorf("video stream has invalid time base %d/%d", timeBase.Num, timeBase.Den)
 	}
 	targetPTS := int64(timeBase.Den) / int64(timeBase.Num)
-	var seekFrame ffgo.Frame
+	var seekFrame ffmpeg.Frame
 	for {
 		seekFrame, err = decoder.DecodeVideoContext(ctx)
 		if err != nil {
@@ -396,7 +396,7 @@ func (g *probeGame) decodeVideo(ctx context.Context, mediaPath string) (frames, 
 		if seekFrame.IsNil() {
 			return frames, width, height, fmt.Errorf("decoder reached EOF before seek target")
 		}
-		if ffgo.GetFrameInfo(seekFrame).PTS >= targetPTS {
+		if ffmpeg.GetFrameInfo(seekFrame).PTS >= targetPTS {
 			break
 		}
 	}
@@ -407,7 +407,7 @@ func (g *probeGame) decodeVideo(ctx context.Context, mediaPath string) (frames, 
 	if publishErr := g.publishFrame(seekRGBA, width, height); publishErr != nil {
 		return frames, width, height, fmt.Errorf("publish seek frame: %w", publishErr)
 	}
-	seekPTS := ffgo.GetFrameInfo(seekFrame).PTS
+	seekPTS := ffmpeg.GetFrameInfo(seekFrame).PTS
 
 	cancelCtx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -425,7 +425,7 @@ func (g *probeGame) decodeVideo(ctx context.Context, mediaPath string) (frames, 
 	return frames, width, height, nil
 }
 
-func (g *probeGame) publishFrame(frame ffgo.Frame, width, height int) error {
+func (g *probeGame) publishFrame(frame ffmpeg.Frame, width, height int) error {
 	if frame.IsNil() {
 		return fmt.Errorf("scaled frame is nil")
 	}

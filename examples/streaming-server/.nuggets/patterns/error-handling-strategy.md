@@ -12,7 +12,7 @@ Error handling in streaming servers is nuanced. Some errors are recoverable (EAG
 
 ## FFmpeg Error Categories
 
-ffgo/FFmpeg returns errors in these categories:
+ffmpeg/FFmpeg returns errors in these categories:
 
 ### Category 1: Transient Errors (Retry)
 
@@ -20,7 +20,7 @@ These errors indicate temporary conditions:
 
 ```go
 // EAGAIN - Encoder buffer full, decoder needs more packets
-if ffgo.IsAgain(err) {
+if ffmpeg.IsAgain(err) {
     // Try again soon
     return retry(operation)
 }
@@ -28,7 +28,7 @@ if ffgo.IsAgain(err) {
 // Example: Encoding produces buffered packets
 for {
     pkt, err := encoder.GetPacket()
-    if ffgo.IsAgain(err) {
+    if ffmpeg.IsAgain(err) {
         // Send more frames first
         break
     }
@@ -44,11 +44,11 @@ for {
 End-of-file indicates input exhaustion:
 
 ```go
-if ffgo.IsEOF(err) {
+if ffmpeg.IsEOF(err) {
     // Normal stream end, drain remaining frames
     for {
         frame, err := decoder.ReadFrame()
-        if ffgo.IsEOF(err) {
+        if ffmpeg.IsEOF(err) {
             break  // All frames drained
         }
         // Process frame
@@ -143,8 +143,8 @@ err := retryWithBackoff(func() error {
     if err != nil {
         return err
     }
-    defer ffgo.FrameFree(&frame)
-    ffgo.FrameUnref(frame)
+    defer ffmpeg.FrameFree(&frame)
+    ffmpeg.FrameUnref(frame)
     return nil
 }, 3)
 ```
@@ -154,10 +154,10 @@ err := retryWithBackoff(func() error {
 If GPU decode fails, fall back to CPU:
 
 ```go
-func openDecoderWithFallback(url string) (*ffgo.Decoder, error) {
+func openDecoderWithFallback(url string) (*ffmpeg.Decoder, error) {
     // Try GPU first
-    decoder, err := ffgo.NewDecoder(url,
-        ffgo.WithHWDevice("cuda"),
+    decoder, err := ffmpeg.NewDecoder(url,
+        ffmpeg.WithHWDevice("cuda"),
     )
     if err == nil {
         log.Printf("Using NVIDIA GPU decoding")
@@ -167,7 +167,7 @@ func openDecoderWithFallback(url string) (*ffgo.Decoder, error) {
     log.Warnf("GPU decoding failed: %v, falling back to CPU", err)
 
     // Fall back to CPU
-    return ffgo.NewDecoder(url)
+    return ffmpeg.NewDecoder(url)
 }
 ```
 
@@ -177,12 +177,12 @@ On encoding overload, reduce quality:
 
 ```go
 type AdaptiveEncoder struct {
-    baseConfig ffgo.VideoEncoderConfig
+    baseConfig ffmpeg.VideoEncoderConfig
     currentCRF int
     failCount  int
 }
 
-func (ae *AdaptiveEncoder) Encode(frame ffgo.Frame) error {
+func (ae *AdaptiveEncoder) Encode(frame ffmpeg.Frame) error {
     err := ae.encoder.EncodeFrame(frame)
 
     if err != nil {
@@ -242,10 +242,10 @@ func (el *ErrorLogger) LogError(err error, metadata map[string]interface{}) {
 func classifyError(err error) string {
     errStr := err.Error()
 
-    if ffgo.IsEOF(err) {
+    if ffmpeg.IsEOF(err) {
         return "eof"
     }
-    if ffgo.IsAgain(err) {
+    if ffmpeg.IsAgain(err) {
         return "eagain"
     }
     if strings.Contains(errStr, "codec") {

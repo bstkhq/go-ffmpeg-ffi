@@ -2,7 +2,7 @@
 
 // Package avdevice provides minimal bindings to FFmpeg's libavdevice.
 //
-// ffgo uses avdevice for device/screen capture input formats (v4l2, x11grab, dshow, avfoundation, ...).
+// ffmpeg uses avdevice for device/screen capture input formats (v4l2, x11grab, dshow, avfoundation, ...).
 // This package is intentionally small: we only bind the registration entry point so that device demuxers
 // become visible via avformat.FindInputFormat().
 package avdevice

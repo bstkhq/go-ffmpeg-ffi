@@ -19,12 +19,12 @@ func main() {
 	}
 	in := os.Args[1]
 
-	if err := ffgo.Init(); err != nil {
+	if err := ffmpeg.Init(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize FFmpeg: %v\n", err)
 		os.Exit(1)
 	}
 
-	dec, err := ffgo.NewDecoder(in, nil)
+	dec, err := ffmpeg.NewDecoder(in, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to open input: %v\n", err)
 		os.Exit(1)
@@ -52,22 +52,22 @@ func main() {
 	}
 
 	// Best-effort: set source color metadata (use BT.709).
-	f.SetColorSpec(ffgo.ColorSpec{
-		Range:     ffgo.ColorRangeMPEG,
-		Space:     ffgo.ColorSpaceBT709,
-		Primaries: ffgo.ColorPrimariesBT709,
-		Transfer:  ffgo.ColorTransferBT709,
+	f.SetColorSpec(ffmpeg.ColorSpec{
+		Range:     ffmpeg.ColorRangeMPEG,
+		Space:     ffmpeg.ColorSpaceBT709,
+		Primaries: ffmpeg.ColorPrimariesBT709,
+		Transfer:  ffmpeg.ColorTransferBT709,
 	})
 
 	// Create a scaler (no resize, same pixel format) and force conversion matrix to BT.2020.
-	sc, err := ffgo.NewScaler(v.Width, v.Height, v.PixelFmt, v.Width, v.Height, v.PixelFmt, ffgo.ScaleBilinear)
+	sc, err := ffmpeg.NewScaler(v.Width, v.Height, v.PixelFmt, v.Width, v.Height, v.PixelFmt, ffmpeg.ScaleBilinear)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "NewScaler failed: %v\n", err)
 		os.Exit(1)
 	}
 	defer sc.Close()
 
-	if err := sc.SetColorspace(ffgo.ColorSpaceBT709, ffgo.ColorSpaceBT2020NCL); err != nil {
+	if err := sc.SetColorspace(ffmpeg.ColorSpaceBT709, ffmpeg.ColorSpaceBT2020NCL); err != nil {
 		fmt.Fprintf(os.Stderr, "SetColorspace failed: %v\n", err)
 		os.Exit(1)
 	}
@@ -79,11 +79,11 @@ func main() {
 	}
 
 	// Attach output metadata describing BT.2020/PQ (BT.2100 PQ) as an example.
-	out.SetColorSpec(ffgo.ColorSpec{
-		Range:     ffgo.ColorRangeMPEG,
-		Space:     ffgo.ColorSpaceBT2020NCL,
-		Primaries: ffgo.ColorPrimariesBT2020,
-		Transfer:  ffgo.ColorTransferSMPTE2084,
+	out.SetColorSpec(ffmpeg.ColorSpec{
+		Range:     ffmpeg.ColorRangeMPEG,
+		Space:     ffmpeg.ColorSpaceBT2020NCL,
+		Primaries: ffmpeg.ColorPrimariesBT2020,
+		Transfer:  ffmpeg.ColorTransferSMPTE2084,
 	})
 
 	fmt.Printf("Input color:  %+v\n", f.ColorSpec())

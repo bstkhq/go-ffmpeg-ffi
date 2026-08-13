@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 import (
 	"context"
@@ -36,7 +36,7 @@ func ProbeFormat(path string) (*FormatProbeResult, error) {
 		return nil, err
 	}
 	if strings.TrimSpace(path) == "" {
-		return nil, errors.New("ffgo: path cannot be empty")
+		return nil, errors.New("ffmpeg: path cannot be empty")
 	}
 
 	var ctx avformat.FormatContext
@@ -78,7 +78,7 @@ func openInputWithRetries(path string, opts *DecoderOptions, interrupt *decoderI
 	if opts != nil && opts.Format != "" {
 		forcedFmt = avformat.FindInputFormat(opts.Format)
 		if forcedFmt == nil {
-			return nil, errors.New("ffgo: input format not found")
+			return nil, errors.New("ffmpeg: input format not found")
 		}
 		ctx, err := openInputOnce(path, forcedFmt, avOpts, interrupt)
 		if err != nil {
@@ -87,7 +87,7 @@ func openInputWithRetries(path string, opts *DecoderOptions, interrupt *decoderI
 		if opts != nil && opts.ProbeScore > 0 {
 			if score := avformat.GetProbeScore(ctx); score > 0 && score < opts.ProbeScore {
 				avformat.CloseInput(&ctx)
-				return nil, errors.New("ffgo: probe score below required threshold")
+				return nil, errors.New("ffmpeg: probe score below required threshold")
 			}
 		}
 		return ctx, nil
@@ -106,7 +106,7 @@ func openInputWithRetries(path string, opts *DecoderOptions, interrupt *decoderI
 		}
 		// Low score: retry with forced demuxers (if enabled).
 		avformat.CloseInput(&ctx)
-		err = errors.New("ffgo: probe score below required threshold")
+		err = errors.New("ffmpeg: probe score below required threshold")
 	}
 
 	if opts == nil || !opts.TryMultipleFormats {
@@ -134,7 +134,7 @@ func openInputWithRetries(path string, opts *DecoderOptions, interrupt *decoderI
 			score := avformat.GetProbeScore(ctx2)
 			if score > 0 && score < opts.ProbeScore {
 				avformat.CloseInput(&ctx2)
-				err = errors.New("ffgo: probe score below required threshold")
+				err = errors.New("ffmpeg: probe score below required threshold")
 				continue
 			}
 		}
@@ -165,7 +165,7 @@ func openInputOnce(path string, fmt avformat.InputFormat, avOpts map[string]stri
 
 	ctx := avformat.AllocContext()
 	if ctx == nil {
-		return nil, errors.New("ffgo: failed to allocate format context")
+		return nil, errors.New("ffmpeg: failed to allocate format context")
 	}
 	interrupt.attach(ctx)
 	if err := interrupt.finish(avformat.OpenInput(&ctx, path, fmt, &dict)); err != nil {

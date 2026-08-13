@@ -2,7 +2,7 @@
 title: Decoder Lifecycle and State Management
 keywords: [decoder, state-machine, lifecycle, streaming, demux]
 tags: [core-concept, internal, advanced]
-related: [../patterns/ffgo-integration-pattern.md, ./encoder-lifecycle.md, ./frame-pipeline.md]
+related: [../patterns/ffmpeg-integration-pattern.md, ./encoder-lifecycle.md, ./frame-pipeline.md]
 source: [server/media/decoder.go, server/media/stream_reader.go]
 ---
 
@@ -83,10 +83,10 @@ func (d *Decoder) Open(ctx context.Context) error {
 
     // 3. Locate video/audio streams
     d.videoStreamIdx = avformat.FindBestStream(
-        d.formatCtx, ffgo.MediaTypeVideo, -1, -1, nil, 0,
+        d.formatCtx, ffmpeg.MediaTypeVideo, -1, -1, nil, 0,
     )
     d.audioStreamIdx = avformat.FindBestStream(
-        d.formatCtx, ffgo.MediaTypeAudio, -1, -1, nil, 0,
+        d.formatCtx, ffmpeg.MediaTypeAudio, -1, -1, nil, 0,
     )
 
     // 4. Initialize codec contexts
@@ -121,7 +121,7 @@ func (d *Decoder) openVideoDecoder() error {
 
     // Hardware acceleration if requested
     if d.hwDevice != "" {
-        hwCtx, err := ffgo.NewHWDevice(d.hwDevice)
+        hwCtx, err := ffmpeg.NewHWDevice(d.hwDevice)
         if err != nil {
             return fmt.Errorf("hw device failed: %w", err)
         }
@@ -143,7 +143,7 @@ func (d *Decoder) openVideoDecoder() error {
 The core decode loop operates on the state machine:
 
 ```go
-func (d *Decoder) ReadFrame(ctx context.Context) (ffgo.Frame, error) {
+func (d *Decoder) ReadFrame(ctx context.Context) (ffmpeg.Frame, error) {
     d.mu.RLock()
     if d.state == decoderClosed {
         d.mu.RUnlock()
@@ -158,7 +158,7 @@ func (d *Decoder) ReadFrame(ctx context.Context) (ffgo.Frame, error) {
 
         err := avformat.ReadFrame(d.formatCtx, pkt)
         if err != nil {
-            if ffgo.IsEOF(err) {
+            if ffmpeg.IsEOF(err) {
                 // Signal EOF, enter draining state
                 d.mu.Lock()
                 d.state = decoderDraining
@@ -172,14 +172,14 @@ func (d *Decoder) ReadFrame(ctx context.Context) (ffgo.Frame, error) {
 
         // Route packet to correct decoder
         streamIdx := avcodec.GetPacketStreamIndex(pkt)
-        frame := ffgo.FrameAlloc()
+        frame := ffmpeg.FrameAlloc()
 
         if streamIdx == d.videoStreamIdx {
             if err := avcodec.SendPacket(d.videoCodecCtx, pkt); err != nil {
                 return nil, fmt.Errorf("send packet failed: %w", err)
             }
             if err := avcodec.ReceiveFrame(d.videoCodecCtx, frame); err != nil {
-                if ffgo.IsAgain(err) {
+                if ffmpeg.IsAgain(err) {
                     continue  // Need more packets
                 }
                 return nil, fmt.Errorf("receive frame failed: %w", err)
@@ -190,17 +190,17 @@ func (d *Decoder) ReadFrame(ctx context.Context) (ffgo.Frame, error) {
     }
 }
 
-func (d *Decoder) drainDecoders(ctx context.Context) (ffgo.Frame, error) {
+func (d *Decoder) drainDecoders(ctx context.Context) (ffmpeg.Frame, error) {
     // After EOF, send NULL packets to flush remaining frames
-    frame := ffgo.FrameAlloc()
+    frame := ffmpeg.FrameAlloc()
 
     // Try video decoder first
     if d.videoCodecCtx != nil {
-        if err := avcodec.SendPacket(d.videoCodecCtx, nil); err != nil && !ffgo.IsEOF(err) {
+        if err := avcodec.SendPacket(d.videoCodecCtx, nil); err != nil && !ffmpeg.IsEOF(err) {
             return nil, err
         }
         if err := avcodec.ReceiveFrame(d.videoCodecCtx, frame); err != nil {
-            if !ffgo.IsEOF(err) && !ffgo.IsAgain(err) {
+            if !ffmpeg.IsEOF(err) && !ffmpeg.IsAgain(err) {
                 return nil, err
             }
         } else {
@@ -213,7 +213,7 @@ func (d *Decoder) drainDecoders(ctx context.Context) (ffgo.Frame, error) {
     d.state = decoderClosed
     d.mu.Unlock()
 
-    return nil, ffgo.ErrEOF
+    return nil, ffmpeg.ErrEOF
 }
 ```
 
@@ -221,7 +221,7 @@ func (d *Decoder) drainDecoders(ctx context.Context) (ffgo.Frame, error) {
 
 **Thread Safety:** Decoders are NOT thread-safe. Only one goroutine can call Read* methods at a time. Use the mutex if exposing through multiple consumers.
 
-**Memory Management:** Each `ReadFrame` returns a frame with allocated buffers. The caller MUST call `ffgo.FrameUnref()` and then `ffgo.FrameFree(&frame)` when finished to prevent memory leaks.
+**Memory Management:** Each `ReadFrame` returns a frame with allocated buffers. The caller MUST call `ffmpeg.FrameUnref()` and then `ffmpeg.FrameFree(&frame)` when finished to prevent memory leaks.
 
 **Stream Selection:** The Decoder picks the "best" stream of each type. To select specific streams, inspect streamInfo and re-open decoders for specific indices.
 

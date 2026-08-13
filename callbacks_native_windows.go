@@ -1,6 +1,6 @@
 //go:build windows && (amd64 || arm64)
 
-package ffgo
+package ffmpeg
 
 import "github.com/ebitengine/purego"
 

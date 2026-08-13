@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 import (
 	"context"
@@ -71,13 +71,13 @@ func newDecoder(interrupt *decoderInterrupt) *Decoder {
 func (d *Decoder) allocateDecodeResources() error {
 	packet := avcodec.PacketAlloc()
 	if packet == nil {
-		return errors.New("ffgo: failed to allocate packet")
+		return errors.New("ffmpeg: failed to allocate packet")
 	}
 
 	frame := avutil.FrameAlloc()
 	if frame == nil {
 		avcodec.PacketFree(&packet)
-		return errors.New("ffgo: failed to allocate frame")
+		return errors.New("ffmpeg: failed to allocate frame")
 	}
 
 	d.packet = packet
@@ -101,12 +101,12 @@ type DecoderOptions struct {
 	CodecWhitelist  []string
 
 	// ProbeScore, when >0, requires the detected probe score to be at least this value.
-	// If TryMultipleFormats is enabled, ffgo will attempt additional forced demuxers when the
+	// If TryMultipleFormats is enabled, ffmpeg will attempt additional forced demuxers when the
 	// auto-detected probe score is below this threshold.
 	ProbeScore int
 
 	// FormatBlacklist excludes demuxers from TryMultipleFormats attempts.
-	// Note: this is an ffgo-side filter; it is not passed as an avformat_open_input option.
+	// Note: this is an ffmpeg-side filter; it is not passed as an avformat_open_input option.
 	FormatBlacklist []string
 
 	// TryMultipleFormats, when true, retries avformat_open_input with forced demuxers if
@@ -119,7 +119,7 @@ type DecoderOptions struct {
 	Streams []MediaType
 
 	// ProgramID selects a specific program to decode in multi-program inputs (e.g. MPEG-TS).
-	// When set, ffgo will pick the best video/audio streams within the program.
+	// When set, ffmpeg will pick the best video/audio streams within the program.
 	ProgramID int
 
 	// HWDevice specifies the hardware device for hardware acceleration (e.g., "cuda", "vaapi")
@@ -185,7 +185,7 @@ func NewDecoder(path string, opts *DecoderOptions) (*Decoder, error) {
 // NewDecoderContext opens a media file and allows FFmpeg probing and I/O to be canceled.
 func NewDecoderContext(ctx context.Context, path string, opts *DecoderOptions) (*Decoder, error) {
 	if ctx == nil {
-		return nil, errors.New("ffgo: context cannot be nil")
+		return nil, errors.New("ffmpeg: context cannot be nil")
 	}
 	// Ensure FFmpeg is loaded
 	if err := bindings.Load(); err != nil {
@@ -450,13 +450,13 @@ func (d *Decoder) openVideoDecoderLocked() error {
 	// Find decoder
 	codec := avcodec.FindDecoder(codecID)
 	if codec == nil {
-		return errors.New("ffgo: decoder not found")
+		return errors.New("ffmpeg: decoder not found")
 	}
 
 	// Allocate codec context
 	d.videoCodecCtx = avcodec.AllocContext3(codec)
 	if d.videoCodecCtx == nil {
-		return errors.New("ffgo: failed to allocate codec context")
+		return errors.New("ffmpeg: failed to allocate codec context")
 	}
 
 	// Copy codec parameters
@@ -501,13 +501,13 @@ func (d *Decoder) openAudioDecoderLocked() error {
 	// Find decoder
 	codec := avcodec.FindDecoder(codecID)
 	if codec == nil {
-		return errors.New("ffgo: audio decoder not found")
+		return errors.New("ffmpeg: audio decoder not found")
 	}
 
 	// Allocate codec context
 	d.audioCodecCtx = avcodec.AllocContext3(codec)
 	if d.audioCodecCtx == nil {
-		return errors.New("ffgo: failed to allocate audio codec context")
+		return errors.New("ffmpeg: failed to allocate audio codec context")
 	}
 
 	// Copy codec parameters

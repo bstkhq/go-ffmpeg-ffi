@@ -101,12 +101,12 @@ const (
 
 ```go
 // Option 1: Fixed bitrate (VBR)
-encoder.AddVideoStream(ffgo.VideoEncoderConfig{
+encoder.AddVideoStream(ffmpeg.VideoEncoderConfig{
     BitRate: 5_000_000,  // Always target 5 Mbps
 })
 
 // Option 2: Quality-based (CRF)
-encoder.AddVideoStream(ffgo.VideoEncoderConfig{
+encoder.AddVideoStream(ffmpeg.VideoEncoderConfig{
     CRF: 28,  // Variable bitrate, target quality
 })
 ```
@@ -154,13 +154,13 @@ func (abr *ABRTranscoder) createVariantEncoder(vp VariantProfile) (*VariantEncod
         abr.gpuIndex++
     }
 
-    config := ffgo.VideoEncoderConfig{
+    config := ffmpeg.VideoEncoderConfig{
         Codec:    vp.Codec,
         HWDevice: hwDevice,  // "cuda:0", "cuda:1", "vaapi", etc.
         // ... other settings
     }
 
-    return ffgo.NewEncoder(...).AddVideoStream(config)
+    return ffmpeg.NewEncoder(...).AddVideoStream(config)
 }
 ```
 
@@ -230,7 +230,7 @@ type EncodingStats struct {
     gpuUtilization   float64
 }
 
-func (es *EncodingStats) TrackFrame(encoder *ffgo.Encoder, frame ffgo.Frame) error {
+func (es *EncodingStats) TrackFrame(encoder *ffmpeg.Encoder, frame ffmpeg.Frame) error {
     start := time.Now()
 
     if err := encoder.EncodeFrame(frame); err != nil {

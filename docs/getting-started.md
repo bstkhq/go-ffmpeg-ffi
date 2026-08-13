@@ -22,10 +22,10 @@ features load `avfilter` and `avdevice` from the same FFmpeg family.
 go get github.com/bstkhq/go-ffmpeg-ffi
 ```
 
-The module path and package name differ. Import it explicitly as `ffgo`:
+The imported package is named `ffmpeg`:
 
 ```go
-import ffgo "github.com/bstkhq/go-ffmpeg-ffi"
+import "github.com/bstkhq/go-ffmpeg-ffi"
 ```
 
 This project is based on ffgo but is not API-compatible with it. Do not use the
@@ -34,7 +34,7 @@ original `github.com/obinnaokechukwu/ffgo` import path or copy examples from the
 
 ## Select the native FFmpeg build
 
-Configure the library location before `ffgo.Init()` or any high-level API call:
+Configure the library location before `ffmpeg.Init()` or any high-level API call:
 
 | Platform | Primary application-controlled location |
 | --- | --- |
@@ -49,7 +49,7 @@ loader validates the core and optional library-major tuple and rejects unknown
 or mixed families before accessing version-specific structures.
 
 The optional C shim provides operations that cannot be expressed safely through
-direct PureGo calls. Point `FFGO_SHIM_DIR` at a shim built against the same
+direct PureGo calls. Point `FFMPEG_SHIM_DIR` at a shim built against the same
 FFmpeg family. A missing optional shim does not prevent core decoding; an
 incompatible shim is rejected. Prebuilt desktop shims live under
 [`shim/prebuilt`](../shim/prebuilt), and source/build instructions are in the
@@ -61,10 +61,10 @@ High-level constructors initialize FFmpeg automatically. Calling `Init`
 explicitly gives startup failures a clear place in the application lifecycle:
 
 ```go
-if err := ffgo.Init(); err != nil {
+if err := ffmpeg.Init(); err != nil {
 	log.Fatal(err)
 }
-log.Print(ffgo.Diagnose())
+log.Print(ffmpeg.Diagnose())
 ```
 
 `Diagnose` reports the OS and architecture, loaded FFmpeg versions, shim status,
@@ -81,18 +81,18 @@ import (
 	"io"
 	"log"
 
-	ffgo "github.com/bstkhq/go-ffmpeg-ffi"
+	"github.com/bstkhq/go-ffmpeg-ffi"
 )
 
 func main() {
-	decoder, err := ffgo.NewDecoder("video.mp4", nil)
+	decoder, err := ffmpeg.NewDecoder("video.mp4", nil)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer decoder.Close()
 
 	if !decoder.HasVideo() {
-		log.Fatal(ffgo.ErrNoVideoStream)
+		log.Fatal(ffmpeg.ErrNoVideoStream)
 	}
 	stream := decoder.VideoStream()
 	log.Printf("%s %dx%d", stream.CodecID, stream.Width, stream.Height)

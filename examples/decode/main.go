@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-// Example: decode - Demonstrates video decoding with ffgo
+// Example: decode - Demonstrates video decoding with ffmpeg
 //
 // Usage: decode <input_file>
 //
@@ -23,20 +23,20 @@ func main() {
 	inputFile := os.Args[1]
 
 	// Initialize FFmpeg
-	if err := ffgo.Init(); err != nil {
+	if err := ffmpeg.Init(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize FFmpeg: %v\n", err)
 		os.Exit(1)
 	}
 
 	// Print version info
-	avutil, avcodec, avformat := ffgo.Version()
+	avutil, avcodec, avformat := ffmpeg.Version()
 	fmt.Printf("FFmpeg versions: avutil=%d.%d.%d, avcodec=%d.%d.%d, avformat=%d.%d.%d\n",
 		avutil>>16, (avutil>>8)&0xFF, avutil&0xFF,
 		avcodec>>16, (avcodec>>8)&0xFF, avcodec&0xFF,
 		avformat>>16, (avformat>>8)&0xFF, avformat&0xFF)
 
 	// Open the input file
-	decoder, err := ffgo.NewDecoder(inputFile, nil)
+	decoder, err := ffmpeg.NewDecoder(inputFile, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to open file: %v\n", err)
 		os.Exit(1)
@@ -87,7 +87,7 @@ func main() {
 		for frameCount < maxFrames {
 			frame, err := decoder.DecodeVideo()
 			if err != nil {
-				if ffgo.IsEOF(err) {
+				if ffmpeg.IsEOF(err) {
 					break
 				}
 				fmt.Fprintf(os.Stderr, "Decode error: %v\n", err)
@@ -98,7 +98,7 @@ func main() {
 			}
 
 			frameCount++
-			info := ffgo.GetFrameInfo(frame)
+			info := ffmpeg.GetFrameInfo(frame)
 			fmt.Printf("Frame %3d: %dx%d, pts=%d\n",
 				frameCount, info.Width, info.Height, info.PTS)
 		}

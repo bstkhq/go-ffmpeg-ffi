@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 import (
 	"errors"
@@ -82,27 +82,27 @@ func NewSubtitleDecoder(stream *StreamInfo) (*SubtitleDecoder, error) {
 	}
 
 	if stream == nil {
-		return nil, errors.New("ffgo: subtitle stream cannot be nil")
+		return nil, errors.New("ffmpeg: subtitle stream cannot be nil")
 	}
 	if stream.Type != MediaTypeSubtitle {
-		return nil, errors.New("ffgo: stream is not a subtitle stream")
+		return nil, errors.New("ffmpeg: stream is not a subtitle stream")
 	}
 	codecPar := stream.CodecParameters()
 	if codecPar == nil {
-		return nil, errors.New("ffgo: subtitle stream codec parameters are not available")
+		return nil, errors.New("ffmpeg: subtitle stream codec parameters are not available")
 	}
 	codecID := avformat.GetCodecParCodecID(codecPar)
 
 	// Find decoder
 	decoder := avcodec.FindDecoder(codecID)
 	if decoder == nil {
-		return nil, errors.New("ffgo: subtitle decoder not found")
+		return nil, errors.New("ffmpeg: subtitle decoder not found")
 	}
 
 	// Allocate codec context
 	codecCtx := avcodec.AllocContext3(decoder)
 	if codecCtx == nil {
-		return nil, errors.New("ffgo: failed to allocate codec context")
+		return nil, errors.New("ffmpeg: failed to allocate codec context")
 	}
 
 	// Copy parameters
@@ -124,7 +124,7 @@ func NewSubtitleDecoder(stream *StreamInfo) (*SubtitleDecoder, error) {
 	if subtitle == nil {
 		avcodec.Close(codecCtx)
 		avcodec.FreeContext(&codecCtx)
-		return nil, errors.New("ffgo: failed to allocate subtitle struct")
+		return nil, errors.New("ffmpeg: failed to allocate subtitle struct")
 	}
 	clearSubtitle(subtitle)
 

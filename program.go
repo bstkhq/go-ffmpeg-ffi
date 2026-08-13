@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 import (
 	"errors"
@@ -56,7 +56,7 @@ func (d *Decoder) selectProgramStreams(programID int, wantVideo, wantAudio bool)
 		return ErrDecoderNotOpened
 	}
 	if programID <= 0 {
-		return errors.New("ffgo: invalid program id")
+		return errors.New("ffmpeg: invalid program id")
 	}
 
 	n := avformat.GetNumPrograms(d.formatCtx)
@@ -106,5 +106,5 @@ func (d *Decoder) selectProgramStreams(programID int, wantVideo, wantAudio bool)
 
 		return nil
 	}
-	return errors.New("ffgo: program not found")
+	return errors.New("ffmpeg: program not found")
 }

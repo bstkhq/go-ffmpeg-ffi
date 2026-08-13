@@ -64,8 +64,7 @@ Install the Go module:
 go get github.com/bstkhq/go-ffmpeg-ffi
 ```
 
-The module path is `go-ffmpeg-ffi`, while the Go package name remains `ffgo`.
-Using an explicit import alias makes that relationship clear:
+The imported package is named `ffmpeg`:
 
 ```go
 package main
@@ -75,11 +74,11 @@ import (
 	"io"
 	"log"
 
-	ffgo "github.com/bstkhq/go-ffmpeg-ffi"
+	"github.com/bstkhq/go-ffmpeg-ffi"
 )
 
 func main() {
-	decoder, err := ffgo.NewDecoder("video.mp4", nil)
+	decoder, err := ffmpeg.NewDecoder("video.mp4", nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -102,7 +101,7 @@ func main() {
 The high-level API loads FFmpeg automatically. Applications must provide one
 coherent FFmpeg shared-library family at runtime. Before the first FFmpeg call,
 select it with `LD_LIBRARY_PATH` on Linux, `DYLD_LIBRARY_PATH` on macOS, or
-`PATH` on Windows. Set `FFGO_SHIM_DIR` when supplying the optional matching C
+`PATH` on Windows. Set `FFMPEG_SHIM_DIR` when supplying the optional matching C
 shim. Android packages unversioned `.so` files inside the application; signed
 iOS applications embed frameworks or link FFmpeg into the process image.
 

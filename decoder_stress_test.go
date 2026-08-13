@@ -1,6 +1,6 @@
 //go:build amd64 || arm64
 
-package ffgo
+package ffmpeg
 
 import (
 	"fmt"
@@ -24,18 +24,18 @@ func TestDecoderLifecycle(t *testing.T) {
 }
 
 func TestDecoderLifecycleStress(t *testing.T) {
-	if os.Getenv("FFGO_STRESS") == "" {
-		t.Skip("set FFGO_STRESS=1 to run prolonged memory assertions")
+	if os.Getenv("FFMPEG_STRESS") == "" {
+		t.Skip("set FFMPEG_STRESS=1 to run prolonged memory assertions")
 	}
 	if !requireFFmpeg(t) {
 		return
 	}
 
 	iterations := 100
-	if value := os.Getenv("FFGO_STRESS_ITERATIONS"); value != "" {
+	if value := os.Getenv("FFMPEG_STRESS_ITERATIONS"); value != "" {
 		parsed, err := strconv.Atoi(value)
 		if err != nil || parsed <= 0 {
-			t.Fatalf("FFGO_STRESS_ITERATIONS must be a positive integer, got %q", value)
+			t.Fatalf("FFMPEG_STRESS_ITERATIONS must be a positive integer, got %q", value)
 		}
 		iterations = parsed
 	}

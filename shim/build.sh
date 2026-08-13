@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# build.sh - Build the ffshim library for ffgo
+# build.sh - Build the ffshim library for ffmpeg
 #
 # This script builds the C shim library that provides wrappers for
 # FFmpeg functionality that purego cannot handle directly.
@@ -17,7 +17,7 @@
 #   PREFIX      - Installation prefix (default: /usr/local)
 #   FFMPEG_DIR  - FFmpeg installation directory (for headers/libs)
 #
-# The shim is OPTIONAL - core ffgo functionality works without it.
+# The shim is OPTIONAL - core ffmpeg functionality works without it.
 # Only logging callbacks and some advanced features require the shim.
 
 set -e
@@ -168,7 +168,7 @@ build() {
     echo ""
     echo "To use the shim, either:"
     echo "  1. Install it:  ./build.sh install"
-    echo "  2. Set FFGO_SHIM_DIR=$SCRIPT_DIR"
+    echo "  2. Set FFMPEG_SHIM_DIR=$SCRIPT_DIR"
     case "$OS" in
         Linux)
             echo "  3. Add to LD_LIBRARY_PATH: export LD_LIBRARY_PATH=$SCRIPT_DIR:\$LD_LIBRARY_PATH"
@@ -246,7 +246,7 @@ show_help() {
     echo "Detected platform: $OS_NORMALIZED-$ARCH_NORMALIZED"
     echo "Output file: $OUTPUT"
     echo ""
-    echo "The shim is OPTIONAL - core ffgo functionality works without it."
+    echo "The shim is OPTIONAL - core ffmpeg functionality works without it."
     echo "Only logging callbacks and some advanced features require the shim."
 }
 
