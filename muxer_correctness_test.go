@@ -155,6 +155,9 @@ func TestMuxerStreamsReturnsSnapshot(t *testing.T) {
 	}
 	streams[0] = nil
 	streams = append(streams, nil)
+	if len(streams) != 2 {
+		t.Fatalf("caller snapshot length = %d, want 2", len(streams))
+	}
 
 	got := muxer.Streams()
 	if len(got) != 1 || got[0] != stream {
