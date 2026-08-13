@@ -1,27 +1,28 @@
 # go-ffmpeg-ffi documentation
 
-This directory is the canonical home for project architecture and planning.
-Implementation detail belongs in code, tests, issues, and pull requests rather
-than in additional plan documents.
+## Use the library
 
-## Canonical documents
+- [Getting started](getting-started.md): installation, library discovery,
+  first decode, diagnostics, frame ownership, and native packaging.
+- [Support and validation](support.md): FFmpeg versions, operating systems,
+  architectures, evidence levels, and known qualification gaps.
 
-- [Architecture](architecture.md): support policy, runtime layers, ABI rules,
-  C shim boundaries, ownership, and initialization.
-- [Roadmap](roadmap.md): the single implementation plan, covering the six
-  bootstrap pull requests and the Android-first platform rollout through the
-  Windows/macOS desktop closure, with explicit compile, integration, and
-  hardware-qualification gates.
+## Understand and develop the project
 
-## Inherited reference documents
+- [Architecture](architecture.md): runtime layers, ABI policy, native ownership,
+  callbacks, initialization, and distribution boundaries.
+- [Roadmap](roadmap.md): completed platform work and the remaining emulator,
+  physical-device, and runtime qualification gates.
+- [Contributing](../CONTRIBUTING.md): expectations for changes, tests, PRs, and
+  assisted-development disclosure.
 
-The following documents came from ffgo. They are retained while useful content
-is migrated, but their claims are not go-ffmpeg-ffi guarantees:
+## Historical ffgo documents
 
-- [Original internal design](internal-design.md)
-- [Original user guide](user-guide.md)
-- [Original feature gap analysis](gap-analysis.md)
+The original ffgo guide, design, feature analysis, and TODO list are archived in
+[`docs/ffgo`](ffgo/README.md). They are retained for attribution and historical
+context only. They contain obsolete import paths, examples, platform claims,
+and APIs, and must not be used as go-ffmpeg-ffi documentation.
 
-The canonical set is intentionally small. New cross-cutting decisions should
-update `architecture.md`; schedule or priority changes should update
+Current cross-cutting decisions belong in `architecture.md`; compatibility
+evidence belongs in `support.md`; schedule and qualification work belongs in
 `roadmap.md`.

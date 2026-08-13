@@ -1,112 +1,154 @@
 # go-ffmpeg-ffi
 
-Go bindings for dynamically loaded FFmpeg libraries, built with
-[PureGo](https://github.com/ebitengine/purego). Supported desktop targets aim
-to remain CGO-free; PureGo mobile targets require the platform C toolchain.
+Go bindings for dynamically loaded FFmpeg libraries on Linux, macOS, Windows,
+Android, and iOS, built with
+[PureGo](https://github.com/ebitengine/purego).
 
-> **Hard fork:** go-ffmpeg-ffi starts from
-> [obinnaokechukwu/ffgo](https://github.com/obinnaokechukwu/ffgo). We are
-> grateful to its author and contributors. The Git history, Apache-2.0 license,
-> and attribution are preserved; this project does not claim their work as its
-> own.
+Based on [ffgo](https://github.com/obinnaokechukwu/ffgo), with its history and
+attribution preserved, but **not API-compatible with ffgo**.
 
-## Status
+## Purpose and maturity
 
-The project is in hard-fork bootstrap and has not published its first release.
-Existing APIs and inherited documentation are being audited before that
-release, so they are not yet a compatibility promise.
+go-ffmpeg-ffi aims to provide one functional FFmpeg backend across the operating
+systems used by our applications. It is being developed as the media backend for
+[go-avebi](https://github.com/erparts/go-avebi), which Bombastik! uses in several
+projects.
 
-The target is a maintainable binding with explicit ABI detection, predictable
-ownership, safe callbacks, and integration evidence for every supported FFmpeg
-release line.
+Our primary use case is playback. Library loading, probing, demuxing, video and
+audio decoding, resampling, seeking, EOF, cancellation, and repeated lifecycle
+paths receive the most integration and stress testing. Encoding, muxing,
+filtering, capture, subtitles, and hardware acceleration are available, but have
+less production use and less exhaustive validation. Contributions that improve
+those areas are especially welcome.
 
-## Intended support
+Codec, container, filter, device, and hardware-acceleration availability still
+depends on the FFmpeg build and the device. Operating-system support alone does
+not guarantee MediaCodec, VideoToolbox, D3D11VA, a particular codec profile, or
+60 FPS.
 
-| FFmpeg | Policy |
+## Compatibility
+
+The loader supports coherent FFmpeg 6.x, 7.x, 8.x, and 9.x shared-library
+families. CI currently builds and tests these releases on Linux amd64:
+
+| Release line | Pinned test release |
 | --- | --- |
-| 5.1 | Legacy candidate only where a supported system has no practical newer package. |
-| 6.0 and 6.1 | Official support target. |
-| 7.0 and 7.1 | Official support target. |
-| 8.0 and 8.1 | Official support target. |
-| 9.0 | Official support target, validated with 9.0.1. |
-| 4.x and older | Unsupported. |
-| Development snapshots and future major releases | Unsupported until an official release is ABI-qualified. |
+| 6.0 / 6.1 | 6.0.1 / 6.1.6 |
+| 7.0 / 7.1 | 7.0.3 / 7.1.5 |
+| 8.0 / 8.1 | 8.0.3 / 8.1.2 |
+| 9.0 | 9.0.1 |
 
-Support means that the exact loaded library family is recognized and that the
-same required test suite passes. It does not mean that every FFmpeg build has
-the same codecs, filters, devices, or hardware accelerators.
+FFmpeg 4.x and older, development snapshots, and future major versions are
+rejected until explicitly qualified. See the full
+[support and validation matrix](docs/support.md) for the distinction between
+compilation, runtime integration, emulator evidence, and physical-device
+qualification.
 
-Desktop validation is tracked separately by operating system and architecture:
-
-| Target | Validation |
+| Operating system | Current validation |
 | --- | --- |
-| macOS `amd64` and `arm64` | Native FFmpeg runtime, ABI probe, shim, unit, and integration CI. |
-| Windows `amd64` | Native FFmpeg runtime, ABI probe, shim, unit, and integration CI. |
-| Windows `arm64` | Complete package and test compilation; native runtime qualification awaits a public runner. |
+| Linux | Native runtime and the complete FFmpeg 6–9 release matrix on amd64; arm64 source and shim support. |
+| macOS | Native runtime on Intel and Apple Silicon. |
+| Windows | Native runtime with FFmpeg 9.0.1 on amd64; complete compilation on arm64. |
+| Android | API 33+ compilation on arm64 and x86-64; prolonged H.264/AAC playback and lifecycle tests on an API 33 x86-64 emulator. |
+| iOS | iOS 13+ device and simulator compilation plus Ebitengine XCFramework binding; physical-device runtime qualification is pending. |
 
-Desktop Go applications remain buildable with `CGO_ENABLED=0`. They must ship
-or install a coherent FFmpeg 6, 7, 8, or 9 shared-library family for their target
-OS. The optional C shim is built separately and is required for features that
-cannot be expressed safely through direct PureGo calls.
+Desktop applications can remain CGO-free. Android and iOS require
+`CGO_ENABLED=1` and their native NDK or Xcode toolchain, as required by PureGo
+on mobile.
 
-Mobile validation is staged independently from desktop runtime support:
+## Install and decode
 
-| Target | Validation |
+Install the Go module:
+
+```sh
+go get github.com/bstkhq/go-ffmpeg-ffi
+```
+
+The module path is `go-ffmpeg-ffi`, while the Go package name remains `ffgo`.
+Using an explicit import alias makes that relationship clear:
+
+```go
+package main
+
+import (
+	"errors"
+	"io"
+	"log"
+
+	ffgo "github.com/bstkhq/go-ffmpeg-ffi"
+)
+
+func main() {
+	decoder, err := ffgo.NewDecoder("video.mp4", nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer decoder.Close()
+
+	for {
+		frame, err := decoder.DecodeVideo()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			log.Fatal(err)
+		}
+		// frame is borrowed and remains valid until the next decode call.
+		log.Printf("frame: %dx%d pts=%d", frame.Width(), frame.Height(), frame.PTS())
+	}
+}
+```
+
+The high-level API loads FFmpeg automatically. Applications must provide one
+coherent FFmpeg shared-library family at runtime. Before the first FFmpeg call,
+select it with `LD_LIBRARY_PATH` on Linux, `DYLD_LIBRARY_PATH` on macOS, or
+`PATH` on Windows. Set `FFGO_SHIM_DIR` when supplying the optional matching C
+shim. Android packages unversioned `.so` files inside the application; signed
+iOS applications embed frameworks or link FFmpeg into the process image.
+
+See [Getting started](docs/getting-started.md) for installation, diagnostics,
+ownership, and mobile packaging details.
+
+## Agentic development
+
+The current hard-fork is developed with an Agentic Coding workflow configured as
+follows:
+
+| Component | Configuration |
 | --- | --- |
-| Android 13 / API 33 `arm64` | Complete compilation; physical qualification is anchored to the Samsung Galaxy Tab A9+. |
-| Android 13 / API 33 `amd64` emulator | Complete compilation plus prolonged Ebitengine/FFmpeg software decode and lifecycle stress evidence. |
-| iOS 13+ `arm64` device | Complete package/test compilation and downstream Ebitengine XCFramework binding; signed-app and physical-device qualification remain separate gates. |
-| iOS 13+ simulator `arm64` and `amd64` | Complete package/test compilation and downstream Ebitengine XCFramework binding while the selected Xcode supports each slice. |
+| Model | OpenAI Codex, based on the GPT-5 model family. |
+| Agent mode | Long-running repository sessions with workspace inspection, editing, builds, tests, and diagnostics. |
+| Tools | Go and native toolchains, GitHub PR/CI workflows, and Android emulator/integration tooling. |
+| Delivery | Focused branches, local validation, platform CI, and a pull request before merge. |
+| Control | A human maintainer defines scope, approves privileged actions, reviews evidence, and decides what is merged. |
 
-PureGo mobile builds require `CGO_ENABLED=1` and the native Android NDK or
-Xcode toolchain. On iOS, the consuming signed application embeds FFmpeg
-frameworks or links the complete FFmpeg symbols into its process image; the Go
-module neither downloads nor redistributes executable code.
-
-## Design in brief
-
-- Exported FFmpeg functions are loaded with PureGo. Supported desktop
-  applications remain buildable with `CGO_ENABLED=0`; Android and iOS builds
-  follow PureGo's requirement for `CGO_ENABLED=1`.
-- Version-specific Go ABI layouts cover simple, verified structure access.
-- A small versioned C shim handles C features that cannot be expressed safely
-  through direct calls, such as variadic APIs and header-derived accessors.
-- The loader rejects unknown, mixed, or shim-incompatible library families
-  before unsafe access occurs.
-- High-level APIs define ownership, cancellation, flushing, and concurrency
-  explicitly.
-
-See [Architecture](docs/architecture.md) for the reasoning and
-[Roadmap](docs/roadmap.md) for the bootstrap and platform rollout.
+The model is a development tool, not the accountable author or reviewer.
+Material assistance is disclosed in PRs and may be recorded with an
+`Assisted-by: OpenAI Codex` commit trailer. Hosted model snapshots and tool
+availability can evolve; reproducible facts belong in the corresponding PR.
 
 ## Documentation
 
+- [Getting started](docs/getting-started.md)
+- [Support and validation](docs/support.md)
+- [Architecture](docs/architecture.md)
+- [Roadmap and qualification gates](docs/roadmap.md)
 - [Documentation index](docs/README.md)
-- [Architecture and ABI policy](docs/architecture.md)
-- [Implementation and test roadmap](docs/roadmap.md)
-- [Inherited ffgo user guide](docs/user-guide.md), retained as migration input
 
-The inherited design and feature documents are clearly labelled and must not be
-read as go-ffmpeg-ffi support guarantees.
+The original ffgo documents are archived under [`docs/ffgo`](docs/ffgo/README.md)
+for provenance. Their examples and compatibility claims do not describe the
+current API.
 
 ## Contributing
 
-Please read [CONTRIBUTING.md](CONTRIBUTING.md). In particular, changes must name
-the FFmpeg release lines they affect and include evidence at the appropriate
-unit, integration, or stress-test level. Public branches and PRs are reviewed
-for scope, compatibility impact, and validation evidence.
-
-Development and review are assisted by **OpenAI Codex**. Human maintainers
-review and remain responsible for every change. Material assistance is recorded
-with an `Assisted-by: OpenAI Codex` commit trailer; Codex is not given a made-up
-email address or authorship identity.
+Issues and pull requests are welcome. Please include the operating system,
+architecture, exact FFmpeg versions and build, reproduction steps, and the tests
+run. Read [CONTRIBUTING.md](CONTRIBUTING.md) before changing ABI, ownership,
+callbacks, packaging, or platform code.
 
 ## License and attribution
 
-go-ffmpeg-ffi and the inherited ffgo source are distributed under the
-[Apache License 2.0](LICENSE). See [NOTICE](NOTICE) for provenance.
-
-FFmpeg is a separate project, normally under LGPL-2.1-or-later and sometimes GPL
-depending on how it is built. This repository's Apache-2.0 license does not
-relicense FFmpeg. Any distributed FFmpeg or linked shim binaries must satisfy
-the license of the FFmpeg build used to create them.
+go-ffmpeg-ffi and its inherited ffgo source are distributed under the
+[Apache License 2.0](LICENSE); provenance is recorded in [NOTICE](NOTICE).
+FFmpeg is a separate project, normally distributed under LGPL or GPL depending
+on its build. This repository does not redistribute or relicense FFmpeg.

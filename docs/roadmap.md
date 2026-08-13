@@ -1,13 +1,23 @@
-# Roadmap
+# Roadmap and qualification gates
 
-This is the project's only implementation plan. The hard-fork bootstrap is
-intentionally organized as six coherent pull requests, not as one PR per
-bullet. Work found inside the same subsystem stays in its PR unless
-reviewability forces a split; if one PR is split, another is consolidated so
-the bootstrap remains at roughly six PRs. Platform expansion follows the
-bootstrap as an Android-first program with its own evidence gates.
+The ABI, correctness, ownership, and release-matrix bootstrap; Android
+compile/emulator phases; iOS compile and XCFramework integration; and
+Windows/macOS desktop closure are complete. Remaining integration and platform
+work includes:
 
-## PR 1: establish the hard-fork baseline
+- migrating go-avebi from its temporary ffgo fork to go-ffmpeg-ffi and rerunning
+  its playback and resource matrix;
+- Samsung Galaxy Tab A9+ physical runtime, MediaCodec, thermal, and sustained
+  H.264/H.265 30/60 FPS qualification;
+- signed runtime, VideoToolbox, audio, lifecycle, and sustained-load tests on a
+  named physical iPhone; and
+- native Windows ARM64 runtime evidence when a suitable runner is available.
+
+The sections below retain the completed bootstrap plan and the evidence gates
+used to earn current support. Current claims are summarized in
+[support.md](support.md).
+
+## PR 1: establish the hard-fork baseline — complete
 
 - Adopt the `go-ffmpeg-ffi` repository, package, and module identity.
 - Preserve the complete ffgo Git history, Apache-2.0 license, and upstream
@@ -22,7 +32,7 @@ bootstrap as an Android-first program with its own evidence gates.
 Complete when a clean clone builds under the new module path and no public
 document presents inherited claims as go-ffmpeg-ffi guarantees.
 
-## PR 2: make FFmpeg 6-9 ABI selection safe
+## PR 2: make FFmpeg 6-9 ABI selection safe — complete
 
 - Centralize library discovery and registration instead of binding the complete
   API from package `init()` functions.
@@ -43,7 +53,7 @@ document presents inherited claims as go-ffmpeg-ffi guarantees.
 Complete when every target family initializes through the same loader and all
 unsupported combinations fail closed.
 
-## PR 3: correct decoder and encoder state machines
+## PR 3: correct decoder and encoder state machines — complete
 
 - Model the complete FFmpeg send/receive protocol, including `EAGAIN` retry.
 - Flush once and drain delayed video and audio output through FFmpeg EOF.
@@ -56,7 +66,7 @@ unsupported combinations fail closed.
 Complete when reference counts and timestamps demonstrate that normal and
 delayed frames are neither lost nor duplicated.
 
-## PR 4: make ownership, callbacks, and cancellation safe
+## PR 4: make ownership, callbacks, and cancellation safe — complete
 
 - Define owned, borrowed, clone, `Into`, and zero-copy lifetimes.
 - Correct plane access, `extended_data`, pooling, and native cleanup.
@@ -70,7 +80,7 @@ delayed frames are neither lost nor duplicated.
 Complete when stress runs show no invalid callback pointers, leaked handles,
 unbounded native memory, file-descriptor growth, or blocked shutdowns.
 
-## PR 5: expand compatibility evidence and stress coverage
+## PR 5: compatibility matrix complete; go-avebi migration pending
 
 PR 2 establishes the Linux amd64 release-line gate. PR 5 expands that same
 matrix with the complete behavioral, resource, and downstream integration
@@ -124,7 +134,7 @@ Complete when every supported line passes the same required suite in CI and the
 local go-avebi matrix has no crashes, growing resources, or unexplained output
 differences.
 
-## PR 6: stabilize the public API and first release
+## PR 6: stabilize the public API and release process — in progress
 
 - Set the high-level/low-level package boundary and consolidate duplicate
   constructors and options.
@@ -173,7 +183,7 @@ The mobile build is therefore still PureGo-based, but it requires the Android
 NDK or Xcode C toolchain. Desktop targets retain the CGO-free application-build
 goal where PureGo supports it.
 
-### Android phase A: make the module compile
+### Android phase A: make the module compile — complete
 
 - Remove the blanket Android exclusions and replace them with capability-based
   build constraints.
@@ -195,11 +205,11 @@ Complete when `go list ./...`, package builds, and test compilation succeed for
 both Android targets with the intended public surface and without an Ebitengine
 dependency.
 
-Current branch evidence (12 August 2026): this compile gate passes for API 33
+Current master evidence (13 August 2026): this compile gate passes for API 33
 `arm64` and `amd64`, including every root package and test binary. The external
 Ebitengine fixture remains a separate module.
 
-### Android phase B: emulator integration
+### Android phase B: emulator integration — complete
 
 - Maintain the external-module fixture in
   [`integration/android-ebiten`](../integration/android-ebiten) and build it with
@@ -246,7 +256,7 @@ contain no probe failure, app ANR, or native crash. This closes the emulator
 resource-growth gate for phase B; it remains correctness and lifecycle
 evidence, not GPU, MediaCodec, audible-audio, thermal, or frame-rate evidence.
 
-### Android phase C: Galaxy Tab A9+ qualification
+### Android phase C: Galaxy Tab A9+ qualification — pending physical device
 
 The Samsung Galaxy Tab A9+ is the minimum supported Android device and the
 physical acceptance reference. Its launch platform, Android 13 / API 33, is the
@@ -272,7 +282,7 @@ MediaCodec and 60 FPS claims are published only for the exact codec, profile,
 resolution, pixel format, device, Android build, and FFmpeg configuration that
 passed qualification.
 
-### iOS phase
+### iOS phase — compile complete, physical qualification pending
 
 - Reuse the platform loader boundary established by Android, with iOS-specific
   signed-framework naming, application-bundle resolution, and a process-image
@@ -297,16 +307,12 @@ No physical reference iPhone has been nominated yet. Until one is recorded and
 passes the signed-app runtime, codec, lifecycle, thermal, and sustained-load
 suite, iOS support claims stop at compilation and XCFramework integration.
 
-### Windows and macOS closure
+### Windows and macOS closure — complete except Windows ARM64 runtime
 
-PureGo supports Windows `amd64` and `arm64` as Tier 1 platforms. The current
-go-ffmpeg-ffi loader nevertheless calls PureGo's `Dlopen`, `Dlsym`, `Dlclose`,
-and `RTLD_*` API, which is intentionally unavailable on Windows. Windows needs
-a platform loader using `LoadLibrary`, `GetProcAddress`, and `FreeLibrary`; this
-is a go-ffmpeg-ffi integration gap, not a lack of Windows support in PureGo.
-
-Desktop closure adds one platform-neutral loader boundary while keeping library
-family selection and PureGo symbol registration shared:
+The platform-neutral loader boundary is implemented while keeping library
+family selection and PureGo symbol registration shared. Windows uses
+`LoadLibrary`, `GetProcAddress`, and `FreeLibrary`; macOS uses its native dynamic
+loader path. The completed closure:
 
 - compile every package and test binary for Windows and macOS `amd64`/`arm64`;
 - run the complete FFmpeg and shim suite natively on Windows `amd64`;
@@ -317,8 +323,8 @@ family selection and PureGo symbol registration shared:
 - keep hardware acceleration capability-driven: D3D11VA/DXVA2 and
   VideoToolbox are not implied by successful compilation.
 
-Complete when Windows `amd64` loads a coherent FFmpeg family and compatible
-shim through the Windows loader, both Windows architectures pass the complete
+Windows `amd64` now loads the public FFmpeg 9.0.1 shared build and compatible
+shim through the Windows loader. Both Windows architectures pass the complete
 compile gate, and both macOS architectures retain native ABI/runtime evidence.
 Windows ARM64 remains compile-qualified, not runtime-qualified, until a native
 runner is available.

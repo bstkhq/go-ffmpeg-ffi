@@ -2,10 +2,11 @@
 
 ## Status
 
-This document defines the target architecture for the go-ffmpeg-ffi hard fork.
+This document defines the current architecture for the go-ffmpeg-ffi hard fork.
 FFmpeg 6-9 ABI selection, codec send/receive state machines, frame ownership,
-callback containment, and cancellable decoder I/O are implemented. The public
-API remains transitional until the first hard-fork release.
+callback containment, cancellable decoder I/O, and the Linux, macOS, Windows,
+Android, and iOS loader boundaries are implemented. The public API continues to
+evolve and is not compatible with the original ffgo API.
 
 ## Goals
 
@@ -30,7 +31,7 @@ API remains transitional until the first hard-fork release.
 
 ## Compatibility policy
 
-The desired support matrix is:
+The supported ABI matrix is:
 
 | FFmpeg | Core library majors (`avutil/avcodec/avformat`) | Policy |
 | --- | --- | --- |
@@ -286,7 +287,15 @@ go-ffmpeg-ffi preserves the ffgo history, license, and contributor attribution.
 The README and NOTICE identify the project as a hard fork from its first public
 revision.
 
-OpenAI Codex may assist with implementation and review. A human maintainer
-reviews and accepts responsibility for every change. Material assistance is
+Current hard-fork development uses an Agentic Coding workflow with OpenAI Codex,
+based on the GPT-5 model family. The agent can inspect and edit the repository,
+run local builds and tests, use GitHub pull-request tooling, and exercise the
+Android integration environment. Work is isolated on focused branches and
+rechecked by the platform CI matrix.
+
+A human maintainer defines scope, reviews the code and evidence, approves
+privileged actions, decides whether to merge, and accepts responsibility for
+the result. Material assistance is disclosed in pull requests and may be
 recorded with `Assisted-by: OpenAI Codex`; no fictional identity is used in a
-`Co-authored-by` trailer.
+`Co-authored-by` trailer. Hosted model snapshots and available tools may evolve,
+so a PR records any exact configuration that materially affects reproduction.

@@ -1,4 +1,8 @@
-# TODO - ffgo
+# Historical TODO - ffgo
+
+> **Archived inherited document:** this TODO describes the original ffgo work
+> and is not the current go-ffmpeg-ffi roadmap. See
+> [the current roadmap](../roadmap.md).
 
 ## Status
 

@@ -1,11 +1,11 @@
 # FFmpeg vs ffgo: Feature Gap Analysis
 
-> **Inherited document:** these coverage claims have not been revalidated for
+> **Archived inherited document:** these coverage claims have not been revalidated for
 > go-ffmpeg-ffi and must not be interpreted as its support matrix. See
-> [architecture.md](architecture.md) for the support policy and
-> [roadmap.md](roadmap.md) for the work still required.
+> [architecture.md](../architecture.md) for the support policy and
+> [roadmap.md](../roadmap.md) for the work still required.
 
-## ✅ Fully Implemented in ffgo
+## ✅ Fully Implemented in the original ffgo assessment
 
 ### Core Functionality
 - **Video decoding** - H.264, HEVC, VP8, VP9, AV1, etc.
