@@ -132,6 +132,9 @@ func TestExpectedLibraryName(t *testing.T) {
 }
 
 func TestCodecCtxHWSettersRetainAndReplaceReferences(t *testing.T) {
+	if testing.Short() {
+		t.Skip("hardware reference ownership requires FFmpeg and ffshim")
+	}
 	if err := Load(); err != nil {
 		t.Fatal(err)
 	}
