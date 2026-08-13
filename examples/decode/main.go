@@ -36,7 +36,7 @@ func main() {
 		avformat>>16, (avformat>>8)&0xFF, avformat&0xFF)
 
 	// Open the input file
-	decoder, err := ffgo.NewDecoder(inputFile)
+	decoder, err := ffgo.NewDecoder(inputFile, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to open file: %v\n", err)
 		os.Exit(1)

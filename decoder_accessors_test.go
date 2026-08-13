@@ -13,7 +13,7 @@ func TestDecoderNativeAccessorsConcurrentClose(t *testing.T) {
 	if !requireFFmpeg(t) {
 		return
 	}
-	decoder, err := NewDecoder(createTestVideo(t))
+	decoder, err := NewDecoder(createTestVideo(t), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestDecoderNativeAccessorsUseOperationLock(t *testing.T) {
 	if !requireFFmpeg(t) {
 		return
 	}
-	decoder, err := NewDecoder(createTestVideo(t))
+	decoder, err := NewDecoder(createTestVideo(t), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

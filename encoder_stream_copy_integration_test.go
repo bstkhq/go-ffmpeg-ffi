@@ -26,7 +26,7 @@ func TestEncoderStreamCopyMapsNonzeroVideoIndex(t *testing.T) {
 		{name: "video only", copyAudio: false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			source, err := NewDecoder(sourcePath)
+			source, err := NewDecoder(sourcePath, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -46,11 +46,12 @@ func TestEncoderStreamCopyMapsNonzeroVideoIndex(t *testing.T) {
 				copiedAudio = audio
 			}
 			outputPath := filepath.Join(t.TempDir(), "copy.mkv")
-			output, err := NewEncoderWithOptions(outputPath, &EncoderOptions{
+			output, err := NewEncoder(outputPath, &EncoderOptions{
 				CopyVideo:     true,
 				CopyAudio:     tt.copyAudio,
 				SourceStreams: NewStreamCopySource(video, copiedAudio),
 			})
+
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -65,7 +66,7 @@ func TestEncoderStreamCopyMapsNonzeroVideoIndex(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			decoded, err := NewDecoder(outputPath)
+			decoded, err := NewDecoder(outputPath, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -17,10 +17,17 @@ type HLSSegmenterConfig struct {
 	AVOptions              map[string]string
 }
 
-func NewHLSSegmenter(playlistPath string, _ *HLSSegmenterConfig) (*Muxer, error) {
-	// Note: cfg is passed for API consistency but not used here.
-	// Callers should use cfg.HeaderOptions() with Muxer.WriteHeaderWithOptions().
-	return NewMuxer(playlistPath, "hls")
+func NewHLSSegmenter(playlistPath string, cfg *HLSSegmenterConfig) (*Muxer, error) {
+	opts, err := cfg.HeaderOptions()
+	if err != nil {
+		return nil, err
+	}
+	muxer, err := NewMuxer(playlistPath, "hls")
+	if err != nil {
+		return nil, err
+	}
+	muxer.headerOptions = cloneStringMap(opts)
+	return muxer, nil
 }
 
 // HeaderOptions returns FFmpeg muxer options suitable to pass to Muxer.WriteHeaderWithOptions.
@@ -58,10 +65,13 @@ type DASHSegmenterConfig struct {
 	AVOptions   map[string]string
 }
 
-func NewDASHSegmenter(mpdPath string, _ *DASHSegmenterConfig) (*Muxer, error) {
-	// Note: cfg is passed for API consistency but not used here.
-	// Callers should use cfg.HeaderOptions() with Muxer.WriteHeaderWithOptions().
-	return NewMuxer(mpdPath, "dash")
+func NewDASHSegmenter(mpdPath string, cfg *DASHSegmenterConfig) (*Muxer, error) {
+	muxer, err := NewMuxer(mpdPath, "dash")
+	if err != nil {
+		return nil, err
+	}
+	muxer.headerOptions = cloneStringMap(cfg.HeaderOptions())
+	return muxer, nil
 }
 
 // HeaderOptions returns FFmpeg muxer options suitable to pass to Muxer.WriteHeaderWithOptions.
@@ -84,4 +94,3 @@ func (cfg *DASHSegmenterConfig) HeaderOptions() map[string]string {
 	}
 	return opts
 }
-

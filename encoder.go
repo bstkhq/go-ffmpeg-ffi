@@ -84,34 +84,6 @@ type streamCopyTarget struct {
 	sourceTimeBase Rational
 }
 
-// EncoderConfig configures encoder behavior (video-only, for compatibility).
-// For new code, consider using EncoderOptions with VideoEncoderConfig.
-type EncoderConfig struct {
-	// Width is the video width in pixels.
-	Width int
-
-	// Height is the video height in pixels.
-	Height int
-
-	// PixelFormat is the pixel format (default: PixelFormatYUV420P).
-	PixelFormat PixelFormat
-
-	// CodecID is the codec to use (default: CodecIDH264).
-	CodecID CodecID
-
-	// BitRate is the target bit rate in bits/second (default: 2000000).
-	BitRate int64
-
-	// FrameRate is the target frame rate (default: 30).
-	FrameRate int
-
-	// GOPSize is the group of pictures size (default: 12).
-	GOPSize int
-
-	// MaxBFrames is the maximum number of B-frames (default: 0).
-	MaxBFrames int
-}
-
 // VideoEncoderConfig configures video encoding parameters.
 type VideoEncoderConfig struct {
 	// Codec specifies the video codec (default: CodecIDH264).
@@ -308,139 +280,37 @@ func normalizeVideoFrameRate(frameRate Rational) Rational {
 	return frameRate
 }
 
-// NewEncoder creates a new video encoder.
-func NewEncoder(path string, cfg EncoderConfig) (*Encoder, error) {
-	// Ensure FFmpeg is loaded
-	if err := bindings.Load(); err != nil {
-		return nil, err
+func cloneEncoderOptions(opts *EncoderOptions) *EncoderOptions {
+	if opts == nil {
+		return nil
 	}
-
-	// Apply defaults
-	if cfg.Width <= 0 || cfg.Height <= 0 {
-		return nil, errors.New("ffgo: width and height must be positive")
+	clone := *opts
+	clone.IOOptions = cloneStringMap(opts.IOOptions)
+	clone.MuxerOptions = cloneStringMap(opts.MuxerOptions)
+	if opts.Video != nil {
+		video := *opts.Video
+		video.CodecOptions = cloneStringMap(opts.Video.CodecOptions)
+		clone.Video = &video
 	}
-	if cfg.PixelFormat == PixelFormatNone {
-		cfg.PixelFormat = PixelFormatYUV420P
+	if opts.Audio != nil {
+		audio := *opts.Audio
+		clone.Audio = &audio
 	}
-	if cfg.CodecID == CodecIDNone {
-		cfg.CodecID = CodecIDH264
-	}
-	if cfg.BitRate <= 0 {
-		cfg.BitRate = 2000000
-	}
-	if cfg.FrameRate <= 0 {
-		cfg.FrameRate = 30
-	}
-	if cfg.GOPSize <= 0 {
-		cfg.GOPSize = 12
-	}
-	frameRate := normalizeVideoFrameRate(NewRational(int32(cfg.FrameRate), 1))
-	timeBase := frameRate.Invert()
-
-	e := &Encoder{
-		width:       cfg.Width,
-		height:      cfg.Height,
-		pixFmt:      cfg.PixelFormat,
-		timeBaseNum: timeBase.Num,
-		timeBaseDen: timeBase.Den,
-		hasVideo:    true,
-		path:        path,
-	}
-
-	// Determine format from filename extension
-	formatName := guessFormatFromPath(path)
-	if formatName == "" {
-		return nil, errors.New("ffgo: cannot determine output format from filename")
-	}
-
-	// Create output format context
-	if err := avformat.AllocOutputContext2(&e.formatCtx, nil, formatName, path); err != nil {
-		return nil, err
-	}
-
-	// Find encoder
-	codec := avcodec.FindEncoder(cfg.CodecID)
-	if codec == nil {
-		e.cleanup()
-		return nil, errors.New("ffgo: encoder not found")
-	}
-
-	// Create video stream
-	e.videoStream = avformat.NewStream(e.formatCtx, codec)
-	if e.videoStream == nil {
-		e.cleanup()
-		return nil, errors.New("ffgo: failed to create stream")
-	}
-	e.stream = e.videoStream // Backward compatibility
-
-	// Create video codec context
-	e.videoCodecCtx = avcodec.AllocContext3(codec)
-	if e.videoCodecCtx == nil {
-		e.cleanup()
-		return nil, errors.New("ffgo: failed to allocate codec context")
-	}
-	e.codecCtx = e.videoCodecCtx // Backward compatibility
-
-	// Configure codec context
-	avcodec.SetCtxWidth(e.codecCtx, int32(cfg.Width))
-	avcodec.SetCtxHeight(e.codecCtx, int32(cfg.Height))
-	avcodec.SetCtxPixFmt(e.codecCtx, int32(cfg.PixelFormat))
-	avcodec.SetCtxTimeBase(e.codecCtx, timeBase.Num, timeBase.Den)
-	avcodec.SetCtxFramerate(e.codecCtx, frameRate.Num, frameRate.Den)
-	avcodec.SetCtxBitRate(e.codecCtx, cfg.BitRate)
-	avcodec.SetCtxGopSize(e.codecCtx, int32(cfg.GOPSize))
-	avcodec.SetCtxMaxBFrames(e.codecCtx, int32(cfg.MaxBFrames))
-
-	// Set global header flag if needed by container format
-	if avformat.NeedsGlobalHeader(e.formatCtx) {
-		flags := avcodec.GetCtxFlags(e.codecCtx)
-		avcodec.SetCtxFlags(e.codecCtx, flags|avcodec.CodecFlagGlobalHeader)
-	}
-
-	// Open codec
-	if err := avcodec.Open2(e.codecCtx, codec, nil); err != nil {
-		e.cleanup()
-		return nil, err
-	}
-
-	// Copy codec parameters to stream
-	codecPar := avformat.GetStreamCodecPar(e.stream)
-	if err := avcodec.ParametersFromContext(codecPar, e.codecCtx); err != nil {
-		e.cleanup()
-		return nil, err
-	}
-
-	// Set stream time base
-	avformat.SetStreamTimeBase(e.stream, timeBase.Num, timeBase.Den)
-
-	// Open output file if needed
-	if !avformat.HasNoFile(e.formatCtx) {
-		if err := avformat.IOOpen(&e.ioCtx, path, avformat.IOFlagWrite); err != nil {
-			e.cleanup()
-			return nil, err
-		}
-		avformat.SetIOContext(e.formatCtx, e.ioCtx)
-	}
-
-	// Allocate video packet
-	e.videoPacket = avcodec.PacketAlloc()
-	if e.videoPacket == nil {
-		e.cleanup()
-		return nil, errors.New("ffgo: failed to allocate packet")
-	}
-	e.packet = e.videoPacket // Backward compatibility
-
-	return e, nil
+	return &clone
 }
 
-// NewEncoderWithOptions creates a new encoder with separate video and audio configuration.
-// This is the recommended way to create encoders in new code.
+// NewEncoder creates a new encoder with separate video and audio configuration.
 // It supports advanced codec options like presets, profiles, CRF, etc.
 // For stream copy mode, set CopyVideo/CopyAudio and provide SourceStreams.
-func NewEncoderWithOptions(path string, opts *EncoderOptions) (*Encoder, error) {
+func NewEncoder(path string, opts *EncoderOptions) (*Encoder, error) {
+	return newEncoder(path, opts, nil)
+}
+
+func newEncoder(path string, opts *EncoderOptions, customIO *CustomIOContext) (*Encoder, error) {
 	if opts == nil {
 		return nil, errors.New("ffgo: EncoderOptions is required")
 	}
+	opts = cloneEncoderOptions(opts)
 
 	// Validate options - must have either encoding config or stream copy
 	hasVideoEncode := opts.Video != nil
@@ -482,7 +352,7 @@ func NewEncoderWithOptions(path string, opts *EncoderOptions) (*Encoder, error) 
 
 	// Handle stream copy mode
 	if hasVideoCopy || hasAudioCopy {
-		return newEncoderStreamCopy(path, opts)
+		return newEncoderStreamCopy(path, opts, customIO)
 	}
 
 	// Clone video config so we can safely inject encoder-specific options (e.g. 2-pass for libx265)
@@ -525,6 +395,10 @@ func NewEncoderWithOptions(path string, opts *EncoderOptions) (*Encoder, error) 
 		path:          path,
 		ioOptions:     opts.IOOptions,
 		headerOptions: opts.MuxerOptions,
+		customIO:      customIO,
+	}
+	if customIO != nil {
+		e.ioCtx = customIO.AVIOContext()
 	}
 
 	// Determine output format (optionally forced).
@@ -538,7 +412,12 @@ func NewEncoderWithOptions(path string, opts *EncoderOptions) (*Encoder, error) 
 
 	// Create output format context
 	if err := avformat.AllocOutputContext2(&e.formatCtx, nil, formatName, path); err != nil {
+		e.cleanup()
 		return nil, err
+	}
+	if customIO != nil {
+		avformat.SetIOContext(e.formatCtx, customIO.AVIOContext())
+		avformat.AddFlags(e.formatCtx, avformat.AVFMT_FLAG_CUSTOM_IO)
 	}
 
 	// Find encoder
@@ -665,7 +544,7 @@ func NewEncoderWithOptions(path string, opts *EncoderOptions) (*Encoder, error) 
 	avformat.SetStreamTimeBase(e.stream, timeBase.Num, timeBase.Den)
 
 	// Open output file if needed
-	if !avformat.HasNoFile(e.formatCtx) {
+	if customIO == nil && !avformat.HasNoFile(e.formatCtx) {
 		// For network-style outputs (or when IOOptions are provided), open lazily on header write.
 		// This avoids connecting during encoder construction.
 		if !looksLikeURL(path) && len(opts.IOOptions) == 0 {
@@ -795,7 +674,7 @@ func (e *Encoder) writeHeaderLocked() error {
 
 // newEncoderStreamCopy creates an encoder in stream copy mode.
 // Packets are copied directly without decoding/encoding.
-func newEncoderStreamCopy(path string, opts *EncoderOptions) (*Encoder, error) {
+func newEncoderStreamCopy(path string, opts *EncoderOptions, customIO *CustomIOContext) (*Encoder, error) {
 	// Determine output format (optionally forced).
 	formatName := ""
 	if opts != nil {
@@ -817,11 +696,20 @@ func newEncoderStreamCopy(path string, opts *EncoderOptions) (*Encoder, error) {
 		path:           path,
 		ioOptions:      opts.IOOptions,
 		headerOptions:  opts.MuxerOptions,
+		customIO:       customIO,
+	}
+	if customIO != nil {
+		e.ioCtx = customIO.AVIOContext()
 	}
 
 	// Create output format context
 	if err := avformat.AllocOutputContext2(&e.formatCtx, nil, formatName, path); err != nil {
+		e.cleanup()
 		return nil, err
+	}
+	if customIO != nil {
+		avformat.SetIOContext(e.formatCtx, customIO.AVIOContext())
+		avformat.AddFlags(e.formatCtx, avformat.AVFMT_FLAG_CUSTOM_IO)
 	}
 
 	// Setup video stream for copy mode
@@ -890,7 +778,7 @@ func newEncoderStreamCopy(path string, opts *EncoderOptions) (*Encoder, error) {
 		}
 	}
 	// Open output file if needed
-	if !avformat.HasNoFile(e.formatCtx) {
+	if customIO == nil && !avformat.HasNoFile(e.formatCtx) {
 		if !looksLikeURL(path) && len(opts.IOOptions) == 0 {
 			if err := avformat.IOOpen(&e.ioCtx, path, avformat.IOFlagWrite); err != nil {
 				e.cleanup()

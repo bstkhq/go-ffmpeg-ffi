@@ -39,3 +39,26 @@ func TestBuildDecoderAVOptions_TypedOverridesRaw(t *testing.T) {
 	}
 }
 
+func TestCloneDecoderOptionsDeepCopiesMutableFields(t *testing.T) {
+	original := &DecoderOptions{
+		AVOptions:          map[string]string{"safe": "1"},
+		FormatWhitelist:    []string{"mov"},
+		CodecWhitelist:     []string{"h264"},
+		FormatBlacklist:    []string{"mpegts"},
+		Streams:            []MediaType{MediaTypeVideo},
+		TryMultipleFormats: true,
+	}
+
+	clone := cloneDecoderOptions(original)
+	clone.AVOptions["safe"] = "0"
+	clone.FormatWhitelist[0] = "matroska"
+	clone.CodecWhitelist[0] = "aac"
+	clone.FormatBlacklist[0] = "avi"
+	clone.Streams[0] = MediaTypeAudio
+
+	if original.AVOptions["safe"] != "1" || original.FormatWhitelist[0] != "mov" ||
+		original.CodecWhitelist[0] != "h264" || original.FormatBlacklist[0] != "mpegts" ||
+		original.Streams[0] != MediaTypeVideo {
+		t.Fatalf("clone mutated caller options: %#v", original)
+	}
+}

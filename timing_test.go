@@ -103,7 +103,7 @@ func TestFrameRateDetect(t *testing.T) {
 	}
 
 	in := filepath.Join("testdata", "test.mp4")
-	dec, err := NewDecoder(in)
+	dec, err := NewDecoder(in, nil)
 	if err != nil {
 		t.Fatalf("NewDecoder failed: %v", err)
 	}

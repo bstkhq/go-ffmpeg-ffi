@@ -25,13 +25,15 @@ func TestEncoderVideoFramePTSContract(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			encoder, err := NewEncoder(filepath.Join(t.TempDir(), "pts.mkv"), EncoderConfig{
-				Width:       16,
-				Height:      16,
-				PixelFormat: PixelFormatYUV420P,
-				CodecID:     avcodec.CodecIDMPEG4,
-				BitRate:     100_000,
-				FrameRate:   10,
+			encoder, err := NewEncoder(filepath.Join(t.TempDir(), "pts.mkv"), &EncoderOptions{
+				Video: &VideoEncoderConfig{
+					Width:       16,
+					Height:      16,
+					PixelFormat: PixelFormatYUV420P,
+					Codec:       avcodec.CodecIDMPEG4,
+					Bitrate:     100_000,
+					FrameRate:   NewRational(10, 1),
+				},
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -80,7 +82,7 @@ func TestEncoderAudioFramePTSContract(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			encoder, err := NewEncoderWithOptions(filepath.Join(t.TempDir(), "pts.mkv"), &EncoderOptions{
+			encoder, err := NewEncoder(filepath.Join(t.TempDir(), "pts.mkv"), &EncoderOptions{
 				Video: &VideoEncoderConfig{
 					Codec:       avcodec.CodecIDMPEG4,
 					Width:       16,
@@ -96,6 +98,7 @@ func TestEncoderAudioFramePTSContract(t *testing.T) {
 					Bitrate:    128_000,
 				},
 			})
+
 			if err != nil {
 				t.Fatal(err)
 			}

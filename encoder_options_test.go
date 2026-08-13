@@ -10,6 +10,33 @@ import (
 	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 )
 
+func TestCloneEncoderOptionsDeepCopiesMutableFields(t *testing.T) {
+	original := &EncoderOptions{
+		IOOptions:    map[string]string{"timeout": "1000"},
+		MuxerOptions: map[string]string{"movflags": "+faststart"},
+		Video: &VideoEncoderConfig{
+			Width:        1920,
+			CodecOptions: map[string]string{"x264-params": "rc-lookahead=40"},
+		},
+		Audio: &AudioEncoderConfig{SampleRate: 48_000},
+	}
+
+	clone := cloneEncoderOptions(original)
+	clone.IOOptions["timeout"] = "2000"
+	clone.MuxerOptions["movflags"] = "+frag_keyframe"
+	clone.Video.Width = 1280
+	clone.Video.CodecOptions["x264-params"] = "rc-lookahead=20"
+	clone.Audio.SampleRate = 44_100
+
+	if original.IOOptions["timeout"] != "1000" ||
+		original.MuxerOptions["movflags"] != "+faststart" ||
+		original.Video.Width != 1920 ||
+		original.Video.CodecOptions["x264-params"] != "rc-lookahead=40" ||
+		original.Audio.SampleRate != 48_000 {
+		t.Fatalf("clone mutated caller options: %#v", original)
+	}
+}
+
 func TestApplyVideoOptionsAppliesDeclaredFields(t *testing.T) {
 	if !requireFFmpeg(t) {
 		return

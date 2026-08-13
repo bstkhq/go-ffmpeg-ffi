@@ -112,9 +112,10 @@ func NewNetworkDecoder(url string, opts *ProtocolOptions) (*Decoder, error) {
 	}
 
 	// Create decoder with AVOptions
-	return NewDecoderWithOptions(url, &DecoderOptions{
+	return NewDecoder(url, &DecoderOptions{
 		AVOptions: avOpts,
 	})
+
 }
 
 // Common timeout presets for network streams

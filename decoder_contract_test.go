@@ -16,7 +16,7 @@ func TestDecoderFrameMethodsReturnStableEOF(t *testing.T) {
 	input := createTestVideo(t)
 
 	t.Run("video", func(t *testing.T) {
-		decoder, err := NewDecoder(input)
+		decoder, err := NewDecoder(input, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -48,7 +48,7 @@ func TestDecoderFrameMethodsReturnStableEOF(t *testing.T) {
 	})
 
 	t.Run("audio", func(t *testing.T) {
-		decoder, err := NewDecoder(input)
+		decoder, err := NewDecoder(input, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -80,7 +80,7 @@ func TestDecoderFrameMethodsReturnStableEOF(t *testing.T) {
 	})
 
 	t.Run("interleaved", func(t *testing.T) {
-		decoder, err := NewDecoder(input)
+		decoder, err := NewDecoder(input, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -116,7 +116,7 @@ func TestDecodeVideoPacketReturnsStableEOF(t *testing.T) {
 	if !requireFFmpeg(t) {
 		return
 	}
-	decoder, err := NewDecoder(createTestVideo(t))
+	decoder, err := NewDecoder(createTestVideo(t), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

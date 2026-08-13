@@ -35,6 +35,9 @@ func TestHLSSegmenter_Integration(t *testing.T) {
 		return
 	}
 	defer hls.Close()
+	if got := hls.headerOptions["hls_segment_filename"]; got != segPattern {
+		t.Fatalf("constructor hls_segment_filename = %q, want %q", got, segPattern)
+	}
 
 	vs, err := hls.AddVideoStream(&VideoStreamConfig{
 		Codec:       CodecIDH264,
@@ -49,12 +52,8 @@ func TestHLSSegmenter_Integration(t *testing.T) {
 		return
 	}
 
-	opts, err := cfg.HeaderOptions()
-	if err != nil {
-		t.Fatalf("HeaderOptions: %v", err)
-	}
-	if err := hls.WriteHeaderWithOptions(opts); err != nil {
-		t.Logf("WriteHeaderWithOptions failed (hls may be missing in this FFmpeg build): %v", err)
+	if err := hls.WriteHeader(); err != nil {
+		t.Logf("WriteHeader failed (hls may be missing in this FFmpeg build): %v", err)
 		return
 	}
 	if hls.ioCtx != nil {
@@ -121,6 +120,9 @@ func TestDASHSegmenter_Integration(t *testing.T) {
 		return
 	}
 	defer dash.Close()
+	if got := dash.headerOptions["media_seg_name"]; got != cfg.MediaName {
+		t.Fatalf("constructor media_seg_name = %q, want %q", got, cfg.MediaName)
+	}
 
 	vs, err := dash.AddVideoStream(&VideoStreamConfig{
 		Codec:       CodecIDH264,
@@ -135,8 +137,8 @@ func TestDASHSegmenter_Integration(t *testing.T) {
 		return
 	}
 
-	if err := dash.WriteHeaderWithOptions(cfg.HeaderOptions()); err != nil {
-		t.Logf("WriteHeaderWithOptions failed (dash may be missing in this FFmpeg build): %v", err)
+	if err := dash.WriteHeader(); err != nil {
+		t.Logf("WriteHeader failed (dash may be missing in this FFmpeg build): %v", err)
 		return
 	}
 	if dash.ioCtx != nil {

@@ -65,7 +65,7 @@ func TestNewRemuxerRejectsDuplicateStreams(t *testing.T) {
 	if !requireFFmpeg(t) {
 		return
 	}
-	decoder, err := NewDecoder(createTestVideo(t))
+	decoder, err := NewDecoder(createTestVideo(t), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestNewRemuxerConcurrentDecoderClose(t *testing.T) {
 	outputDir := t.TempDir()
 	const attempts = 8
 	for attempt := 0; attempt < attempts; attempt++ {
-		decoder, err := NewDecoder(inputPath)
+		decoder, err := NewDecoder(inputPath, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

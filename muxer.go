@@ -24,6 +24,7 @@ type Muxer struct {
 	headerWritten  bool
 	trailerWritten bool
 	path           string
+	headerOptions  map[string]string
 	closed         bool
 }
 
@@ -379,7 +380,7 @@ func (m *Muxer) WriteHeader() error {
 		return errors.New("ffgo: no streams added")
 	}
 
-	return m.writeHeaderLocked(nil)
+	return m.writeHeaderWithOptionsLocked(m.headerOptions)
 }
 
 // WriteHeaderWithOptions writes the container header with muxer-specific options.
@@ -398,6 +399,17 @@ func (m *Muxer) WriteHeaderWithOptions(opts map[string]string) error {
 		return errors.New("ffgo: no streams added")
 	}
 
+	merged := cloneStringMap(m.headerOptions)
+	if merged == nil && len(opts) > 0 {
+		merged = make(map[string]string, len(opts))
+	}
+	for k, v := range opts {
+		merged[k] = v
+	}
+	return m.writeHeaderWithOptionsLocked(merged)
+}
+
+func (m *Muxer) writeHeaderWithOptionsLocked(opts map[string]string) error {
 	var dict avutil.Dictionary
 	for k, v := range opts {
 		if v == "" {

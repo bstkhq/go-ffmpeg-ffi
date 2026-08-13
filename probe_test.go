@@ -47,20 +47,22 @@ func TestDecoderOptions_ProbeScoreThreshold(t *testing.T) {
 	}
 
 	// Require an impossible score: should fail.
-	_, err = NewDecoderWithOptions(in, &DecoderOptions{
+	_, err = NewDecoder(in, &DecoderOptions{
 		ProbeScore: r.ProbeScore + 1,
 	})
+
 	if err == nil {
 		t.Fatalf("expected error when requiring ProbeScore > actual (actual=%d)", r.ProbeScore)
 	}
 
 	// Require <= actual: should succeed.
-	d, err := NewDecoderWithOptions(in, &DecoderOptions{
+	d, err := NewDecoder(in, &DecoderOptions{
 		ProbeScore:         r.ProbeScore,
 		TryMultipleFormats: true,
 	})
+
 	if err != nil {
-		t.Fatalf("NewDecoderWithOptions failed: %v", err)
+		t.Fatalf("NewDecoder failed: %v", err)
 	}
 	_ = d.Close()
 }

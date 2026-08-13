@@ -39,7 +39,7 @@ func main() {
 
 	// Open input file
 	fmt.Printf("\nOpening input: %s\n", inputFile)
-	decoder, err := ffgo.NewDecoder(inputFile)
+	decoder, err := ffgo.NewDecoder(inputFile, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to open input: %v\n", err)
 		os.Exit(1)
@@ -65,15 +65,17 @@ func main() {
 
 	// Create encoder with same dimensions as input
 	fmt.Printf("\nCreating output: %s\n", outputFile)
-	encoder, err := ffgo.NewEncoder(outputFile, ffgo.EncoderConfig{
-		Width:       videoInfo.Width,
-		Height:      videoInfo.Height,
-		PixelFormat: ffgo.PixelFormatYUV420P,
-		CodecID:     ffgo.CodecIDH264,
-		BitRate:     2000000, // 2 Mbps
-		FrameRate:   30,
-		GOPSize:     12,
-		MaxBFrames:  0,
+	encoder, err := ffgo.NewEncoder(outputFile, &ffgo.EncoderOptions{
+		Video: &ffgo.VideoEncoderConfig{
+			Width:       videoInfo.Width,
+			Height:      videoInfo.Height,
+			PixelFormat: ffgo.PixelFormatYUV420P,
+			Codec:       ffgo.CodecIDH264,
+			Bitrate:     2000000, // 2 Mbps
+			FrameRate:   ffgo.NewRational(30, 1),
+			GOPSize:     12,
+			MaxBFrames:  0,
+		},
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create encoder: %v\n", err)

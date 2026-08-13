@@ -43,10 +43,11 @@ func NewImageSequenceDecoder(config ImageSequenceConfig) (*Decoder, error) {
 		opts["framerate"] = fmt.Sprintf("%d/%d", config.FrameRate.Num, config.FrameRate.Den)
 	}
 
-	return NewDecoderWithOptions(config.Pattern, &DecoderOptions{
+	return NewDecoder(config.Pattern, &DecoderOptions{
 		Format:    "image2",
 		AVOptions: opts,
 	})
+
 }
 
 // NewImageSequenceEncoder creates an encoder that writes video as an image sequence.
@@ -73,12 +74,9 @@ func NewImageSequenceEncoder(config ImageSequenceConfig, width, height int, pixF
 		}
 	}
 
-	frameRate := 25 // Default 25 fps
-	if config.FrameRate.Num > 0 && config.FrameRate.Den > 0 {
-		frameRate = int(config.FrameRate.Num / config.FrameRate.Den)
-		if frameRate <= 0 {
-			frameRate = 25
-		}
+	frameRate := config.FrameRate
+	if frameRate.Num <= 0 || frameRate.Den <= 0 {
+		frameRate = NewRational(25, 1)
 	}
 
 	// Map codec name to codec ID
@@ -94,11 +92,13 @@ func NewImageSequenceEncoder(config ImageSequenceConfig, width, height int, pixF
 		codecID = CodecIDPNG
 	}
 
-	return NewEncoder(config.Pattern, EncoderConfig{
-		Width:       width,
-		Height:      height,
-		PixelFormat: pixFmt,
-		FrameRate:   frameRate,
-		CodecID:     codecID,
+	return NewEncoder(config.Pattern, &EncoderOptions{
+		Video: &VideoEncoderConfig{
+			Width:       width,
+			Height:      height,
+			PixelFormat: pixFmt,
+			FrameRate:   frameRate,
+			Codec:       codecID,
+		},
 	})
 }

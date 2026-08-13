@@ -149,7 +149,7 @@ func SaveFrame(frame Frame, filename string) error {
 // ExtractFrame extracts a single frame from a video file at the specified timestamp
 // and saves it to an image file.
 func ExtractFrame(inputPath string, ts time.Duration, outputPath string) error {
-	decoder, err := NewDecoder(inputPath)
+	decoder, err := NewDecoder(inputPath, nil)
 	if err != nil {
 		return err
 	}
@@ -183,7 +183,7 @@ func GenerateThumbnails(inputPath string, interval time.Duration, maxCount int, 
 		return nil, errors.New("ffgo: thumbnail interval must be positive")
 	}
 
-	decoder, err := NewDecoder(inputPath)
+	decoder, err := NewDecoder(inputPath, nil)
 	if err != nil {
 		return nil, err
 	}

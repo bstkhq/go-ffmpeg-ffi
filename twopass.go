@@ -21,7 +21,7 @@ func TwoPassTranscode(input, output string, opts *EncoderOptions) error {
 		return errors.New("ffgo: EncoderOptions.Video is required")
 	}
 
-	dec, err := NewDecoder(input)
+	dec, err := NewDecoder(input, nil)
 	if err != nil {
 		return err
 	}
@@ -117,7 +117,7 @@ func runPass(dec *Decoder, videoInfo *StreamInfo, output string, baseOpts *Encod
 	passOpts.PassLogFile = passBase
 	// PassOutput is only meaningful to the helper, not encoder creation.
 
-	enc, err := NewEncoderWithOptions(output, &passOpts)
+	enc, err := NewEncoder(output, &passOpts)
 	if err != nil {
 		return err
 	}
