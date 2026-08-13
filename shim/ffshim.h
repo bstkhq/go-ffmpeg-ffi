@@ -13,6 +13,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "ffshim_contract.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -72,6 +74,7 @@ void* ffshim_new_chapter(void *ctx, int64_t id, int tb_num, int tb_den, int64_t 
 
 /* Shim API and compile-time FFmpeg ABI. These are required by the loader. */
 unsigned int ffshim_api_version(void);
+uint64_t ffshim_contract_id(void);
 unsigned int ffshim_build_avutil_major(void);
 unsigned int ffshim_build_avcodec_major(void);
 unsigned int ffshim_build_avformat_major(void);

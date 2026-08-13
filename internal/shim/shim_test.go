@@ -217,6 +217,7 @@ func TestValidateVersionInfoSupportedFamilies(t *testing.T) {
 			}
 			info := VersionInfo{
 				API:                APIVersion,
+				ContractID:         ContractID,
 				BuildAVUtilMajor:   tt.avutil,
 				BuildAVCodecMajor:  tt.avcodec,
 				BuildAVFormatMajor: tt.avformat,
@@ -242,6 +243,7 @@ func TestValidateVersionInfoRejectsMismatches(t *testing.T) {
 	}
 	valid := VersionInfo{
 		API:                APIVersion,
+		ContractID:         ContractID,
 		BuildAVUtilMajor:   59,
 		BuildAVCodecMajor:  61,
 		BuildAVFormatMajor: 61,
@@ -255,6 +257,7 @@ func TestValidateVersionInfoRejectsMismatches(t *testing.T) {
 		edit func(*VersionInfo)
 	}{
 		{name: "shim API", edit: func(info *VersionInfo) { info.API++ }},
+		{name: "shim contract", edit: func(info *VersionInfo) { info.ContractID++ }},
 		{name: "mixed build tuple", edit: func(info *VersionInfo) { info.BuildAVUtilMajor = 58 }},
 		{name: "mixed runtime tuple", edit: func(info *VersionInfo) { info.RuntimeAVCodec = shimTestVersion(60, 1, 0) }},
 		{name: "different build and runtime", edit: func(info *VersionInfo) {

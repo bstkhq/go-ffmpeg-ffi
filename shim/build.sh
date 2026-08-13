@@ -142,7 +142,7 @@ get_flags() {
         echo "  libavdevice: not found (device helpers disabled)"
     fi
 
-    CFLAGS="$(pkg-config --cflags $PKG_LIBS) -Wall -Wextra -O2 $EXTRA_DEFINES"
+    CFLAGS="$(pkg-config --cflags $PKG_LIBS) -Wall -Wextra -Werror -Wmissing-prototypes -O2 $EXTRA_DEFINES"
     LDFLAGS="$(pkg-config --libs $PKG_LIBS)"
 }
 

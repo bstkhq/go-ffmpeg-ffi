@@ -11,6 +11,20 @@ env:
   GO_VERSION: '1.23'
 
 jobs:
+  shim-contract:
+    runs-on: ubuntu-latest
+    name: Verify shim contract
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Reject stale C/Go contract output
+        run: go run ./internal/shim/cmd/gencontract -check
+
   # Test without FFmpeg (should pass - tests mock/skip FFmpeg deps)
   test-no-ffmpeg:
     runs-on: ubuntu-latest
