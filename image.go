@@ -43,9 +43,9 @@ func SaveFrame(frame Frame, filename string) error {
 	}
 
 	// Get frame dimensions
-	width := avutil.GetFrameWidth(frame.ptr)
-	height := avutil.GetFrameHeight(frame.ptr)
-	pixFmt := avutil.GetFrameFormat(frame.ptr)
+	width := int32(frame.Width())
+	height := int32(frame.Height())
+	pixFmt := frame.Format()
 
 	if width == 0 || height == 0 {
 		return errors.New("ffgo: frame has invalid dimensions")

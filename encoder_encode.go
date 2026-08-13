@@ -15,13 +15,13 @@ func (e *Encoder) encodeVideoFrameLocked(frame Frame) error {
 	if e.videoCodecCtx == nil || e.videoPacket == nil || e.videoStream == nil {
 		return errors.New("ffgo: video encoder is not configured")
 	}
-	restoreMissingPTS := frame.ptr != nil && avutil.GetFramePTS(frame.ptr) == avutil.AV_NOPTS_VALUE
+	restoreMissingPTS := !frame.IsNil() && frame.PTS() == avutil.AV_NOPTS_VALUE
 	if restoreMissingPTS {
-		avutil.SetFramePTS(frame.ptr, e.frameCount)
+		frame.SetPTS(e.frameCount)
 	}
 	err := e.videoState.encode(e.videoCodecCtx, frame.ptr, e.videoPacket, e.writeVideoPacketLocked)
 	if restoreMissingPTS {
-		avutil.SetFramePTS(frame.ptr, avutil.AV_NOPTS_VALUE)
+		frame.SetPTS(avutil.AV_NOPTS_VALUE)
 	}
 	if err != nil {
 		return err
@@ -36,19 +36,19 @@ func (e *Encoder) encodeAudioFrameLocked(frame Frame) error {
 	if e.audioCodecCtx == nil || e.audioPacket == nil || e.audioStream == nil {
 		return errors.New("ffgo: audio encoder is not configured")
 	}
-	restoreMissingPTS := frame.ptr != nil && avutil.GetFramePTS(frame.ptr) == avutil.AV_NOPTS_VALUE
+	restoreMissingPTS := !frame.IsNil() && frame.PTS() == avutil.AV_NOPTS_VALUE
 	if restoreMissingPTS {
-		avutil.SetFramePTS(frame.ptr, e.audioFrameCnt)
+		frame.SetPTS(e.audioFrameCnt)
 	}
 	err := e.audioState.encode(e.audioCodecCtx, frame.ptr, e.audioPacket, e.writeAudioPacketLocked)
 	if restoreMissingPTS {
-		avutil.SetFramePTS(frame.ptr, avutil.AV_NOPTS_VALUE)
+		frame.SetPTS(avutil.AV_NOPTS_VALUE)
 	}
 	if err != nil {
 		return err
 	}
 	if frame.ptr != nil {
-		e.audioFrameCnt += int64(avutil.GetFrameNbSamples(frame.ptr))
+		e.audioFrameCnt += int64(frame.NbSamples())
 	}
 	return nil
 }

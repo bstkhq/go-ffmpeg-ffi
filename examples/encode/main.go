@@ -69,12 +69,12 @@ func main() {
 	defer func() { _ = ffgo.FrameFree(&frame) }()
 
 	// Set up frame
-	ffgo.AVUtil.SetFrameWidth(frame, int32(width))
-	ffgo.AVUtil.SetFrameHeight(frame, int32(height))
-	ffgo.AVUtil.SetFrameFormat(frame, int32(ffgo.PixelFormatYUV420P))
+	frame.SetWidth(width)
+	frame.SetHeight(height)
+	frame.SetPixelFormat(ffgo.PixelFormatYUV420P)
 
 	// Allocate frame buffer
-	if err := ffgo.AVUtil.FrameGetBuffer(frame, 0); err != nil {
+	if err := frame.GetBuffer(0); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to allocate frame buffer: %v\n", err)
 		os.Exit(1)
 	}
@@ -84,7 +84,7 @@ func main() {
 	// Encode frames
 	for i := 0; i < totalFrames; i++ {
 		// Make frame writable
-		if err := ffgo.AVUtil.FrameMakeWritable(frame); err != nil {
+		if err := frame.MakeWritable(); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to make frame writable: %v\n", err)
 			os.Exit(1)
 		}
@@ -125,16 +125,15 @@ func main() {
 
 // fillTestPattern fills a YUV420P frame with an animated test pattern
 func fillTestPattern(frame ffgo.Frame, frameNum, width, height int) {
-	fw := ffgo.WrapFrame(frame, ffgo.MediaTypeVideo)
-	if fw == nil {
+	if frame.IsNil() {
 		return
 	}
-	yPlane := fw.Data(0)
-	uPlane := fw.Data(1)
-	vPlane := fw.Data(2)
-	yStride := fw.Linesize(0)
-	uStride := fw.Linesize(1)
-	vStride := fw.Linesize(2)
+	yPlane := frame.Data(0)
+	uPlane := frame.Data(1)
+	vPlane := frame.Data(2)
+	yStride := frame.Linesize(0)
+	uStride := frame.Linesize(1)
+	vStride := frame.Linesize(2)
 
 	// Y plane - animated gradient
 	t := float64(frameNum) * 0.1

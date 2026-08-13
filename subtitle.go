@@ -8,8 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 )
 
 // SubtitleRenderer burns subtitles into video frames using FFmpeg's subtitles filter.
@@ -154,7 +152,7 @@ func (r *SubtitleRenderer) Render(frame Frame) (Frame, error) {
 		return Frame{}, errors.New("ffgo: input frame is nil")
 	}
 
-	inFmt := PixelFormat(avutil.GetFrameFormat(frame.ptr))
+	inFmt := frame.PixelFormat()
 	if inFmt == PixelFormatNone {
 		return Frame{}, errors.New("ffgo: input frame has unknown pixel format")
 	}

@@ -185,15 +185,14 @@ func (g *probeGame) decodeAndPlayAudio(ctx context.Context, mediaPath string) (f
 	}()
 
 	appendPCM := func(frame ffgo.Frame) error {
-		wrapper := ffgo.WrapFrame(frame, ffgo.MediaTypeAudio)
-		if wrapper == nil {
+		if frame.IsNil() {
 			return fmt.Errorf("resampler returned a nil frame")
 		}
-		data := wrapper.Data(0)
-		if wrapper.NumSamples() > 0 && len(data) == 0 {
-			return fmt.Errorf("resampler returned %d samples without packed PCM data", wrapper.NumSamples())
+		data := frame.Data(0)
+		if frame.NbSamples() > 0 && len(data) == 0 {
+			return fmt.Errorf("resampler returned %d samples without packed PCM data", frame.NbSamples())
 		}
-		samples += wrapper.NumSamples()
+		samples += frame.NbSamples()
 		_, writeErr := pcm.Write(data)
 		return writeErr
 	}
@@ -210,9 +209,8 @@ func (g *probeGame) decodeAndPlayAudio(ctx context.Context, mediaPath string) (f
 			break
 		}
 
-		wrapper := ffgo.WrapFrame(frame, ffgo.MediaTypeAudio)
 		if resampler == nil {
-			sampleRate := wrapper.SampleRate()
+			sampleRate := frame.SampleRate()
 			if sampleRate == 0 {
 				sampleRate = stream.SampleRate
 			}
@@ -220,7 +218,7 @@ func (g *probeGame) decodeAndPlayAudio(ctx context.Context, mediaPath string) (f
 				ffgo.AudioFormat{
 					SampleRate:   sampleRate,
 					Channels:     stream.Channels,
-					SampleFormat: wrapper.SampleFormat(),
+					SampleFormat: frame.SampleFormat(),
 				},
 				ffgo.AudioFormat{
 					SampleRate:    audioRate,
@@ -424,12 +422,11 @@ func (g *probeGame) decodeVideo(ctx context.Context, mediaPath string) (frames, 
 }
 
 func (g *probeGame) publishFrame(frame ffgo.Frame, width, height int) error {
-	wrapper := ffgo.WrapFrame(frame, ffgo.MediaTypeVideo)
-	if wrapper == nil {
+	if frame.IsNil() {
 		return fmt.Errorf("scaled frame is nil")
 	}
-	data := wrapper.Data(0)
-	stride := wrapper.Linesize(0)
+	data := frame.Data(0)
+	stride := frame.Linesize(0)
 	pixels, err := rgba.Pack(data, stride, width, height)
 	if err != nil {
 		return err
