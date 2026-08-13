@@ -215,11 +215,8 @@ func FrameMakeWritable(frame Frame) error {
 	return nil
 }
 
-// NoPTSValue is the value used to indicate no PTS.
-const NoPTSValue int64 = -9223372036854775808 // 0x8000000000000000
-
-// AV_NOPTS_VALUE is an alias for NoPTSValue (matches FFmpeg naming).
-const AV_NOPTS_VALUE = NoPTSValue
+// AV_NOPTS_VALUE is the value used by FFmpeg to indicate no PTS.
+const AV_NOPTS_VALUE int64 = -9223372036854775808 // 0x8000000000000000
 
 // AVFrame field offsets are selected from the runtime FFmpeg ABI. They cannot
 // be constants because FFmpeg 7 removed deprecated fields and shifted the
@@ -305,7 +302,7 @@ func SetFrameFormat(frame Frame, format int32) {
 // GetFramePTS returns the presentation timestamp.
 func GetFramePTS(frame Frame) int64 {
 	if frame == nil {
-		return NoPTSValue
+		return AV_NOPTS_VALUE
 	}
 	return *(*int64)(unsafe.Pointer(uintptr(frame) + offsetPts))
 }
@@ -350,11 +347,6 @@ func SetFrameSampleRate(frame Frame, sampleRate int32) {
 	*(*int32)(unsafe.Pointer(uintptr(frame) + offsetSampleRate)) = sampleRate
 }
 
-// FrameSetSampleRate is an alias for SetFrameSampleRate
-func FrameSetSampleRate(frame Frame, sampleRate int32) {
-	SetFrameSampleRate(frame, sampleRate)
-}
-
 // FrameSetChannels sets a default channel layout for the requested number of
 // channels. FFmpeg 5.1 and newer require the complete AVChannelLayout rather
 // than only its nb_channels field.
@@ -371,16 +363,6 @@ func GetFrameChannels(frame Frame) int32 {
 		return 0
 	}
 	return *(*int32)(unsafe.Pointer(uintptr(frame) + offsetChLayout + offsetChLayoutChannels))
-}
-
-// FrameSetFormat is an alias for SetFrameFormat
-func FrameSetFormat(frame Frame, format int32) {
-	SetFrameFormat(frame, format)
-}
-
-// FrameSetNbSamples is an alias for SetFrameNbSamples
-func FrameSetNbSamples(frame Frame, nbSamples int32) {
-	SetFrameNbSamples(frame, nbSamples)
 }
 
 // FrameGetBuffer is the wrapper that returns int for compatibility

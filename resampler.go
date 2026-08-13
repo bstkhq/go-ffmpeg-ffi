@@ -151,9 +151,9 @@ func (r *Resampler) Resample(frame Frame) (Frame, error) {
 	}
 
 	// Set output frame parameters
-	avutil.FrameSetSampleRate(outFrame, int32(r.dstFormat.SampleRate))
+	avutil.SetFrameSampleRate(outFrame, int32(r.dstFormat.SampleRate))
 	avutil.FrameSetChannels(outFrame, int32(r.dstFormat.Channels))
-	avutil.FrameSetFormat(outFrame, int32(r.dstFormat.SampleFormat))
+	avutil.SetFrameFormat(outFrame, int32(r.dstFormat.SampleFormat))
 
 	// Calculate output samples
 	inSamples := frame.NbSamples()
@@ -161,7 +161,7 @@ func (r *Resampler) Resample(frame Frame) (Frame, error) {
 	if outSamples <= 0 {
 		outSamples = inSamples*r.dstFormat.SampleRate/r.srcFormat.SampleRate + 256
 	}
-	avutil.FrameSetNbSamples(outFrame, int32(outSamples))
+	avutil.SetFrameNbSamples(outFrame, int32(outSamples))
 
 	// Get buffer for output frame
 	if err := avutil.FrameGetBufferErr(outFrame, 0); err != nil {
@@ -198,10 +198,10 @@ func (r *Resampler) Flush() (Frame, error) {
 	}
 
 	// Set output frame parameters
-	avutil.FrameSetSampleRate(outFrame, int32(r.dstFormat.SampleRate))
+	avutil.SetFrameSampleRate(outFrame, int32(r.dstFormat.SampleRate))
 	avutil.FrameSetChannels(outFrame, int32(r.dstFormat.Channels))
-	avutil.FrameSetFormat(outFrame, int32(r.dstFormat.SampleFormat))
-	avutil.FrameSetNbSamples(outFrame, int32(delay))
+	avutil.SetFrameFormat(outFrame, int32(r.dstFormat.SampleFormat))
+	avutil.SetFrameNbSamples(outFrame, int32(delay))
 
 	// Get buffer for output frame
 	if err := avutil.FrameGetBufferErr(outFrame, 0); err != nil {

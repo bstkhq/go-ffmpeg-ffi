@@ -837,9 +837,9 @@ func TestEncoderWriteVideoAndAudioFrames(t *testing.T) {
 			t.Fatalf("FrameMakeWritable failed: %v", err)
 		}
 		fillTestFrame(videoFrame, i, 160, 120)
-		if err := encoder.WriteVideoFrame(videoFrame); err != nil {
+		if err := encoder.WriteFrame(videoFrame); err != nil {
 			encoder.Close()
-			t.Fatalf("WriteVideoFrame failed at frame %d: %v", i, err)
+			t.Fatalf("WriteFrame failed at frame %d: %v", i, err)
 		}
 	}
 
@@ -951,7 +951,6 @@ func TestSampleFormatConstants(t *testing.T) {
 		{"SampleFormatS16P", SampleFormatS16P, 6},
 		{"SampleFormatS32P", SampleFormatS32P, 7},
 		{"SampleFormatFLTP", SampleFormatFLTP, 8},
-		{"SampleFormatFltP", SampleFormatFltP, 8},
 		{"SampleFormatDblP", SampleFormatDblP, 9},
 		{"SampleFormatS64", SampleFormatS64, 10},
 		{"SampleFormatS64P", SampleFormatS64P, 11},
@@ -2900,9 +2899,9 @@ func TestImageSequenceEncoder(t *testing.T) {
 
 		avutil.SetFramePTS(frame.ptr, int64(i))
 
-		if err := encoder.WriteVideoFrame(frame); err != nil {
+		if err := encoder.WriteFrame(frame); err != nil {
 			_ = FrameFree(&frame)
-			t.Fatalf("WriteVideoFrame failed: %v", err)
+			t.Fatalf("WriteFrame failed: %v", err)
 		}
 		_ = FrameFree(&frame)
 	}

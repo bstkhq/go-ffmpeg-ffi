@@ -24,7 +24,7 @@ func (d *Decoder) DataStreams() []*StreamInfo {
 	if d.formatCtx == nil {
 		return nil
 	}
-	numStreams := avformat.GetNumStreams(d.formatCtx)
+	numStreams := avformat.GetNbStreams(d.formatCtx)
 	var out []*StreamInfo
 	for i := 0; i < numStreams; i++ {
 		stream := avformat.GetStream(d.formatCtx, i)
@@ -66,7 +66,7 @@ func (d *Decoder) ReadDataPacket() (*Packet, error) {
 
 	// Build a small lookup of data stream indexes for this call.
 	data := make(map[int]struct{})
-	numStreams := avformat.GetNumStreams(d.formatCtx)
+	numStreams := avformat.GetNbStreams(d.formatCtx)
 	for i := 0; i < numStreams; i++ {
 		stream := avformat.GetStream(d.formatCtx, i)
 		codecPar := avformat.GetStreamCodecPar(stream)

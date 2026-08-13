@@ -53,13 +53,6 @@ type Encoder struct {
 	videoStreamIdx int // Output video stream index
 	audioStreamIdx int // Output audio stream index
 
-	// Deprecated: use videoCodecCtx
-	codecCtx avcodec.Context
-	// Deprecated: use videoStream
-	stream avformat.Stream
-	// Deprecated: use videoPacket
-	packet avcodec.Packet
-
 	width       int
 	height      int
 	pixFmt      PixelFormat
@@ -450,52 +443,48 @@ func newEncoder(path string, opts *EncoderOptions, customIO *CustomIOContext) (*
 		e.cleanup()
 		return nil, errors.New("ffgo: failed to create stream")
 	}
-	e.stream = e.videoStream // Backward compatibility
-
 	// Create video codec context
 	e.videoCodecCtx = avcodec.AllocContext3(codec)
 	if e.videoCodecCtx == nil {
 		e.cleanup()
 		return nil, errors.New("ffgo: failed to allocate codec context")
 	}
-	e.codecCtx = e.videoCodecCtx // Backward compatibility
-
 	// Configure basic codec context parameters
-	avcodec.SetCtxWidth(e.codecCtx, int32(video.Width))
-	avcodec.SetCtxHeight(e.codecCtx, int32(video.Height))
-	avcodec.SetCtxPixFmt(e.codecCtx, int32(pixFmt))
-	avcodec.SetCtxTimeBase(e.codecCtx, timeBase.Num, timeBase.Den)
-	avcodec.SetCtxFramerate(e.codecCtx, frameRate.Num, frameRate.Den)
-	avcodec.SetCtxGopSize(e.codecCtx, int32(gopSize))
-	avcodec.SetCtxMaxBFrames(e.codecCtx, int32(video.MaxBFrames))
+	avcodec.SetCtxWidth(e.videoCodecCtx, int32(video.Width))
+	avcodec.SetCtxHeight(e.videoCodecCtx, int32(video.Height))
+	avcodec.SetCtxPixFmt(e.videoCodecCtx, int32(pixFmt))
+	avcodec.SetCtxTimeBase(e.videoCodecCtx, timeBase.Num, timeBase.Den)
+	avcodec.SetCtxFramerate(e.videoCodecCtx, frameRate.Num, frameRate.Den)
+	avcodec.SetCtxGopSize(e.videoCodecCtx, int32(gopSize))
+	avcodec.SetCtxMaxBFrames(e.videoCodecCtx, int32(video.MaxBFrames))
 
 	// Set bitrate for ABR/CBR modes
 	if bitrate > 0 {
-		avcodec.SetCtxBitRate(e.codecCtx, bitrate)
+		avcodec.SetCtxBitRate(e.videoCodecCtx, bitrate)
 	}
 
 	// Apply advanced codec options via av_opt_set (before opening codec)
-	if err := applyVideoOptions(unsafe.Pointer(e.codecCtx), video); err != nil {
+	if err := applyVideoOptions(unsafe.Pointer(e.videoCodecCtx), video); err != nil {
 		e.cleanup()
 		return nil, err
 	}
 
 	// Set global header flag if needed by container format
 	if avformat.NeedsGlobalHeader(e.formatCtx) {
-		flags := avcodec.GetCtxFlags(e.codecCtx)
-		avcodec.SetCtxFlags(e.codecCtx, flags|avcodec.CodecFlagGlobalHeader)
+		flags := avcodec.GetCtxFlags(e.videoCodecCtx)
+		avcodec.SetCtxFlags(e.videoCodecCtx, flags|avcodec.CodecFlagGlobalHeader)
 	}
 
 	// Configure multi-pass flags (FFmpeg uses codec context flags, not an option named "pass").
 	if opts.Pass != 0 {
-		flags := avcodec.GetCtxFlags(e.codecCtx)
+		flags := avcodec.GetCtxFlags(e.videoCodecCtx)
 		flags &^= (avcodec.CodecFlagPass1 | avcodec.CodecFlagPass2)
 		if opts.Pass == 1 {
 			flags |= avcodec.CodecFlagPass1
 		} else if opts.Pass == 2 {
 			flags |= avcodec.CodecFlagPass2
 		}
-		avcodec.SetCtxFlags(e.codecCtx, flags)
+		avcodec.SetCtxFlags(e.videoCodecCtx, flags)
 	}
 
 	// Open codec (pass pass/passlogfile via AVDictionary** to ensure the encoder's
@@ -522,7 +511,7 @@ func newEncoder(path string, opts *EncoderOptions, customIO *CustomIOContext) (*
 	}
 
 	// Open codec
-	if err := avcodec.Open2(e.codecCtx, codec, &openDict); err != nil {
+	if err := avcodec.Open2(e.videoCodecCtx, codec, &openDict); err != nil {
 		if openDict != nil {
 			avutil.DictFree(&openDict)
 		}
@@ -534,14 +523,14 @@ func newEncoder(path string, opts *EncoderOptions, customIO *CustomIOContext) (*
 	}
 
 	// Copy codec parameters to stream
-	codecPar := avformat.GetStreamCodecPar(e.stream)
-	if err := avcodec.ParametersFromContext(codecPar, e.codecCtx); err != nil {
+	codecPar := avformat.GetStreamCodecPar(e.videoStream)
+	if err := avcodec.ParametersFromContext(codecPar, e.videoCodecCtx); err != nil {
 		e.cleanup()
 		return nil, err
 	}
 
 	// Set stream time base
-	avformat.SetStreamTimeBase(e.stream, timeBase.Num, timeBase.Den)
+	avformat.SetStreamTimeBase(e.videoStream, timeBase.Num, timeBase.Den)
 
 	// Open output file if needed
 	if customIO == nil && !avformat.HasNoFile(e.formatCtx) {
@@ -562,8 +551,6 @@ func newEncoder(path string, opts *EncoderOptions, customIO *CustomIOContext) (*
 		e.cleanup()
 		return nil, errors.New("ffgo: failed to allocate packet")
 	}
-	e.packet = e.videoPacket // Backward compatibility
-
 	// Setup audio if configured
 	if opts.Audio != nil {
 		if err := e.setupAudio(opts.Audio); err != nil {
@@ -1066,12 +1053,6 @@ func (e *Encoder) WriteFrame(frame Frame) error {
 	return e.encodeVideoFrameLocked(frame)
 }
 
-// WriteVideoFrame encodes and writes a video frame.
-// This is an alias for WriteFrame for semantic clarity.
-func (e *Encoder) WriteVideoFrame(frame Frame) error {
-	return e.WriteFrame(frame)
-}
-
 // WriteAudioFrame encodes and writes an audio frame.
 func (e *Encoder) WriteAudioFrame(frame Frame) error {
 	e.mu.Lock()
@@ -1218,16 +1199,10 @@ func (e *Encoder) cleanup() {
 	if e.videoPacket != nil {
 		avcodec.PacketFree(&e.videoPacket)
 	}
-	// Also clear deprecated alias
-	e.packet = nil
-
 	// Free video codec context
 	if e.videoCodecCtx != nil {
 		avcodec.FreeContext(&e.videoCodecCtx)
 	}
-	// Also clear deprecated alias
-	e.codecCtx = nil
-
 	// Free audio packet
 	if e.audioPacket != nil {
 		avcodec.PacketFree(&e.audioPacket)

@@ -30,7 +30,6 @@ type Decoder struct {
 	formatCtx     avformat.FormatContext
 	videoCodecCtx avcodec.Context
 	audioCodecCtx avcodec.Context
-	codecCtx      avcodec.Context // Deprecated: use videoCodecCtx
 	packet        avcodec.Packet
 	frame         avutil.Frame
 
@@ -361,7 +360,7 @@ func (d *Decoder) NumStreams() int {
 	if d.formatCtx == nil {
 		return 0
 	}
-	return avformat.GetNumStreams(d.formatCtx)
+	return avformat.GetNbStreams(d.formatCtx)
 }
 
 // Duration returns the duration as time.Duration.
@@ -385,12 +384,6 @@ func (d *Decoder) durationMicrosecondsLocked() int64 {
 		return 0
 	}
 	return avformat.GetDuration(d.formatCtx)
-}
-
-// DurationTime is an alias for Duration for backward compatibility.
-// Deprecated: Use Duration() instead.
-func (d *Decoder) DurationTime() time.Duration {
-	return d.Duration()
 }
 
 // BitRate returns the bit rate.
@@ -478,7 +471,6 @@ func (d *Decoder) openVideoDecoderLocked() error {
 		return err
 	}
 
-	d.codecCtx = d.videoCodecCtx // For backward compatibility
 	d.videoDecoderOpen = true
 	return nil
 }
@@ -806,12 +798,6 @@ func (d *Decoder) SeekTimestampContext(ctx context.Context, timestamp int64) err
 	return nil
 }
 
-// SeekTime is an alias for Seek for backwards compatibility.
-// Deprecated: Use Seek instead.
-func (d *Decoder) SeekTime(dur time.Duration) error {
-	return d.Seek(dur)
-}
-
 // Close releases all resources.
 func (d *Decoder) Close() error {
 	d.closeSignal.Do(func() {
@@ -851,9 +837,6 @@ func (d *Decoder) Close() error {
 	if d.audioCodecCtx != nil {
 		avcodec.FreeContext(&d.audioCodecCtx)
 	}
-
-	// Clear deprecated field
-	d.codecCtx = nil
 
 	// Close input
 	if d.interrupt != nil {

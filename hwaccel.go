@@ -414,12 +414,6 @@ func transferHWFrameToSystem(dst, src avutil.Frame, transfer hwFrameTransferFunc
 	return nil
 }
 
-// TransferToSoftware transfers a hardware frame to a software frame.
-// Deprecated: Use TransferToSystem instead.
-func (d *HWDecoder) TransferToSoftware(hwFrame Frame) (Frame, error) {
-	return d.TransferToSystem(hwFrame)
-}
-
 // Close releases all decoder resources.
 func (d *HWDecoder) Close() error {
 	d.mu.Lock()

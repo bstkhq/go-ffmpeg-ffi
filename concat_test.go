@@ -65,7 +65,7 @@ func TestNewConcatDecoder_ConcatsVideo(t *testing.T) {
 	_ = dur2 // duration is often unknown for concat demuxer; rely on frame count instead.
 
 	// Decode all video frames, ensure monotonic PTS where present and that we got >1 file worth.
-	var lastPTS int64 = avutil.NoPTSValue
+	var lastPTS int64 = avutil.AV_NOPTS_VALUE
 	var gotPTS bool
 	count2 := 0
 	for {
@@ -79,8 +79,8 @@ func TestNewConcatDecoder_ConcatsVideo(t *testing.T) {
 		count2++
 
 		pts := avutil.GetFramePTS(f.ptr)
-		if pts != avutil.NoPTSValue {
-			if gotPTS && lastPTS != avutil.NoPTSValue && pts < lastPTS {
+		if pts != avutil.AV_NOPTS_VALUE {
+			if gotPTS && lastPTS != avutil.AV_NOPTS_VALUE && pts < lastPTS {
 				t.Fatalf("non-monotonic PTS: prev=%d curr=%d", lastPTS, pts)
 			}
 			lastPTS = pts

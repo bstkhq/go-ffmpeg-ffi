@@ -14,7 +14,7 @@ func TestEstimateFrameRateStopsAfterFramesWithoutPTS(t *testing.T) {
 	calls := 0
 	_, err := estimateFrameRateFromPTS(func() (int64, bool, error) {
 		calls++
-		return avutil.NoPTSValue, true, nil
+		return avutil.AV_NOPTS_VALUE, true, nil
 	}, NewRational(1, 1000))
 	if err == nil {
 		t.Fatal("expected missing PTS error")
@@ -25,7 +25,7 @@ func TestEstimateFrameRateStopsAfterFramesWithoutPTS(t *testing.T) {
 }
 
 func TestEstimateFrameRateIgnoresMissingPTS(t *testing.T) {
-	pts := []int64{avutil.NoPTSValue, 0, 40, 80}
+	pts := []int64{avutil.AV_NOPTS_VALUE, 0, 40, 80}
 	next := 0
 	fps, err := estimateFrameRateFromPTS(func() (int64, bool, error) {
 		if next == len(pts) {

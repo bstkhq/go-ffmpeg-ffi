@@ -136,46 +136,6 @@ func NewSubtitleDecoder(stream *StreamInfo) (*SubtitleDecoder, error) {
 	}, nil
 }
 
-// NewSubtitleDecoderFromFile is a convenience that opens a file and selects its best subtitle stream.
-// Deprecated: prefer using Decoder + NewSubtitleDecoder(decoder.SubtitleStream()) as documented.
-func NewSubtitleDecoderFromFile(inputPath string) (*SubtitleDecoder, error) {
-	if err := bindings.Load(); err != nil {
-		return nil, err
-	}
-
-	var formatCtx avformat.FormatContext
-	if err := avformat.OpenInput(&formatCtx, inputPath, nil, nil); err != nil {
-		return nil, err
-	}
-	defer avformat.CloseInput(&formatCtx)
-
-	if err := avformat.FindStreamInfo(formatCtx, nil); err != nil {
-		return nil, err
-	}
-
-	subIdx := avformat.FindBestStream(formatCtx, avutil.MediaTypeSubtitle, -1, -1, nil, 0)
-	if subIdx < 0 {
-		return nil, errors.New("ffgo: no subtitle stream found")
-	}
-
-	// Build a minimal StreamInfo with codec parameters so NewSubtitleDecoder can work.
-	stream := avformat.GetStream(formatCtx, int(subIdx))
-	codecPar := avformat.GetStreamCodecPar(stream)
-	ownedCodecPar, err := ownCodecParameters(codecPar)
-	if err != nil {
-		return nil, err
-	}
-	tbNum, tbDen := avformat.GetStreamTimeBase(stream)
-	si := &StreamInfo{
-		Index:    int(subIdx),
-		Type:     MediaTypeSubtitle,
-		CodecID:  CodecID(avformat.GetCodecParCodecID(codecPar)),
-		TimeBase: Rational{Num: tbNum, Den: tbDen},
-		codecPar: ownedCodecPar,
-	}
-	return NewSubtitleDecoder(si)
-}
-
 // StreamInfo returns information about the subtitle stream.
 func (d *SubtitleDecoder) StreamInfo() *StreamInfo {
 	return d.streamInfo
@@ -356,7 +316,7 @@ func (d *Decoder) HasSubtitle() bool {
 	if d.formatCtx == nil {
 		return false
 	}
-	numStreams := avformat.GetNumStreams(d.formatCtx)
+	numStreams := avformat.GetNbStreams(d.formatCtx)
 	for i := 0; i < numStreams; i++ {
 		stream := avformat.GetStream(d.formatCtx, i)
 		codecPar := avformat.GetStreamCodecPar(stream)
@@ -376,7 +336,7 @@ func (d *Decoder) SubtitleStream() *StreamInfo {
 	if d.formatCtx == nil {
 		return nil
 	}
-	numStreams := avformat.GetNumStreams(d.formatCtx)
+	numStreams := avformat.GetNbStreams(d.formatCtx)
 	for i := 0; i < numStreams; i++ {
 		stream := avformat.GetStream(d.formatCtx, i)
 		codecPar := avformat.GetStreamCodecPar(stream)

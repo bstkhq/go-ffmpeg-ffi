@@ -196,7 +196,7 @@ func (f *FrameWrapper) Raw() Frame {
 // PTS returns the presentation timestamp of the frame.
 func (f *FrameWrapper) PTS() int64 {
 	if f == nil {
-		return avutil.NoPTSValue
+		return avutil.AV_NOPTS_VALUE
 	}
 	return f.frame.PTS()
 }

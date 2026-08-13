@@ -28,7 +28,7 @@ func TestMuxerFailedEncoderDoesNotRegisterStream(t *testing.T) {
 	}); err == nil {
 		t.Fatal("opening a video encoder without dimensions succeeded")
 	}
-	if got := avformat.GetNumStreams(muxer.formatCtx); got != 0 {
+	if got := avformat.GetNbStreams(muxer.formatCtx); got != 0 {
 		t.Fatalf("native streams after failed encoder setup = %d, want 0", got)
 	}
 
@@ -80,7 +80,7 @@ func TestMuxerGlobalHeaderFollowsContainer(t *testing.T) {
 				Codec:        avcodec.CodecIDAAC,
 				SampleRate:   48000,
 				Channels:     2,
-				SampleFormat: SampleFormatFltP,
+				SampleFormat: SampleFormatFLTP,
 				BitRate:      128000,
 			})
 			if err != nil {

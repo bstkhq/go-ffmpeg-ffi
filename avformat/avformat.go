@@ -30,16 +30,6 @@ type Stream = unsafe.Pointer
 // IOContext is an opaque FFmpeg AVIOContext pointer.
 type IOContext = unsafe.Pointer
 
-// MediaType aliases for convenience
-const (
-	MediaTypeUnknown    = avutil.MediaTypeUnknown
-	MediaTypeVideo      = avutil.MediaTypeVideo
-	MediaTypeAudio      = avutil.MediaTypeAudio
-	MediaTypeData       = avutil.MediaTypeData
-	MediaTypeSubtitle   = avutil.MediaTypeSubtitle
-	MediaTypeAttachment = avutil.MediaTypeAttachment
-)
-
 // Function bindings
 var (
 	avformatOpenInput       func(ctx *unsafe.Pointer, url string, fmt uintptr, options *unsafe.Pointer) int32
@@ -572,17 +562,12 @@ func DemuxerNames() []string {
 	return out
 }
 
-// GetNumStreams returns the number of streams in the context.
-func GetNumStreams(ctx FormatContext) int {
+// GetNbStreams returns the number of streams in the context.
+func GetNbStreams(ctx FormatContext) int {
 	if ctx == nil {
 		return 0
 	}
 	return int(*(*uint32)(unsafe.Pointer(uintptr(ctx) + offsetNumStreams)))
-}
-
-// GetNbStreams is an alias for GetNumStreams (matches FFmpeg naming).
-func GetNbStreams(ctx FormatContext) int {
-	return GetNumStreams(ctx)
 }
 
 // GetStream returns the stream at the given index.
@@ -590,7 +575,7 @@ func GetStream(ctx FormatContext, index int) Stream {
 	if ctx == nil || index < 0 {
 		return nil
 	}
-	numStreams := GetNumStreams(ctx)
+	numStreams := GetNbStreams(ctx)
 	if index >= numStreams {
 		return nil
 	}

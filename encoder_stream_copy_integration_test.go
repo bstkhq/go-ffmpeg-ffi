@@ -151,7 +151,7 @@ func writeAudioFirstVideoFixture(t *testing.T, path string) {
 		Codec:        CodecIDAAC,
 		SampleRate:   48_000,
 		Channels:     2,
-		SampleFormat: SampleFormatFltP,
+		SampleFormat: SampleFormatFLTP,
 		BitRate:      64_000,
 	})
 	if err != nil {

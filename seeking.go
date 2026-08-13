@@ -66,7 +66,7 @@ func (d *Decoder) SeekPrecise(ts time.Duration) error {
 			return err
 		}
 		pts := frame.PTS()
-		if pts == avutil.NoPTSValue {
+		if pts == avutil.AV_NOPTS_VALUE {
 			return errors.New("ffgo: precise seek requires frame timestamps")
 		}
 		if pts >= targetPTS {
@@ -247,12 +247,6 @@ func (d *Decoder) SeekByBytes(bytePos int64) error {
 	d.clearDecodeStateLocked()
 
 	return nil
-}
-
-// SeekToByte seeks to a byte position in the file.
-// This is an alias for SeekByBytes for API consistency.
-func (d *Decoder) SeekToByte(bytePos int64) error {
-	return d.SeekByBytes(bytePos)
 }
 
 // TotalFrames returns an estimate of the total number of video frames.

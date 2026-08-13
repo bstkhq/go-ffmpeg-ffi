@@ -54,7 +54,7 @@ func TestEncoderVideoFramePTSContract(t *testing.T) {
 			fillTestFrame(frame, 0, 16, 16)
 			avutil.SetFramePTS(frame.ptr, tt.pts)
 
-			if err := encoder.WriteVideoFrame(frame); err != nil {
+			if err := encoder.WriteFrame(frame); err != nil {
 				t.Fatal(err)
 			}
 			if got := avutil.GetFramePTS(frame.ptr); got != tt.want {
