@@ -8,6 +8,20 @@ import (
 	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 )
 
+type resourceClosedError string
+
+func (e resourceClosedError) Error() string {
+	return "ffgo: " + string(e) + " is closed"
+}
+
+func (e resourceClosedError) Is(target error) bool {
+	return target == ErrClosed
+}
+
+func closedError(resource string) error {
+	return resourceClosedError(resource)
+}
+
 // FFmpegError is an error from FFmpeg operations.
 // It contains the raw FFmpeg error code and a human-readable message.
 type FFmpegError = avutil.Error

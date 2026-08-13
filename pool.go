@@ -41,7 +41,7 @@ func (p *FramePool) Get() (Frame, error) {
 	defer p.mu.Unlock()
 
 	if p.closed {
-		return Frame{}, errors.New("ffgo: frame pool is closed")
+		return Frame{}, closedError("frame pool")
 	}
 	if p.maxInUse > 0 && p.inUse >= p.maxInUse {
 		return Frame{}, errors.New("ffgo: frame pool exhausted")

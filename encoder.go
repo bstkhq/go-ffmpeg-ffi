@@ -707,7 +707,7 @@ func looksLikeURL(s string) bool {
 
 func (e *Encoder) ensureIOOpenLocked() error {
 	if e.closed {
-		return errors.New("ffgo: encoder is closed")
+		return ErrEncoderClosed
 	}
 	if e.formatCtx == nil {
 		return errors.New("ffgo: encoder is not initialized")
@@ -911,7 +911,7 @@ func (e *Encoder) WritePacket(packet *Packet) error {
 	defer e.mu.Unlock()
 
 	if e.closed {
-		return errors.New("ffgo: encoder is closed")
+		return ErrEncoderClosed
 	}
 
 	if !e.copyVideo && !e.copyAudio {
@@ -1138,7 +1138,7 @@ func (e *Encoder) WriteHeader() error {
 	defer e.mu.Unlock()
 
 	if e.closed {
-		return errors.New("ffgo: encoder is closed")
+		return ErrEncoderClosed
 	}
 	return e.writeHeaderLocked()
 }
@@ -1150,7 +1150,7 @@ func (e *Encoder) WriteFrame(frame Frame) error {
 	defer e.mu.Unlock()
 
 	if e.closed {
-		return errors.New("ffgo: encoder is closed")
+		return ErrEncoderClosed
 	}
 	if err := frame.poolLeaseError(); err != nil {
 		return err
@@ -1181,7 +1181,7 @@ func (e *Encoder) WriteAudioFrame(frame Frame) error {
 	defer e.mu.Unlock()
 
 	if e.closed {
-		return errors.New("ffgo: encoder is closed")
+		return ErrEncoderClosed
 	}
 	if err := frame.poolLeaseError(); err != nil {
 		return err
@@ -1210,7 +1210,7 @@ func (e *Encoder) Flush() error {
 	defer e.mu.Unlock()
 
 	if e.closed {
-		return errors.New("ffgo: encoder is closed")
+		return ErrEncoderClosed
 	}
 	if !e.headerWritten {
 		if err := e.writeHeaderLocked(); err != nil {

@@ -3,8 +3,6 @@
 package ffgo
 
 import (
-	"errors"
-
 	"github.com/bstkhq/go-ffmpeg-ffi/avcodec"
 	"github.com/bstkhq/go-ffmpeg-ffi/avformat"
 	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
@@ -54,10 +52,10 @@ func (d *Decoder) ReadDataPacket() (*Packet, error) {
 	defer d.mu.Unlock()
 
 	if d.closed {
-		return nil, errors.New("ffgo: decoder is closed")
+		return nil, errDecoderClosed
 	}
 	if d.formatCtx == nil || d.packet == nil {
-		return nil, errors.New("ffgo: decoder is not initialized")
+		return nil, ErrDecoderNotOpened
 	}
 
 	// Build a small lookup of data stream indexes for this call.

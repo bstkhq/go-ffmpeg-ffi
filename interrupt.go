@@ -13,7 +13,7 @@ import (
 	"github.com/ebitengine/purego"
 )
 
-var errDecoderClosed = errors.New("ffgo: decoder is closed")
+var errDecoderClosed = closedError("decoder")
 
 type decoderInterruptState struct {
 	mu        sync.RWMutex

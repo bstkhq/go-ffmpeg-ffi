@@ -167,7 +167,7 @@ func (f *BitstreamFilter) SetInputCodecParameters(par avcodec.Parameters) error 
 	defer f.mu.Unlock()
 
 	if f.closed || f.ctx == nil {
-		return errors.New("ffgo: filter is closed")
+		return closedError("filter")
 	}
 
 	// Get par_in pointer and copy parameters
@@ -198,7 +198,7 @@ func (f *BitstreamFilter) Init() error {
 	defer f.mu.Unlock()
 
 	if f.closed || f.ctx == nil {
-		return errors.New("ffgo: filter is closed")
+		return closedError("filter")
 	}
 
 	if avBsfInit == nil {
@@ -221,7 +221,7 @@ func (f *BitstreamFilter) Filter(pkt avcodec.Packet) (avcodec.Packet, error) {
 	defer f.mu.Unlock()
 
 	if f.closed || f.ctx == nil {
-		return nil, errors.New("ffgo: filter is closed")
+		return nil, closedError("filter")
 	}
 	if pkt == nil {
 		return nil, errors.New("ffgo: bitstream filter input packet is nil; use Flush")
@@ -241,7 +241,7 @@ func (f *BitstreamFilter) Flush() (avcodec.Packet, error) {
 	defer f.mu.Unlock()
 
 	if f.closed || f.ctx == nil {
-		return nil, errors.New("ffgo: filter is closed")
+		return nil, closedError("filter")
 	}
 
 	avcodec.PacketUnref(f.packet)
