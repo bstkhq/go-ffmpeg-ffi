@@ -4,6 +4,7 @@ package ffgo
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/bstkhq/go-ffmpeg-ffi/avcodec"
 	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
@@ -284,7 +285,7 @@ func (d *Decoder) codecStateLocked(mediaType MediaType) (*decoderCodecState, avc
 	switch mediaType {
 	case MediaTypeVideo:
 		if !d.videoDecoderOpen || d.videoCodecCtx == nil {
-			return nil, nil, errors.New("ffgo: video decoder not opened; call OpenVideoDecoder first")
+			return nil, nil, fmt.Errorf("%w: video; call OpenVideoDecoder first", ErrDecoderNotOpened)
 		}
 		if d.videoState.freePacket == nil {
 			d.videoState.freePacket = d.recyclePacketLocked
@@ -292,7 +293,7 @@ func (d *Decoder) codecStateLocked(mediaType MediaType) (*decoderCodecState, avc
 		return &d.videoState, d.videoCodecCtx, nil
 	case MediaTypeAudio:
 		if !d.audioDecoderOpen || d.audioCodecCtx == nil {
-			return nil, nil, errors.New("ffgo: audio decoder not opened; call OpenAudioDecoder first")
+			return nil, nil, fmt.Errorf("%w: audio; call OpenAudioDecoder first", ErrDecoderNotOpened)
 		}
 		if d.audioState.freePacket == nil {
 			d.audioState.freePacket = d.recyclePacketLocked

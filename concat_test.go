@@ -3,6 +3,8 @@
 package ffgo
 
 import (
+	"errors"
+	"io"
 	"path/filepath"
 	"testing"
 
@@ -69,10 +71,10 @@ func TestNewConcatDecoder_ConcatsVideo(t *testing.T) {
 	for {
 		f, err := d2.DecodeVideo()
 		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
 			t.Fatalf("DecodeVideo failed: %v", err)
-		}
-		if f.IsNil() {
-			break
 		}
 		count2++
 
@@ -97,12 +99,12 @@ func TestNewConcatDecoder_ConcatsVideo(t *testing.T) {
 func countVideoFrames(d *Decoder) (int, error) {
 	n := 0
 	for {
-		f, err := d.DecodeVideo()
+		_, err := d.DecodeVideo()
 		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return n, nil
+			}
 			return 0, err
-		}
-		if f.IsNil() {
-			return n, nil
 		}
 		n++
 	}

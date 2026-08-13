@@ -5,6 +5,7 @@ package ffgo
 import (
 	"errors"
 	"fmt"
+	"io"
 	"math"
 
 	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
@@ -100,7 +101,7 @@ func ValidateTimestamps(frames []*Frame) error {
 // Note: This advances the decoder (it consumes packets/frames).
 func FrameRateDetect(decoder *Decoder) (float64, error) {
 	if decoder == nil || decoder.VideoStream() == nil {
-		return 0, errors.New("ffgo: decoder has no video stream")
+		return 0, ErrNoVideoStream
 	}
 
 	// Prefer stream-level avg frame rate if it looks valid.
@@ -124,6 +125,9 @@ func FrameRateDetect(decoder *Decoder) (float64, error) {
 	return estimateFrameRateFromPTS(func() (int64, bool, error) {
 		f, err := decoder.DecodeVideo()
 		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return 0, false, nil
+			}
 			return 0, false, err
 		}
 		if f.IsNil() {

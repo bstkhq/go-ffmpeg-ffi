@@ -75,11 +75,14 @@ func main() {
 	for i := 0; i < maxFrames; i++ {
 		f, err := dec.DecodeVideo()
 		if err != nil {
+			if ffgo.IsEOF(err) {
+				break
+			}
 			fmt.Fprintf(os.Stderr, "DecodeVideo failed: %v\n", err)
 			os.Exit(1)
 		}
 		if f.IsNil() {
-			break
+			continue
 		}
 		if err := enc.WriteVideoFrame(f); err != nil {
 			fmt.Fprintf(os.Stderr, "WriteVideoFrame failed: %v\n", err)

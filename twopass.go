@@ -28,7 +28,7 @@ func TwoPassTranscode(input, output string, opts *EncoderOptions) error {
 	defer dec.Close()
 
 	if !dec.HasVideo() {
-		return errors.New("ffgo: input has no video stream")
+		return ErrNoVideoStream
 	}
 	if err := dec.OpenVideoDecoder(); err != nil {
 		return err
@@ -151,7 +151,7 @@ func runPass(dec *Decoder, videoInfo *StreamInfo, output string, baseOpts *Encod
 			return err
 		}
 		if frame.IsNil() {
-			break
+			continue
 		}
 
 		outFrame := frame

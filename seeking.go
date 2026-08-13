@@ -4,6 +4,7 @@ package ffgo
 
 import (
 	"errors"
+	"io"
 	"time"
 
 	"github.com/bstkhq/go-ffmpeg-ffi/avcodec"
@@ -20,7 +21,7 @@ func (d *Decoder) SeekPrecise(ts time.Duration) error {
 	defer d.mu.Unlock()
 
 	if d.closed {
-		return errors.New("ffgo: decoder is closed")
+		return errDecoderClosed
 	}
 	if err := d.openVideoDecoderLocked(); err != nil {
 		return err
@@ -59,10 +60,10 @@ func (d *Decoder) SeekPrecise(ts time.Duration) error {
 	for {
 		frame, err := d.nextFrameLocked(MediaTypeVideo)
 		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return errors.New("ffgo: reached end of video before precise seek target")
+			}
 			return err
-		}
-		if frame.IsNil() {
-			return errors.New("ffgo: reached end of video before precise seek target")
 		}
 		pts := avutil.GetFramePTS(frame.ptr)
 		if pts == avutil.NoPTSValue {
@@ -82,11 +83,11 @@ func (d *Decoder) SeekToFrame(frameNum int64) error {
 	defer d.mu.Unlock()
 
 	if d.closed {
-		return errors.New("ffgo: decoder is closed")
+		return errDecoderClosed
 	}
 
 	if d.videoStreamIdx < 0 {
-		return errors.New("ffgo: no video stream")
+		return ErrNoVideoStream
 	}
 
 	// Get frame rate to calculate timestamp
@@ -202,7 +203,7 @@ func (d *Decoder) SeekAny(ts time.Duration) error {
 	defer d.mu.Unlock()
 
 	if d.closed {
-		return errors.New("ffgo: decoder is closed")
+		return errDecoderClosed
 	}
 
 	timestamp := ts.Microseconds()
@@ -229,7 +230,7 @@ func (d *Decoder) SeekByBytes(bytePos int64) error {
 	defer d.mu.Unlock()
 
 	if d.closed {
-		return errors.New("ffgo: decoder is closed")
+		return errDecoderClosed
 	}
 
 	if err := d.seekInputLocked(-1, bytePos, avformat.SeekFlagByte); err != nil {

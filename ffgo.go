@@ -13,6 +13,7 @@ package ffgo
 import (
 	"errors"
 	"fmt"
+	"io"
 	"runtime"
 
 	"github.com/bstkhq/go-ffmpeg-ffi/avcodec"
@@ -541,7 +542,7 @@ func FrameUnref(frame Frame) {
 
 // IsEOF returns true if the error indicates end of file.
 func IsEOF(err error) bool {
-	return avutil.IsEOF(err)
+	return errors.Is(err, io.EOF) || avutil.IsEOF(err)
 }
 
 // IsAgain returns true if the error indicates to try again (EAGAIN).

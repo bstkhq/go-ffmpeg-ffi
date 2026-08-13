@@ -5,6 +5,7 @@ package ffgo
 import (
 	"context"
 	"errors"
+	"io"
 	"strconv"
 	"strings"
 	"sync"
@@ -504,10 +505,10 @@ func (d *Decoder) OpenVideoDecoder() error {
 
 func (d *Decoder) openVideoDecoderLocked() error {
 	if d.closed {
-		return errors.New("ffgo: decoder is closed")
+		return errDecoderClosed
 	}
 	if d.videoStreamIdx < 0 {
-		return errors.New("ffgo: no video stream")
+		return ErrNoVideoStream
 	}
 
 	if d.videoDecoderOpen {
@@ -556,10 +557,10 @@ func (d *Decoder) OpenAudioDecoder() error {
 
 func (d *Decoder) openAudioDecoderLocked() error {
 	if d.closed {
-		return errors.New("ffgo: decoder is closed")
+		return errDecoderClosed
 	}
 	if d.audioStreamIdx < 0 {
-		return errors.New("ffgo: no audio stream")
+		return ErrNoAudioStream
 	}
 
 	if d.audioDecoderOpen {
@@ -599,7 +600,8 @@ func (d *Decoder) openAudioDecoderLocked() error {
 }
 
 // DecodeVideoPacket decodes a video packet and returns the decoded frame.
-// Returns nil frame if more data is needed (EAGAIN) or on EOF.
+// Returns an empty frame with nil error if more data is needed (EAGAIN), and
+// returns io.EOF after the decoder is fully drained.
 // The returned frame is owned by the decoder; copy it if you need to keep it.
 func (d *Decoder) DecodeVideoPacket(pkt *Packet) (Frame, error) {
 	d.mu.Lock()
@@ -611,7 +613,8 @@ func (d *Decoder) DecodeVideoPacket(pkt *Packet) (Frame, error) {
 //
 // Unlike DecodeVideoPacket (which returns a decoder-owned, internally reused frame),
 // this method returns a cloned frame that the caller MUST free with FrameFree.
-// Returns (nil, nil) if more data is needed (EAGAIN) or on EOF.
+// Returns an empty frame with nil error if more data is needed (EAGAIN), and
+// returns io.EOF after the decoder is fully drained.
 func (d *Decoder) DecodeVideoPacketCopy(pkt *Packet) (Frame, error) {
 	frame, err := d.DecodeVideoPacket(pkt)
 	if err != nil || frame.IsNil() {
@@ -621,7 +624,8 @@ func (d *Decoder) DecodeVideoPacketCopy(pkt *Packet) (Frame, error) {
 }
 
 // DecodeAudioPacket decodes an audio packet and returns the decoded frame.
-// Returns nil frame if more data is needed (EAGAIN) or on EOF.
+// Returns an empty frame with nil error if more data is needed (EAGAIN), and
+// returns io.EOF after the decoder is fully drained.
 // The returned frame is owned by the decoder; copy it if you need to keep it.
 func (d *Decoder) DecodeAudioPacket(pkt *Packet) (Frame, error) {
 	d.mu.Lock()
@@ -631,7 +635,7 @@ func (d *Decoder) DecodeAudioPacket(pkt *Packet) (Frame, error) {
 
 func (d *Decoder) decodePacketLocked(mediaType MediaType, packet *Packet) (Frame, error) {
 	if d.closed {
-		return Frame{}, errors.New("ffgo: decoder is closed")
+		return Frame{}, errDecoderClosed
 	}
 
 	state, ctx, err := d.codecStateLocked(mediaType)
@@ -653,9 +657,15 @@ func (d *Decoder) decodePacketLocked(mediaType MediaType, packet *Packet) (Frame
 
 	ready, err := state.next(ctx, d.frame)
 	if err != nil {
+		if avutil.IsEOF(err) {
+			return Frame{}, io.EOF
+		}
 		return Frame{}, err
 	}
 	if !ready {
+		if state.drained {
+			return Frame{}, io.EOF
+		}
 		return Frame{}, nil
 	}
 	return Frame{ptr: d.frame, owned: false}, nil
@@ -665,7 +675,8 @@ func (d *Decoder) decodePacketLocked(mediaType MediaType, packet *Packet) (Frame
 //
 // Unlike DecodeAudioPacket (which returns a decoder-owned, internally reused frame),
 // this method returns a cloned frame that the caller MUST free with FrameFree.
-// Returns (nil, nil) if more data is needed (EAGAIN) or on EOF.
+// Returns an empty frame with nil error if more data is needed (EAGAIN), and
+// returns io.EOF after the decoder is fully drained.
 func (d *Decoder) DecodeAudioPacketCopy(pkt *Packet) (Frame, error) {
 	frame, err := d.DecodeAudioPacket(pkt)
 	if err != nil || frame.IsNil() {
@@ -679,7 +690,7 @@ func (d *Decoder) DecodeAudioPacketCopy(pkt *Packet) (Frame, error) {
 // Packets for other selected streams remain available to DecodeAudio or ReadFrame.
 // The returned frame is owned by the decoder; do not call FrameFree on it.
 // If you need to keep the frame beyond the next decode call, make a copy.
-// Returns nil frame on EOF.
+// Returns io.EOF after the decoder is fully drained.
 func (d *Decoder) DecodeVideo() (Frame, error) {
 	return d.DecodeVideoContext(context.Background())
 }
@@ -705,7 +716,7 @@ func (d *Decoder) DecodeVideoContext(ctx context.Context) (Frame, error) {
 // DecodeVideoCopy reads and decodes the next video frame and returns an owned frame.
 //
 // The caller MUST free the returned frame with FrameFree.
-// Returns nil frame on EOF.
+// Returns io.EOF after the decoder is fully drained.
 func (d *Decoder) DecodeVideoCopy() (Frame, error) {
 	return d.DecodeVideoCopyContext(context.Background())
 }
@@ -750,7 +761,7 @@ func (d *Decoder) DecodeAudioContext(ctx context.Context) (Frame, error) {
 // ReadFrame reads and decodes the next frame (video or audio).
 // Returns a FrameWrapper with the MediaType set.
 // The frame is owned by the decoder; call Copy() if you need to keep it.
-// Returns nil, nil on EOF.
+// Returns io.EOF after all selected streams are fully drained.
 func (d *Decoder) ReadFrame() (*FrameWrapper, error) {
 	return d.ReadFrameContext(context.Background())
 }
@@ -785,7 +796,7 @@ func (d *Decoder) ReadFrameContext(ctx context.Context) (*FrameWrapper, error) {
 // ReadFrameCopy reads and decodes the next frame (video or audio) and returns an owned frame wrapper.
 //
 // The returned wrapper owns its underlying frame; the caller MUST call Free() when done.
-// Returns (nil, nil) on EOF.
+// Returns io.EOF after all selected streams are fully drained.
 func (d *Decoder) ReadFrameCopy() (*FrameWrapper, error) {
 	return d.ReadFrameCopyContext(context.Background())
 }
