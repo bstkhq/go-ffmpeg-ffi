@@ -1266,6 +1266,33 @@ func TestFilterGraphClose(t *testing.T) {
 	}
 }
 
+func TestFilterGraphCloseReleasesNativeResources(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+	graph, err := NewVideoFilterGraph("null", 320, 240, PixelFormatYUV420P)
+	if err != nil {
+		t.Fatalf("NewVideoFilterGraph failed: %v", err)
+	}
+
+	if graph.graph == nil || graph.bufferSrc == nil || graph.bufferSink == nil || graph.outFrame == nil {
+		t.Fatal("new filter graph did not allocate all native resources")
+	}
+	if err := graph.Close(); err != nil {
+		t.Fatalf("Close() failed: %v", err)
+	}
+
+	if graph.graph != nil {
+		t.Error("Close() did not release the native filter graph")
+	}
+	if graph.bufferSrc != nil || graph.bufferSink != nil {
+		t.Error("Close() retained native filter contexts")
+	}
+	if graph.outFrame != nil {
+		t.Error("Close() did not release the native output frame")
+	}
+}
+
 func TestFilterGraphConcurrentClose(t *testing.T) {
 	if !requireFFmpeg(t) {
 		return
