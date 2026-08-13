@@ -36,10 +36,15 @@ func (e *Encoder) encodeAudioFrameLocked(frame Frame) error {
 	if e.audioCodecCtx == nil || e.audioPacket == nil || e.audioStream == nil {
 		return errors.New("ffgo: audio encoder is not configured")
 	}
-	if frame.ptr != nil {
+	restoreMissingPTS := frame.ptr != nil && avutil.GetFramePTS(frame.ptr) == avutil.AV_NOPTS_VALUE
+	if restoreMissingPTS {
 		avutil.SetFramePTS(frame.ptr, e.audioFrameCnt)
 	}
-	if err := e.audioState.encode(e.audioCodecCtx, frame.ptr, e.audioPacket, e.writeAudioPacketLocked); err != nil {
+	err := e.audioState.encode(e.audioCodecCtx, frame.ptr, e.audioPacket, e.writeAudioPacketLocked)
+	if restoreMissingPTS {
+		avutil.SetFramePTS(frame.ptr, avutil.AV_NOPTS_VALUE)
+	}
+	if err != nil {
 		return err
 	}
 	if frame.ptr != nil {
