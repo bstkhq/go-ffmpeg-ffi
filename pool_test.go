@@ -273,10 +273,54 @@ func TestFrameWrapBuffer_MemoryLimit(t *testing.T) {
 	SetWrappedBufferMemoryLimit(16)
 
 	var f Frame
+	t.Cleanup(func() { _ = FrameFree(&f) })
 	buf := make([]byte, 64)
 	if err := f.WrapBuffer(buf, 8, 4, PixelFormatRGB24); err == nil {
-		_ = FrameFree(&f)
 		t.Fatalf("expected WrapBuffer to fail due to memory limit")
+	}
+}
+
+func TestFrameWrapBufferReplacementAtMemoryLimit(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+
+	const (
+		width      = 8
+		height     = 4
+		frameBytes = width * height * 3
+	)
+	baseline := WrappedBufferMemoryUsage()
+	SetWrappedBufferMemoryLimit(baseline.PinnedBytes + frameBytes)
+	t.Cleanup(func() { SetWrappedBufferMemoryLimit(0) })
+
+	var frame Frame
+	t.Cleanup(func() { _ = FrameFree(&frame) })
+	for replacement := byte(0); replacement < 16; replacement++ {
+		data := make([]byte, frameBytes)
+		data[0] = replacement
+		if err := frame.WrapBuffer(data, width, height, PixelFormatRGB24); err != nil {
+			t.Fatalf("replacement %d failed: %v", replacement, err)
+		}
+
+		usage := WrappedBufferMemoryUsage()
+		want := WrappedBufferUsage{
+			PinnedBuffers: baseline.PinnedBuffers + 1,
+			PinnedBytes:   baseline.PinnedBytes + frameBytes,
+		}
+		if usage != want {
+			t.Fatalf("usage after replacement %d = %v, want %v", replacement, usage, want)
+		}
+		if got := avutil.GetFrameDataPlane(frame.ptr, 0); got != unsafe.Pointer(&data[0]) {
+			t.Fatalf("data pointer after replacement %d = %p, want %p", replacement, got, unsafe.Pointer(&data[0]))
+		}
+	}
+
+	if err := FrameFree(&frame); err != nil {
+		t.Fatal(err)
+	}
+	if final := WrappedBufferMemoryUsage(); final != baseline {
+		t.Fatalf("pinned usage after replacements = %v, want %v", final, baseline)
 	}
 }
 
