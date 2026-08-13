@@ -64,8 +64,8 @@ Install the Go module:
 go get github.com/bstkhq/go-ffmpeg-ffi
 ```
 
-The module path is `go-ffmpeg-ffi`, while the Go package name remains `ffgo`.
-Using an explicit import alias makes that relationship clear:
+Import the package normally. Go refers to it as `ffgo`, the name declared by
+the package itself:
 
 ```go
 package main
@@ -75,7 +75,7 @@ import (
 	"io"
 	"log"
 
-	ffgo "github.com/bstkhq/go-ffmpeg-ffi"
+	"github.com/bstkhq/go-ffmpeg-ffi"
 )
 
 func main() {

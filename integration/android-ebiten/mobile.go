@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	ffgo "github.com/bstkhq/go-ffmpeg-ffi"
+	"github.com/bstkhq/go-ffmpeg-ffi"
 	"github.com/bstkhq/go-ffmpeg-ffi-android-ebiten-test/internal/rgba"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/audio"

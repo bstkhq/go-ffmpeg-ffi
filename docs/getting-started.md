@@ -22,10 +22,10 @@ features load `avfilter` and `avdevice` from the same FFmpeg family.
 go get github.com/bstkhq/go-ffmpeg-ffi
 ```
 
-The module path and package name differ. Import it explicitly as `ffgo`:
+Import the package normally. Go refers to it as `ffgo`:
 
 ```go
-import ffgo "github.com/bstkhq/go-ffmpeg-ffi"
+import "github.com/bstkhq/go-ffmpeg-ffi"
 ```
 
 This project is based on ffgo but is not API-compatible with it. Do not use the
@@ -81,7 +81,7 @@ import (
 	"io"
 	"log"
 
-	ffgo "github.com/bstkhq/go-ffmpeg-ffi"
+	"github.com/bstkhq/go-ffmpeg-ffi"
 )
 
 func main() {
