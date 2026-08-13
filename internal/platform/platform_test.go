@@ -1,4 +1,4 @@
-//go:build !ios && (amd64 || arm64)
+//go:build amd64 || arm64
 
 package platform
 
@@ -30,7 +30,7 @@ func TestIs64Bit(t *testing.T) {
 
 func TestLibraryExtension(t *testing.T) {
 	switch runtime.GOOS {
-	case "darwin":
+	case "darwin", "ios":
 		if LibraryExtension != ".dylib" {
 			t.Errorf("expected .dylib, got %s", LibraryExtension)
 		}
@@ -69,6 +69,8 @@ func TestFormatLibraryName(t *testing.T) {
 		{"avcodec", 0, "linux", "libavcodec.so"},
 		{"avcodec", 60, "darwin", "libavcodec.60.dylib"},
 		{"avcodec", 0, "darwin", "libavcodec.dylib"},
+		{"avcodec", 60, "ios", "libavcodec.60.dylib"},
+		{"avcodec", 0, "ios", "libavcodec.dylib"},
 		{"avcodec", 60, "windows", "avcodec-60.dll"},
 		{"avcodec", 0, "windows", "avcodec.dll"},
 		{"avcodec", 60, "android", "libavcodec.so"},

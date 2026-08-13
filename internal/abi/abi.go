@@ -1,4 +1,4 @@
-//go:build !ios && (amd64 || arm64)
+//go:build amd64 || arm64
 
 // Package abi describes the public FFmpeg structure layouts used by ffgo.
 //

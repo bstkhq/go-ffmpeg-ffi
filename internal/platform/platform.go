@@ -1,4 +1,4 @@
-//go:build !ios && (amd64 || arm64)
+//go:build amd64 || arm64
 
 // Package platform provides platform detection and capabilities for ffgo.
 // It determines what features are available based on the operating system and architecture.
@@ -11,7 +11,8 @@ import (
 )
 
 // SupportsStructByValue indicates whether the platform supports passing/returning
-// structs by value through purego. Only Darwin (macOS) amd64/arm64 supports this.
+// structs by value through purego. PureGo currently enables this for macOS
+// amd64/arm64, but not for GOOS=ios even though iOS also uses the Darwin ABI.
 // On other platforms, struct-by-value operations will panic.
 const SupportsStructByValue = runtime.GOOS == "darwin" &&
 	(runtime.GOARCH == "amd64" || runtime.GOARCH == "arm64")
@@ -28,7 +29,7 @@ var LibraryPrefix string
 
 func init() {
 	switch runtime.GOOS {
-	case "darwin":
+	case "darwin", "ios":
 		LibraryExtension = ".dylib"
 		LibraryPrefix = "lib"
 	case "windows":
@@ -50,7 +51,7 @@ func init() {
 //   - Android: FormatLibraryName("avcodec", 60) -> "libavcodec.so"
 func FormatLibraryName(name string, version int) string {
 	switch runtime.GOOS {
-	case "darwin":
+	case "darwin", "ios":
 		if version > 0 {
 			return fmt.Sprintf("%s%s.%d%s", LibraryPrefix, name, version, LibraryExtension)
 		}

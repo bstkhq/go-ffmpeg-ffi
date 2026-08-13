@@ -1,4 +1,4 @@
-//go:build !ios && (amd64 || arm64)
+//go:build amd64 || arm64
 
 // Example: concat - Demonstrates seamless concatenation using FFmpeg's concat demuxer.
 //

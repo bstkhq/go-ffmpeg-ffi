@@ -1,4 +1,4 @@
-//go:build !ios && (amd64 || arm64)
+//go:build amd64 || arm64
 
 // Package avformat provides bindings to FFmpeg's libavformat library.
 // It includes container format handling, demuxing, muxing, and I/O operations.

@@ -1,4 +1,4 @@
-//go:build !ios && (amd64 || arm64)
+//go:build amd64 || arm64
 
 // Package avfilter provides audio/video filtering using FFmpeg's libavfilter.
 package avfilter

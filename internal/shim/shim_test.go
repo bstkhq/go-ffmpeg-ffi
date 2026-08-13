@@ -1,4 +1,4 @@
-//go:build !ios && (amd64 || arm64)
+//go:build amd64 || arm64
 
 package shim
 
@@ -22,6 +22,8 @@ func TestFindShimLibrary_RespectsFFGOShimDir(t *testing.T) {
 	case "linux", "freebsd", "openbsd", "netbsd":
 		name = "libffshim.so"
 	case "darwin":
+		name = "libffshim.dylib"
+	case "ios":
 		name = "libffshim.dylib"
 	case "windows":
 		name = "ffshim.dll"
@@ -115,9 +117,9 @@ func TestExpectedLibraryName(t *testing.T) {
 		if name != "libffshim.so" {
 			t.Errorf("expected libffshim.so on %s, got %s", runtime.GOOS, name)
 		}
-	case "darwin":
+	case "darwin", "ios":
 		if name != "libffshim.dylib" {
-			t.Errorf("expected libffshim.dylib on darwin, got %s", name)
+			t.Errorf("expected libffshim.dylib on Apple platform, got %s", name)
 		}
 	case "windows":
 		if name != "ffshim.dll" {

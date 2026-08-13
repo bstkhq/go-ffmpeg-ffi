@@ -49,11 +49,25 @@ or install a coherent FFmpeg 6, 7, 8, or 9 shared-library family for their targe
 OS. The optional C shim is built separately and is required for features that
 cannot be expressed safely through direct PureGo calls.
 
+Mobile validation is staged independently from desktop runtime support:
+
+| Target | Validation |
+| --- | --- |
+| Android 13 / API 33 `arm64` | Complete compilation; physical qualification is anchored to the Samsung Galaxy Tab A9+. |
+| Android 13 / API 33 `amd64` emulator | Complete compilation plus prolonged Ebitengine/FFmpeg software decode and lifecycle stress evidence. |
+| iOS 13+ `arm64` device | Complete package/test compilation and downstream Ebitengine XCFramework binding; signed-app and physical-device qualification remain separate gates. |
+| iOS 13+ simulator `arm64` and `amd64` | Complete package/test compilation and downstream Ebitengine XCFramework binding while the selected Xcode supports each slice. |
+
+PureGo mobile builds require `CGO_ENABLED=1` and the native Android NDK or
+Xcode toolchain. On iOS, the consuming signed application embeds FFmpeg
+frameworks or links the complete FFmpeg symbols into its process image; the Go
+module neither downloads nor redistributes executable code.
+
 ## Design in brief
 
 - Exported FFmpeg functions are loaded with PureGo. Supported desktop
-  applications remain buildable with `CGO_ENABLED=0`; Android and planned iOS
-  builds follow PureGo's requirement for `CGO_ENABLED=1`.
+  applications remain buildable with `CGO_ENABLED=0`; Android and iOS builds
+  follow PureGo's requirement for `CGO_ENABLED=1`.
 - Version-specific Go ABI layouts cover simple, verified structure access.
 - A small versioned C shim handles C features that cannot be expressed safely
   through direct calls, such as variadic APIs and header-derived accessors.

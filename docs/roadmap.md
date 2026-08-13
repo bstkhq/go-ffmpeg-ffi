@@ -162,7 +162,7 @@ an Ebitengine API, or make the engine part of its platform implementation.
 | --- | --- | --- | --- |
 | 1 | Android production | `arm64-v8a`, Android 13 / API 33 | Compile CI, external APK, and Samsung Galaxy Tab A9+ qualification. |
 | 1 | Android emulator | `x86_64`, Android 13 / API 33 | GPU-accelerated application integration; not a shipping ABI or hardware-codec benchmark. |
-| 2 | iOS | `arm64` device and simulator; simulator `amd64` while supported by the selected Xcode | Compile and application integration first; the minimum iOS version and reference device are set before implementation. |
+| 2 | iOS | iOS 13+ `arm64` device; simulator `arm64` and `amd64` while supported by the selected Xcode | Compile and Ebitengine XCFramework binding first; physical qualification waits for a named reference iPhone. |
 | 3 | Windows | `amd64`, then `arm64` | Replace the Unix loader calls, add compile CI, and add native runtime evidence. |
 | Continuous | macOS | `amd64`, `arm64` | Preserve the existing native compile/runtime jobs as regression gates. |
 | Continuous | Linux | `amd64`, `arm64` | Preserve the primary FFmpeg release-line and stress matrix. |
@@ -275,7 +275,8 @@ passed qualification.
 ### iOS phase
 
 - Reuse the platform loader boundary established by Android, with iOS-specific
-  library naming and application-bundle resolution.
+  signed-framework naming, application-bundle resolution, and a process-image
+  fallback for complete statically linked FFmpeg symbols.
 - Compile all packages and tests for ARM64 device and simulator targets with
   Xcode and `CGO_ENABLED=1`; retain Intel simulator coverage only while the
   supported Xcode toolchain provides it.
@@ -286,8 +287,15 @@ passed qualification.
   device. Simulator graphics and codec results are not physical-device
   qualification.
 
-The minimum iOS version and reference hardware must be recorded before this
-phase changes support claims.
+The deployment floor is iOS 13.0, matching Ebitengine and gomobile. The compile
+gate covers `iphoneos/arm64`, `iphonesimulator/arm64`, and
+`iphonesimulator/amd64`, plus a downstream Ebitengine XCFramework built from
+[`integration/ios-ebiten`](../integration/ios-ebiten). FFmpeg/shim binaries stay
+the responsibility of the signed Xcode application.
+
+No physical reference iPhone has been nominated yet. Until one is recorded and
+passes the signed-app runtime, codec, lifecycle, thermal, and sustained-load
+suite, iOS support claims stop at compilation and XCFramework integration.
 
 ### Windows and macOS closure
 

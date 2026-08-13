@@ -1,4 +1,4 @@
-//go:build !ios && (amd64 || arm64)
+//go:build amd64 || arm64
 
 // Package shim provides bindings to the ffshim helper library.
 //
@@ -197,6 +197,13 @@ func Load() error {
 	}
 	if err != nil {
 		_ = dynlib.Close(lib)
+		if runtime.GOOS == "ios" && path == dynlib.ProcessImage {
+			// A statically linked shim is optional. If its symbols are absent from
+			// the process image, preserve the normal optional-not-found behavior.
+			loadErr = fmt.Errorf("%w: shim symbols are not linked into the iOS application: %v", ErrShimNotFound, err)
+			searchErr = loadErr.Error()
+			return nil
+		}
 		loadErr = fmt.Errorf("%w at %s: %v", ErrIncompatibleShim, path, err)
 		searchErr = loadErr.Error()
 		return loadErr
@@ -283,7 +290,7 @@ func Status() string {
 // ExpectedLibraryName returns the expected shim library filename for the current platform.
 func ExpectedLibraryName() string {
 	switch runtime.GOOS {
-	case "darwin":
+	case "darwin", "ios":
 		return "libffshim.dylib"
 	case "windows":
 		return "ffshim.dll"
@@ -315,6 +322,11 @@ func BuildInstructions() string {
      sudo make install
      # OR
      export DYLD_LIBRARY_PATH=$PWD/shim:$DYLD_LIBRARY_PATH`
+	case "ios":
+		return `For iOS, build ffshim against the same FFmpeg headers and ABI as the application, then either:
+  1. Embed and sign ffshim.framework with the application, or
+  2. Link the complete static shim into the application so its symbols are visible in the process image.
+The application owns native framework packaging; go-ffmpeg-ffi does not download executable code at runtime.`
 	case "windows":
 		return `To build the shim on Windows:
   1. Install MSYS2 and MinGW-w64
@@ -981,6 +993,12 @@ func findShimLibrary() (string, error) {
 		return "libffshim.so", nil
 	case "darwin":
 		names = []string{"libffshim.dylib", "libffshim.1.dylib"}
+	case "ios":
+		names = []string{
+			"ffshim.framework/ffshim",
+			"libffshim.framework/libffshim",
+			"libffshim.dylib",
+		}
 	case "windows":
 		names = []string{"ffshim.dll", "libffshim.dll"}
 	default:
@@ -999,7 +1017,13 @@ func findShimLibrary() (string, error) {
 	}
 
 	searchPaths := trustedShimSearchPaths()
-	return findShimLibraryInPaths(names, searchPaths)
+	path, err := findShimLibraryInPaths(names, searchPaths)
+	if err != nil && runtime.GOOS == "ios" {
+		// Static XCFramework consumers expose the shim in the same process-wide
+		// namespace as FFmpeg, so there is no filesystem entry to discover.
+		return dynlib.ProcessImage, nil
+	}
+	return path, err
 }
 
 func trustedShimSearchPaths() []string {
@@ -1041,6 +1065,10 @@ func trustedShimSearchPathsFor(goos, goarch, executableDir string) []string {
 			"/opt/homebrew/lib",
 			"/usr/local/opt/ffmpeg/lib",
 		)
+	case "ios":
+		if executableDir != "" {
+			searchPaths = append(searchPaths, filepath.Join(executableDir, "Frameworks"))
+		}
 	case "windows":
 		searchPaths = append(searchPaths,
 			"C:\\ffmpeg\\bin",

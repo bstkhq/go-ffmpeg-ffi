@@ -1,4 +1,4 @@
-//go:build !ios && (amd64 || arm64)
+//go:build amd64 || arm64
 
 // Example: custom-io - Demonstrates decoding from io.Reader
 //
