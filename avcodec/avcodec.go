@@ -5,6 +5,7 @@
 package avcodec
 
 import (
+	"errors"
 	"runtime"
 	"unsafe"
 
@@ -908,13 +909,11 @@ func GetCtxHWDeviceCtx(ctx Context) avutil.HWDeviceContext {
 
 // SetCtxHWDeviceCtx sets the hardware device context on codec context.
 // The buffer reference is copied, so caller retains ownership.
-func SetCtxHWDeviceCtx(ctx Context, hwDeviceCtx avutil.HWDeviceContext) {
+func SetCtxHWDeviceCtx(ctx Context, hwDeviceCtx avutil.HWDeviceContext) error {
 	if ctx == nil {
-		return
+		return nil
 	}
-	// Create a new reference to the buffer
-	ref := avutil.NewBufferRef(hwDeviceCtx)
-	*(*unsafe.Pointer)(unsafe.Pointer(uintptr(ctx) + offsetCtxHWDeviceCtx)) = ref
+	return replaceCtxBufferRef(ctx, offsetCtxHWDeviceCtx, hwDeviceCtx)
 }
 
 // DecodeSubtitle2 decodes a subtitle from a packet.
@@ -948,10 +947,26 @@ func GetCtxHWFramesCtx(ctx Context) avutil.HWFramesContext {
 }
 
 // SetCtxHWFramesCtx sets the hardware frames context on codec context.
-func SetCtxHWFramesCtx(ctx Context, hwFramesCtx avutil.HWFramesContext) {
+// The buffer reference is copied, so caller retains ownership.
+func SetCtxHWFramesCtx(ctx Context, hwFramesCtx avutil.HWFramesContext) error {
 	if ctx == nil {
-		return
+		return nil
 	}
-	ref := avutil.NewBufferRef(hwFramesCtx)
-	*(*unsafe.Pointer)(unsafe.Pointer(uintptr(ctx) + offsetCtxHWFramesCtx)) = ref
+	return replaceCtxBufferRef(ctx, offsetCtxHWFramesCtx, hwFramesCtx)
+}
+
+func replaceCtxBufferRef(ctx Context, offset uintptr, source avutil.AVBufferRef) error {
+	var replacement avutil.AVBufferRef
+	if source != nil {
+		replacement = avutil.NewBufferRef(source)
+		if replacement == nil {
+			return errors.New("avcodec: failed to retain hardware buffer reference")
+		}
+	}
+
+	slot := (*unsafe.Pointer)(unsafe.Pointer(uintptr(ctx) + offset))
+	previous := *slot
+	*slot = replacement
+	avutil.FreeBufferRef(&previous)
+	return nil
 }

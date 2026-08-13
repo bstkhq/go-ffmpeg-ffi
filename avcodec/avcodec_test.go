@@ -4,6 +4,8 @@ package avcodec
 
 import (
 	"os"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"unsafe"
 
@@ -12,6 +14,34 @@ import (
 )
 
 var ffmpegAvailable bool
+
+var (
+	countedBufferCallbackOnce sync.Once
+	countedBufferCallbackPtr  uintptr
+	countedBufferFrees        atomic.Int64
+)
+
+func countedBufferRelease(data *byte) {
+	countedBufferFrees.Add(1)
+	avutil.Free(unsafe.Pointer(data))
+}
+
+func newCountedBuffer(t *testing.T) avutil.AVBufferRef {
+	t.Helper()
+	data := avutil.Malloc(1)
+	if data == nil {
+		t.Fatal("av_malloc failed")
+	}
+	countedBufferCallbackOnce.Do(func() {
+		countedBufferCallbackPtr = newCountedBufferCallback()
+	})
+	buffer := avutil.BufferCreate(data, 1, countedBufferCallbackPtr, 0, 0)
+	if buffer == nil {
+		avutil.Free(data)
+		t.Fatal("av_buffer_create failed")
+	}
+	return buffer
+}
 
 func TestMain(m *testing.M) {
 	if err := bindings.Load(); err == nil {
@@ -27,6 +57,76 @@ func requireFFmpeg(t *testing.T) bool {
 		return false
 	}
 	return true
+}
+
+func TestSetCtxHWBufferReferenceOwnership(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+
+	tests := []struct {
+		name string
+		set  func(Context, avutil.AVBufferRef) error
+		get  func(Context) avutil.AVBufferRef
+	}{
+		{name: "device", set: SetCtxHWDeviceCtx, get: GetCtxHWDeviceCtx},
+		{name: "frames", set: SetCtxHWFramesCtx, get: GetCtxHWFramesCtx},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := AllocContext3(nil)
+			if ctx == nil {
+				t.Fatal("allocate codec context")
+			}
+			defer FreeContext(&ctx)
+
+			first := newCountedBuffer(t)
+			second := newCountedBuffer(t)
+			third := newCountedBuffer(t)
+			defer avutil.FreeBufferRef(&first)
+			defer avutil.FreeBufferRef(&second)
+			defer avutil.FreeBufferRef(&third)
+
+			baseline := countedBufferFrees.Load()
+			if err := tt.set(ctx, first); err != nil {
+				t.Fatal(err)
+			}
+			if tt.get(ctx) == nil {
+				t.Fatal("codec context did not retain first reference")
+			}
+			avutil.FreeBufferRef(&first)
+			if got := countedBufferFrees.Load(); got != baseline {
+				t.Fatalf("first buffer freed while codec retained it: frees=%d, want %d", got, baseline)
+			}
+
+			if err := tt.set(ctx, second); err != nil {
+				t.Fatal(err)
+			}
+			if got := countedBufferFrees.Load(); got != baseline+1 {
+				t.Fatalf("replaced buffer frees=%d, want %d", got, baseline+1)
+			}
+			avutil.FreeBufferRef(&second)
+			if err := tt.set(ctx, nil); err != nil {
+				t.Fatal(err)
+			}
+			if tt.get(ctx) != nil {
+				t.Fatal("nil assignment did not clear codec reference")
+			}
+			if got := countedBufferFrees.Load(); got != baseline+2 {
+				t.Fatalf("cleared buffer frees=%d, want %d", got, baseline+2)
+			}
+
+			if err := tt.set(ctx, third); err != nil {
+				t.Fatal(err)
+			}
+			avutil.FreeBufferRef(&third)
+			FreeContext(&ctx)
+			if got := countedBufferFrees.Load(); got != baseline+3 {
+				t.Fatalf("context cleanup frees=%d, want %d", got, baseline+3)
+			}
+		})
+	}
 }
 
 func TestFindDecoder(t *testing.T) {
