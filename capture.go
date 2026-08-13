@@ -197,15 +197,18 @@ func cStringArrayToGo(arr unsafe.Pointer, count int) []string {
 //	    DeviceType: ffgo.DeviceTypeVideo,
 //	})
 func NewCapture(cfg CaptureConfig) (*Decoder, error) {
+	if cfg.Device == "" {
+		return nil, errors.New("ffgo: device must be specified")
+	}
+	if cfg.DeviceType == DeviceTypeVideo && cfg.PixelFormat != PixelFormatNone && getPixelFormatName(cfg.PixelFormat) == "" {
+		return nil, fmt.Errorf("ffgo: unsupported capture pixel format %d", cfg.PixelFormat)
+	}
+
 	if err := bindings.Load(); err != nil {
 		return nil, err
 	}
 	if err := avdevice.RegisterAll(); err != nil {
 		return nil, fmt.Errorf("ffgo: device capture requires libavdevice: %w", err)
-	}
-
-	if cfg.Device == "" {
-		return nil, errors.New("ffgo: device must be specified")
 	}
 
 	// Determine the input format based on platform and device type
@@ -242,7 +245,8 @@ func NewCapture(cfg CaptureConfig) (*Decoder, error) {
 			}
 		}
 		if cfg.PixelFormat != PixelFormatNone {
-			if err := avutil.DictSet(&avDict, "pixel_format", getPixelFormatName(cfg.PixelFormat), 0); err != nil {
+			pixelFormat := getPixelFormatName(cfg.PixelFormat)
+			if err := avutil.DictSet(&avDict, "pixel_format", pixelFormat, 0); err != nil {
 				if avDict != nil {
 					avutil.DictFree(&avDict)
 				}

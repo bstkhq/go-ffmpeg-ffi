@@ -126,6 +126,7 @@ func NewSubtitleDecoder(stream *StreamInfo) (*SubtitleDecoder, error) {
 		avcodec.FreeContext(&codecCtx)
 		return nil, errors.New("ffgo: failed to allocate subtitle struct")
 	}
+	clearSubtitle(subtitle)
 
 	return &SubtitleDecoder{
 		codecCtx:          codecCtx,
@@ -229,7 +230,9 @@ func (d *SubtitleDecoder) Close() error {
 	d.closed = true
 
 	if d.subtitle != nil {
+		avcodec.SubtitleFree(d.subtitle)
 		avutil.Free(d.subtitle)
+		d.subtitle = nil
 	}
 	if d.codecCtx != nil {
 		avcodec.Close(d.codecCtx)

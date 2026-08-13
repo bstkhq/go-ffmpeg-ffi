@@ -16,14 +16,22 @@ import (
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/handles"
 )
 
-func TestDecoderLifecycleStress(t *testing.T) {
+func TestDecoderLifecycle(t *testing.T) {
 	if !requireFFmpeg(t) {
 		return
 	}
-	iterations := 8
-	if os.Getenv("FFGO_STRESS") != "" {
-		iterations = 100
+	runDecoderLifecycleTest(t, 8, false)
+}
+
+func TestDecoderLifecycleStress(t *testing.T) {
+	if os.Getenv("FFGO_STRESS") == "" {
+		t.Skip("set FFGO_STRESS=1 to run prolonged memory assertions")
 	}
+	if !requireFFmpeg(t) {
+		return
+	}
+
+	iterations := 100
 	if value := os.Getenv("FFGO_STRESS_ITERATIONS"); value != "" {
 		parsed, err := strconv.Atoi(value)
 		if err != nil || parsed <= 0 {
@@ -31,14 +39,24 @@ func TestDecoderLifecycleStress(t *testing.T) {
 		}
 		iterations = parsed
 	}
+	runDecoderLifecycleTest(t, iterations, true)
+}
 
+func runDecoderLifecycleTest(t *testing.T, iterations int, assertMemory bool) {
+	t.Helper()
 	input := createTestVideo(t)
+	runtime.GC()
+	if assertMemory {
+		debug.FreeOSMemory()
+	}
 	baselineHandles := handles.Count()
 	baselineFDs := openFileDescriptors()
-	baselineRSS := residentMemoryBytes()
+	baselineRSS := int64(-1)
 	var baselineMemory runtime.MemStats
-	runtime.GC()
-	runtime.ReadMemStats(&baselineMemory)
+	if assertMemory {
+		baselineRSS = residentMemoryBytes()
+		runtime.ReadMemStats(&baselineMemory)
+	}
 
 	const workers = 4
 	jobs := make(chan int)
@@ -69,20 +87,26 @@ func TestDecoderLifecycleStress(t *testing.T) {
 	}
 
 	runtime.GC()
-	debug.FreeOSMemory()
+	if assertMemory {
+		debug.FreeOSMemory()
+	}
 	var finalMemory runtime.MemStats
-	runtime.ReadMemStats(&finalMemory)
+	if assertMemory {
+		runtime.ReadMemStats(&finalMemory)
+	}
 	if got := handles.Count(); got != baselineHandles {
 		t.Fatalf("registered handles = %d, want baseline %d", got, baselineHandles)
 	}
 	if finalFDs := openFileDescriptors(); baselineFDs >= 0 && finalFDs > baselineFDs+2 {
 		t.Fatalf("open file descriptors grew from %d to %d", baselineFDs, finalFDs)
 	}
-	if os.Getenv("FFGO_STRESS") != "" && finalMemory.HeapAlloc > baselineMemory.HeapAlloc+(32<<20) {
+	if assertMemory && finalMemory.HeapAlloc > baselineMemory.HeapAlloc+(32<<20) {
 		t.Fatalf("Go heap grew from %d to %d bytes", baselineMemory.HeapAlloc, finalMemory.HeapAlloc)
 	}
-	if finalRSS := residentMemoryBytes(); os.Getenv("FFGO_STRESS") != "" && baselineRSS >= 0 && finalRSS > baselineRSS+(64<<20) {
-		t.Fatalf("resident memory grew from %d to %d bytes", baselineRSS, finalRSS)
+	if assertMemory {
+		if finalRSS := residentMemoryBytes(); baselineRSS >= 0 && finalRSS > baselineRSS+(64<<20) {
+			t.Fatalf("resident memory grew from %d to %d bytes", baselineRSS, finalRSS)
+		}
 	}
 }
 

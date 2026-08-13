@@ -5,11 +5,23 @@ package ffgo
 import (
 	"errors"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/bstkhq/go-ffmpeg-ffi/avdevice"
 	"github.com/bstkhq/go-ffmpeg-ffi/avformat"
 )
+
+func TestNewCaptureRejectsUnsupportedPixelFormatBeforeOpeningDevice(t *testing.T) {
+	_, err := NewCapture(CaptureConfig{
+		Device:      "unused",
+		DeviceType:  DeviceTypeVideo,
+		PixelFormat: PixelFormat(123456),
+	})
+	if err == nil || !strings.Contains(err.Error(), "unsupported capture pixel format") {
+		t.Fatalf("NewCapture error = %v, want unsupported pixel format", err)
+	}
+}
 
 func TestGetInputFormat_Defaults(t *testing.T) {
 	switch runtime.GOOS {
