@@ -37,8 +37,9 @@ type Decoder struct {
 	videoStreamIdx int
 	audioStreamIdx int
 
-	videoInfo *StreamInfo
-	audioInfo *StreamInfo
+	videoInfo       *StreamInfo
+	audioInfo       *StreamInfo
+	streamInfoCache map[int]*StreamInfo
 
 	videoDecoderOpen bool
 	audioDecoderOpen bool
@@ -58,9 +59,10 @@ type Decoder struct {
 
 func newDecoder(interrupt *decoderInterrupt) *Decoder {
 	return &Decoder{
-		videoStreamIdx: -1,
-		audioStreamIdx: -1,
-		interrupt:      interrupt,
+		videoStreamIdx:  -1,
+		audioStreamIdx:  -1,
+		interrupt:       interrupt,
+		streamInfoCache: make(map[int]*StreamInfo),
 	}
 }
 
@@ -327,14 +329,24 @@ func NewDecoderWithOptionsContext(ctx context.Context, path string, opts *Decode
 		if wantVideo {
 			d.videoStreamIdx = int(avformat.FindBestStream(d.formatCtx, avutil.MediaTypeVideo, -1, -1, nil, 0))
 			if d.videoStreamIdx >= 0 {
-				d.videoInfo = d.getStreamInfo(d.videoStreamIdx)
+				info, err := d.getStreamInfo(d.videoStreamIdx)
+				if err != nil {
+					d.Close()
+					return nil, err
+				}
+				d.videoInfo = info
 			}
 		}
 
 		if wantAudio {
 			d.audioStreamIdx = int(avformat.FindBestStream(d.formatCtx, avutil.MediaTypeAudio, -1, -1, nil, 0))
 			if d.audioStreamIdx >= 0 {
-				d.audioInfo = d.getStreamInfo(d.audioStreamIdx)
+				info, err := d.getStreamInfo(d.audioStreamIdx)
+				if err != nil {
+					d.Close()
+					return nil, err
+				}
+				d.audioInfo = info
 			}
 		}
 	}
@@ -348,15 +360,22 @@ func NewDecoderWithOptionsContext(ctx context.Context, path string, opts *Decode
 }
 
 // getStreamInfo extracts stream information.
-func (d *Decoder) getStreamInfo(streamIdx int) *StreamInfo {
+func (d *Decoder) getStreamInfo(streamIdx int) (*StreamInfo, error) {
+	if info, ok := d.streamInfoCache[streamIdx]; ok {
+		return info, nil
+	}
 	stream := avformat.GetStream(d.formatCtx, streamIdx)
 	if stream == nil {
-		return nil
+		return nil, nil
 	}
 
 	codecPar := avformat.GetStreamCodecPar(stream)
 	if codecPar == nil {
-		return nil
+		return nil, nil
+	}
+	ownedCodecPar, err := ownCodecParameters(codecPar)
+	if err != nil {
+		return nil, err
 	}
 
 	codecType := avformat.GetCodecParType(codecPar)
@@ -377,7 +396,7 @@ func (d *Decoder) getStreamInfo(streamIdx int) *StreamInfo {
 		CodecID:   codecID,
 		CodecName: codecName,
 		TimeBase:  avutil.NewRational(tbNum, tbDen),
-		codecPar:  codecPar,
+		codecPar:  ownedCodecPar,
 	}
 
 	if codecType == avutil.MediaTypeVideo {
@@ -393,7 +412,11 @@ func (d *Decoder) getStreamInfo(streamIdx int) *StreamInfo {
 		info.Channels = int(avformat.GetCodecParChannels(codecPar))
 	}
 
-	return info
+	if d.streamInfoCache == nil {
+		d.streamInfoCache = make(map[int]*StreamInfo)
+	}
+	d.streamInfoCache[streamIdx] = info
+	return info, nil
 }
 
 // VideoStream returns information about the video stream.

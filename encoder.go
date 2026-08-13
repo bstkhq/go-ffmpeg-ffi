@@ -5,6 +5,7 @@ package ffgo
 import (
 	"errors"
 	"fmt"
+	"runtime"
 	"strings"
 	"sync"
 	"unsafe"
@@ -231,22 +232,27 @@ type StreamCopySource struct {
 
 	// AudioStreamIndex is the index reported by source audio packets.
 	AudioStreamIndex int
+
+	videoInfo *StreamInfo
+	audioInfo *StreamInfo
 }
 
 // NewStreamCopySource builds stream-copy configuration from decoder stream
 // information. Pass nil for a media type that will not be copied. The source
-// decoder must remain open until the encoder has been created.
+// retains the StreamInfo values until the encoder copies their parameters.
 func NewStreamCopySource(video, audio *StreamInfo) *StreamCopySource {
 	source := &StreamCopySource{}
 	if video != nil {
 		source.VideoParams = video.CodecParameters()
 		source.VideoStreamIndex = video.Index
 		source.VideoTimeBase = video.TimeBase
+		source.videoInfo = video
 	}
 	if audio != nil {
 		source.AudioParams = audio.CodecParameters()
 		source.AudioStreamIndex = audio.Index
 		source.AudioTimeBase = audio.TimeBase
+		source.audioInfo = audio
 	}
 	return source
 }
@@ -831,7 +837,9 @@ func newEncoderStreamCopy(path string, opts *EncoderOptions) (*Encoder, error) {
 
 		// Copy codec parameters from source
 		codecPar := avformat.GetStreamCodecPar(stream)
-		if err := avcodec.ParametersCopy(codecPar, opts.SourceStreams.VideoParams); err != nil {
+		err := avcodec.ParametersCopy(codecPar, opts.SourceStreams.VideoParams)
+		runtime.KeepAlive(opts.SourceStreams)
+		if err != nil {
 			e.cleanup()
 			return nil, errors.New("ffgo: failed to copy video codec parameters")
 		}
@@ -859,7 +867,9 @@ func newEncoderStreamCopy(path string, opts *EncoderOptions) (*Encoder, error) {
 
 		// Copy codec parameters from source
 		codecPar := avformat.GetStreamCodecPar(stream)
-		if err := avcodec.ParametersCopy(codecPar, opts.SourceStreams.AudioParams); err != nil {
+		err := avcodec.ParametersCopy(codecPar, opts.SourceStreams.AudioParams)
+		runtime.KeepAlive(opts.SourceStreams)
+		if err != nil {
 			e.cleanup()
 			return nil, errors.New("ffgo: failed to copy audio codec parameters")
 		}
@@ -879,7 +889,6 @@ func newEncoderStreamCopy(path string, opts *EncoderOptions) (*Encoder, error) {
 			return nil, err
 		}
 	}
-
 	// Open output file if needed
 	if !avformat.HasNoFile(e.formatCtx) {
 		if !looksLikeURL(path) && len(opts.IOOptions) == 0 {

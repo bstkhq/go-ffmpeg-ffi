@@ -432,14 +432,48 @@ type StreamInfo struct {
 	BitRate    int64
 
 	// codecPar stores the codec parameters for stream copy operations.
-	codecPar avcodec.Parameters
+	codecPar *codecParametersOwner
 }
 
-// CodecParameters returns the codec parameters for this stream.
-// Used for stream copy operations where the codec parameters need to
-// be copied from source to destination without re-encoding.
+type codecParametersOwner struct {
+	ptr avcodec.Parameters
+}
+
+func ownCodecParameters(source avcodec.Parameters) (*codecParametersOwner, error) {
+	if source == nil {
+		return nil, nil
+	}
+	parameters := avcodec.ParametersAlloc()
+	if parameters == nil {
+		return nil, ErrOutOfMemory
+	}
+	if err := avcodec.ParametersCopy(parameters, source); err != nil {
+		avcodec.ParametersFree(&parameters)
+		return nil, err
+	}
+
+	owner := &codecParametersOwner{ptr: parameters}
+	runtime.SetFinalizer(owner, (*codecParametersOwner).finalize)
+	return owner, nil
+}
+
+func (o *codecParametersOwner) finalize() {
+	if o == nil {
+		return
+	}
+	avcodec.ParametersFree(&o.ptr)
+}
+
+// CodecParameters returns codec parameters owned by this StreamInfo.
+// The returned pointer remains valid while StreamInfo is reachable and can be
+// copied to a destination without keeping the source Decoder open.
 func (s *StreamInfo) CodecParameters() avcodec.Parameters {
-	return s.codecPar
+	if s == nil || s.codecPar == nil {
+		return nil
+	}
+	parameters := s.codecPar.ptr
+	runtime.KeepAlive(s.codecPar)
+	return parameters
 }
 
 // FrameInfo contains information about a decoded frame.

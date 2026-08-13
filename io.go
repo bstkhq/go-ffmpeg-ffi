@@ -767,13 +767,23 @@ func NewDecoderFromIOWithOptionsContext(ctx context.Context, callbacks *IOCallba
 	// Find best video stream
 	d.videoStreamIdx = int(avformat.FindBestStream(d.formatCtx, avutil.MediaTypeVideo, -1, -1, nil, 0))
 	if d.videoStreamIdx >= 0 {
-		d.videoInfo = d.getStreamInfo(d.videoStreamIdx)
+		info, err := d.getStreamInfo(d.videoStreamIdx)
+		if err != nil {
+			d.Close()
+			return nil, err
+		}
+		d.videoInfo = info
 	}
 
 	// Find best audio stream
 	d.audioStreamIdx = int(avformat.FindBestStream(d.formatCtx, avutil.MediaTypeAudio, -1, -1, nil, 0))
 	if d.audioStreamIdx >= 0 {
-		d.audioInfo = d.getStreamInfo(d.audioStreamIdx)
+		info, err := d.getStreamInfo(d.audioStreamIdx)
+		if err != nil {
+			d.Close()
+			return nil, err
+		}
+		d.audioInfo = info
 	}
 
 	if err := d.allocateDecodeResources(); err != nil {

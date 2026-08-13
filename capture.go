@@ -309,12 +309,20 @@ func (d *Decoder) initializeCaptureDecoder() error {
 
 	d.videoStreamIdx = int(avformat.FindBestStream(d.formatCtx, avutil.MediaTypeVideo, -1, -1, nil, 0))
 	if d.videoStreamIdx >= 0 {
-		d.videoInfo = d.getStreamInfo(d.videoStreamIdx)
+		info, err := d.getStreamInfo(d.videoStreamIdx)
+		if err != nil {
+			return err
+		}
+		d.videoInfo = info
 	}
 
 	d.audioStreamIdx = int(avformat.FindBestStream(d.formatCtx, avutil.MediaTypeAudio, -1, -1, nil, 0))
 	if d.audioStreamIdx >= 0 {
-		d.audioInfo = d.getStreamInfo(d.audioStreamIdx)
+		info, err := d.getStreamInfo(d.audioStreamIdx)
+		if err != nil {
+			return err
+		}
+		d.audioInfo = info
 	}
 
 	return d.allocateDecodeResources()
