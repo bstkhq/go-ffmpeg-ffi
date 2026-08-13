@@ -180,6 +180,10 @@ unsigned int ffshim_api_version(void) {
     return FFSHIM_API_VERSION;
 }
 
+uint64_t ffshim_contract_id(void) {
+    return FFSHIM_CONTRACT_ID;
+}
+
 unsigned int ffshim_build_avutil_major(void) {
     return LIBAVUTIL_VERSION_MAJOR;
 }

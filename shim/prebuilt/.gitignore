@@ -1,0 +1,4 @@
+# Prebuilt shims are release artifacts. They are generated, attested, and
+# versioned by .github/workflows/build-shim.yml; never commit local copies.
+*
+!.gitignore

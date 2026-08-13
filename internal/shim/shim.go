@@ -57,7 +57,8 @@ const APIVersion uint32 = 1
 // VersionInfo describes the shim contract and the FFmpeg libraries it was
 // compiled against and resolved at runtime.
 type VersionInfo struct {
-	API uint32
+	API        uint32
+	ContractID uint64
 
 	BuildAVUtilMajor   uint32
 	BuildAVCodecMajor  uint32
@@ -209,10 +210,16 @@ func Load() error {
 		return loadErr
 	}
 
+	if err := registerBindings(lib); err != nil {
+		_ = dynlib.Close(lib)
+		loadErr = fmt.Errorf("%w at %s: required shim symbol validation failed: %v", ErrIncompatibleShim, path, err)
+		searchErr = loadErr.Error()
+		return loadErr
+	}
+
 	libShim = lib
 	shimPath = path
 	versionInfo = info
-	registerBindings()
 	loaded.Store(true)
 	return nil
 }
@@ -342,6 +349,7 @@ The application owns native framework packaging; go-ffmpeg-ffi does not download
 func readVersionInfo(handle uintptr) (VersionInfo, error) {
 	var (
 		api                func() uint32
+		contractID         func() uint64
 		buildAVUtilMajor   func() uint32
 		buildAVCodecMajor  func() uint32
 		buildAVFormatMajor func() uint32
@@ -354,6 +362,7 @@ func readVersionInfo(handle uintptr) (VersionInfo, error) {
 		name string
 	}{
 		{&api, "ffshim_api_version"},
+		{&contractID, "ffshim_contract_id"},
 		{&buildAVUtilMajor, "ffshim_build_avutil_major"},
 		{&buildAVCodecMajor, "ffshim_build_avcodec_major"},
 		{&buildAVFormatMajor, "ffshim_build_avformat_major"},
@@ -369,6 +378,7 @@ func readVersionInfo(handle uintptr) (VersionInfo, error) {
 
 	return VersionInfo{
 		API:                api(),
+		ContractID:         contractID(),
 		BuildAVUtilMajor:   buildAVUtilMajor(),
 		BuildAVCodecMajor:  buildAVCodecMajor(),
 		BuildAVFormatMajor: buildAVFormatMajor(),
@@ -381,6 +391,9 @@ func readVersionInfo(handle uintptr) (VersionInfo, error) {
 func validateVersionInfo(core abi.Layout, info VersionInfo) (VersionInfo, error) {
 	if info.API != APIVersion {
 		return VersionInfo{}, fmt.Errorf("shim API %d, expected %d", info.API, APIVersion)
+	}
+	if info.ContractID != ContractID {
+		return VersionInfo{}, fmt.Errorf("shim contract %#016x, expected %#016x", info.ContractID, ContractID)
 	}
 
 	buildLayout, err := abi.Detect(
@@ -412,67 +425,71 @@ func validateVersionInfo(core abi.Layout, info VersionInfo) (VersionInfo, error)
 	return info, nil
 }
 
-func registerBindings() {
-	if libShim == 0 {
-		return
+func registerBindings(handle uintptr) error {
+	if handle == 0 {
+		return errors.New("zero shim library handle")
 	}
 
-	// The shim library can exist in partial form depending on how it was built.
-	// Treat all symbols as optional and expose feature-level errors when missing.
-	registerOptionalLibFunc(&shimLogSetCallback, libShim, "ffshim_log_set_callback")
-	registerOptionalLibFunc(&shimLogSetLevel, libShim, "ffshim_log_set_level")
-	registerOptionalLibFunc(&shimLog, libShim, "ffshim_log")
-	registerOptionalLibFunc(&shimNewChapter, libShim, "ffshim_new_chapter")
+	// A shim with the current contract must export every non-conditional helper
+	// used by the Go layer. This rejects partial or stale binaries before any
+	// function pointer is published. avdevice remains optional because it is an
+	// explicit build-time capability of FFmpeg itself.
+	required := []struct {
+		fn   any
+		name string
+	}{
+		{&shimLogSetCallback, "ffshim_log_set_callback"},
+		{&shimLogSetLevel, "ffshim_log_set_level"},
+		{&shimLog, "ffshim_log"},
+		{&shimNewChapter, "ffshim_new_chapter"},
+		{&shimAVFrameColorOffsets, "ffshim_avframe_color_offsets"},
+		{&shimCodecParWidth, "ffshim_codecpar_width"},
+		{&shimCodecParHeight, "ffshim_codecpar_height"},
+		{&shimCodecParFormat, "ffshim_codecpar_format"},
+		{&shimCodecParSampleRate, "ffshim_codecpar_sample_rate"},
+		{&shimCodecParChannels, "ffshim_codecpar_channels"},
+		{&shimCodecCtxWidth, "ffshim_codecctx_width"},
+		{&shimCodecCtxSetWidth, "ffshim_codecctx_set_width"},
+		{&shimCodecCtxHeight, "ffshim_codecctx_height"},
+		{&shimCodecCtxSetHeight, "ffshim_codecctx_set_height"},
+		{&shimCodecCtxPixFmt, "ffshim_codecctx_pix_fmt"},
+		{&shimCodecCtxSetPixFmt, "ffshim_codecctx_set_pix_fmt"},
+		{&shimCodecCtxSampleFmt, "ffshim_codecctx_sample_fmt"},
+		{&shimCodecCtxSetSampleFmt, "ffshim_codecctx_set_sample_fmt"},
+		{&shimCodecCtxTimeBase, "ffshim_codecctx_time_base"},
+		{&shimCodecCtxSetTimeBase, "ffshim_codecctx_set_time_base"},
+		{&shimCodecCtxFramerate, "ffshim_codecctx_framerate"},
+		{&shimCodecCtxSetFramerate, "ffshim_codecctx_set_framerate"},
+		{&shimCodecCtxSetChLayout, "ffshim_codecctx_set_ch_layout_default"},
+		{&shimCodecCtxHWDeviceCtx, "ffshim_codecctx_hw_device_ctx"},
+		{&shimCodecCtxSetHWDevice, "ffshim_codecctx_set_hw_device_ctx"},
+		{&shimCodecCtxHWFramesCtx, "ffshim_codecctx_hw_frames_ctx"},
+		{&shimCodecCtxSetHWFrames, "ffshim_codecctx_set_hw_frames_ctx"},
+		{&shimFormatCtxDuration, "ffshim_formatctx_duration"},
+		{&shimFormatCtxBitRate, "ffshim_formatctx_bit_rate"},
+		{&shimFormatCtxNbChapters, "ffshim_formatctx_nb_chapters"},
+		{&shimFormatCtxChapter, "ffshim_formatctx_chapter"},
+		{&shimFormatCtxNbPrograms, "ffshim_formatctx_nb_programs"},
+		{&shimFormatCtxProgram, "ffshim_formatctx_program"},
+		{&shimChapterID, "ffshim_chapter_id"},
+		{&shimChapterTimeBase, "ffshim_chapter_time_base"},
+		{&shimChapterStart, "ffshim_chapter_start"},
+		{&shimChapterEnd, "ffshim_chapter_end"},
+		{&shimChapterMetadata, "ffshim_chapter_metadata"},
+		{&shimProgramID, "ffshim_program_id"},
+		{&shimProgramNbStreamIdx, "ffshim_program_nb_stream_indexes"},
+		{&shimProgramStreamIndexPtr, "ffshim_program_stream_index"},
+		{&shimProgramMetadata, "ffshim_program_metadata"},
+	}
+	for _, symbol := range required {
+		if err := registerRequiredLibFunc(symbol.fn, handle, symbol.name); err != nil {
+			return err
+		}
+	}
 
-	// Optional newer symbols (present in newer shim builds)
-	registerOptionalLibFunc(&shimAVDeviceListInputSources, libShim, "ffshim_avdevice_list_input_sources")
-	registerOptionalLibFunc(&shimAVDeviceFreeStringArray, libShim, "ffshim_avdevice_free_string_array")
-	registerOptionalLibFunc(&shimAVFrameColorOffsets, libShim, "ffshim_avframe_color_offsets")
-
-	// AVCodecParameters field helpers (optional)
-	registerOptionalLibFunc(&shimCodecParWidth, libShim, "ffshim_codecpar_width")
-	registerOptionalLibFunc(&shimCodecParHeight, libShim, "ffshim_codecpar_height")
-	registerOptionalLibFunc(&shimCodecParFormat, libShim, "ffshim_codecpar_format")
-	registerOptionalLibFunc(&shimCodecParSampleRate, libShim, "ffshim_codecpar_sample_rate")
-	registerOptionalLibFunc(&shimCodecParChannels, libShim, "ffshim_codecpar_channels")
-
-	// AVCodecContext field helpers (optional)
-	registerOptionalLibFunc(&shimCodecCtxWidth, libShim, "ffshim_codecctx_width")
-	registerOptionalLibFunc(&shimCodecCtxSetWidth, libShim, "ffshim_codecctx_set_width")
-	registerOptionalLibFunc(&shimCodecCtxHeight, libShim, "ffshim_codecctx_height")
-	registerOptionalLibFunc(&shimCodecCtxSetHeight, libShim, "ffshim_codecctx_set_height")
-	registerOptionalLibFunc(&shimCodecCtxPixFmt, libShim, "ffshim_codecctx_pix_fmt")
-	registerOptionalLibFunc(&shimCodecCtxSetPixFmt, libShim, "ffshim_codecctx_set_pix_fmt")
-	registerOptionalLibFunc(&shimCodecCtxSampleFmt, libShim, "ffshim_codecctx_sample_fmt")
-	registerOptionalLibFunc(&shimCodecCtxSetSampleFmt, libShim, "ffshim_codecctx_set_sample_fmt")
-	registerOptionalLibFunc(&shimCodecCtxTimeBase, libShim, "ffshim_codecctx_time_base")
-	registerOptionalLibFunc(&shimCodecCtxSetTimeBase, libShim, "ffshim_codecctx_set_time_base")
-	registerOptionalLibFunc(&shimCodecCtxFramerate, libShim, "ffshim_codecctx_framerate")
-	registerOptionalLibFunc(&shimCodecCtxSetFramerate, libShim, "ffshim_codecctx_set_framerate")
-	registerOptionalLibFunc(&shimCodecCtxSetChLayout, libShim, "ffshim_codecctx_set_ch_layout_default")
-	registerOptionalLibFunc(&shimCodecCtxHWDeviceCtx, libShim, "ffshim_codecctx_hw_device_ctx")
-	registerOptionalLibFunc(&shimCodecCtxSetHWDevice, libShim, "ffshim_codecctx_set_hw_device_ctx")
-	registerOptionalLibFunc(&shimCodecCtxHWFramesCtx, libShim, "ffshim_codecctx_hw_frames_ctx")
-	registerOptionalLibFunc(&shimCodecCtxSetHWFrames, libShim, "ffshim_codecctx_set_hw_frames_ctx")
-
-	// AVFormatContext / chapter / program helpers (optional)
-	registerOptionalLibFunc(&shimFormatCtxDuration, libShim, "ffshim_formatctx_duration")
-	registerOptionalLibFunc(&shimFormatCtxBitRate, libShim, "ffshim_formatctx_bit_rate")
-	registerOptionalLibFunc(&shimFormatCtxNbChapters, libShim, "ffshim_formatctx_nb_chapters")
-	registerOptionalLibFunc(&shimFormatCtxChapter, libShim, "ffshim_formatctx_chapter")
-	registerOptionalLibFunc(&shimFormatCtxNbPrograms, libShim, "ffshim_formatctx_nb_programs")
-	registerOptionalLibFunc(&shimFormatCtxProgram, libShim, "ffshim_formatctx_program")
-
-	registerOptionalLibFunc(&shimChapterID, libShim, "ffshim_chapter_id")
-	registerOptionalLibFunc(&shimChapterTimeBase, libShim, "ffshim_chapter_time_base")
-	registerOptionalLibFunc(&shimChapterStart, libShim, "ffshim_chapter_start")
-	registerOptionalLibFunc(&shimChapterEnd, libShim, "ffshim_chapter_end")
-	registerOptionalLibFunc(&shimChapterMetadata, libShim, "ffshim_chapter_metadata")
-
-	registerOptionalLibFunc(&shimProgramID, libShim, "ffshim_program_id")
-	registerOptionalLibFunc(&shimProgramNbStreamIdx, libShim, "ffshim_program_nb_stream_indexes")
-	registerOptionalLibFunc(&shimProgramStreamIndexPtr, libShim, "ffshim_program_stream_index")
-	registerOptionalLibFunc(&shimProgramMetadata, libShim, "ffshim_program_metadata")
+	registerOptionalLibFunc(&shimAVDeviceListInputSources, handle, "ffshim_avdevice_list_input_sources")
+	registerOptionalLibFunc(&shimAVDeviceFreeStringArray, handle, "ffshim_avdevice_free_string_array")
+	return nil
 }
 
 func registerRequiredLibFunc(fptr any, handle uintptr, name string) (err error) {

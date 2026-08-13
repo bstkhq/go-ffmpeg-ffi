@@ -21,11 +21,16 @@
 #   PREFIX      - Installation prefix (default: /usr/local)
 #   DESTDIR     - Destination directory for staged installs
 
-.PHONY: all clean install native all-platforms help
+.PHONY: all clean install native all-platforms help check-contract
 .PHONY: linux-amd64 linux-arm64 darwin-amd64 darwin-arm64 windows-amd64 windows-arm64
 
 # Default target
 all: native
+
+# Keep the C source/header contract and the Go loader expectation in lockstep.
+# Release CI invokes this before compiling or packaging any shim artifact.
+check-contract:
+	go run ../internal/shim/cmd/gencontract -check
 
 # Configuration
 PREFIX      ?= /usr/local
@@ -74,7 +79,7 @@ ifeq ($(UNAME_M),arm64)
 endif
 
 # Default flags
-CFLAGS_BASE := -Wall -Wextra -O2 -fPIC
+CFLAGS_BASE := -Wall -Wextra -Werror -Wmissing-prototypes -O2 -fPIC
 
 # pkg-config based flags (for native builds)
 PKG_LIBS := libavutil libavcodec libavformat

@@ -51,9 +51,10 @@ or mixed families before accessing version-specific structures.
 The optional C shim provides operations that cannot be expressed safely through
 direct PureGo calls. Point `FFMPEG_SHIM_DIR` at a shim built against the same
 FFmpeg family. A missing optional shim does not prevent core decoding; an
-incompatible shim is rejected. Prebuilt desktop shims live under
-[`shim/prebuilt`](../shim/prebuilt), and source/build instructions are in the
-[shim README](../shim/README.md).
+incompatible shim is rejected. Prebuilt desktop shims are release assets; their
+`manifest.json` identifies the FFmpeg family and checksum. Select the matching
+versioned directory before setting `FFMPEG_SHIM_DIR`. Source/build instructions
+are in the [shim README](../shim/README.md).
 
 ## Check the runtime
 

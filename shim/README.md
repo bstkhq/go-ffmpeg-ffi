@@ -54,7 +54,7 @@ pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-ffmpeg pkg-config
 # Build and install to /usr/local/lib
 ./build.sh install
 
-# Build and copy to prebuilt/<os>-<arch>/
+# Build and stage a local copy under prebuilt/<os>-<arch>/
 ./build.sh prebuilt
 ```
 
@@ -94,20 +94,23 @@ shim's FFmpeg dependencies, but they are not searched for the shim itself.
 
 ## Pre-built Shims
 
-Pre-built shims are available in the `prebuilt/` directory:
+Pre-built shims are distributed only in release archives, never from the source
+checkout. A release archive contains an explicit FFmpeg-family directory and a
+`manifest.json` for every artifact:
 
 ```
-prebuilt/
-  linux-amd64/libffshim.so
-  linux-arm64/libffshim.so      (if available)
-  darwin-amd64/libffshim.dylib  (if available)
-  darwin-arm64/libffshim.dylib  (if available)
-  windows-amd64/ffshim.dll      (if available)
+shim/prebuilt/
+  linux-amd64/ffmpeg-9/
+    libffshim.so
+    manifest.json
 ```
 
-Pre-built shims may be included in releases or you can build them yourself.
-Set `FFMPEG_SHIM_DIR` to the matching platform directory, install the shim, or
-copy it beside the application executable.
+Choose the directory whose manifest has the same FFmpeg major as the runtime,
+then set `FFMPEG_SHIM_DIR` to that directory, install the shim, or copy it
+beside the application executable. The loader also verifies the artifact's
+contract, exported symbols, and actual loaded FFmpeg family before using it.
+`./build.sh prebuilt` is only a local staging helper; it does not create a
+release-attested artifact.
 
 ## Search Paths
 
@@ -178,4 +181,5 @@ FFMPEG_DIR=/path/to/ffmpeg-multiplatform make -C shim all-platforms
 - `ffshim.h` - Public API
 - `build.sh` - Build script (recommended)
 - `Makefile` - Alternative build system with cross-compilation support
-- `prebuilt/` - Pre-built shims for various platforms
+- `prebuilt/` - ignored local staging directory; release archives contain the
+  attested, versioned prebuilt artifacts

@@ -1,5 +1,9 @@
-# Build ffshim for all supported platforms
-# This workflow builds the shim library on native runners for maximum compatibility
+# Build and attest ffshim for every distributed native platform.
+#
+# Each job verifies the generated C/Go contract, loads the exact copied
+# artifact through the consumer loader, exercises safe helpers, and emits a
+# checksum manifest. The package job rejects anything not attested by this
+# checkout before it can reach a release.
 name: Build Shim
 
 on:
@@ -7,12 +11,20 @@ on:
     branches: [master, main]
     paths:
       - 'shim/**'
+      - 'internal/shim/**'
+      - 'cmd/ffshim-manifest/**'
       - '.github/workflows/build-shim.yml'
+      - 'go.mod'
+      - 'go.sum'
   pull_request:
     branches: [master, main]
     paths:
       - 'shim/**'
+      - 'internal/shim/**'
+      - 'cmd/ffshim-manifest/**'
       - '.github/workflows/build-shim.yml'
+      - 'go.mod'
+      - 'go.sum'
   release:
     types: [created]
   workflow_dispatch:
@@ -24,148 +36,135 @@ on:
         type: boolean
 
 permissions:
-  contents: write
+  contents: read
+
+env:
+  GO_VERSION: '1.23'
 
 jobs:
   build-linux-amd64:
     runs-on: ubuntu-latest
-    name: Build (linux/amd64)
+    name: Build and attest (linux/amd64)
     steps:
       - uses: actions/checkout@v4
-
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Verify generated shim contract
+        run: make -C shim check-contract
       - name: Install FFmpeg development libraries
         run: |
           sudo apt-get update
           sudo apt-get install -y libavcodec-dev libavformat-dev libavutil-dev libavdevice-dev
-
-      - name: Build shim
-        working-directory: shim
+      - name: Build, verify, and attest shim
         run: |
-          make native
-          mkdir -p prebuilt/linux-amd64
-          cp libffshim.so prebuilt/linux-amd64/
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+          set -eu
+          make -C shim native
+          major="$(CGO_ENABLED=0 go run ./cmd/ffshim-manifest -shim-dir "$PWD/shim" -field ffmpeg-major)"
+          destination="$PWD/dist/shim/prebuilt/linux-amd64/ffmpeg-$major"
+          mkdir -p "$destination"
+          cp shim/libffshim.so "$destination/"
+          CGO_ENABLED=0 go run ./cmd/ffshim-manifest -shim-dir "$destination" -output "$destination/manifest.json"
+          CGO_ENABLED=0 go run ./cmd/ffshim-manifest -verify "$destination/manifest.json"
+      - uses: actions/upload-artifact@v4
         with:
           name: shim-linux-amd64
-          path: shim/prebuilt/linux-amd64/
+          path: dist/shim/
 
   build-linux-arm64:
-    runs-on: ubuntu-latest
-    name: Build (linux/arm64)
+    runs-on: ubuntu-24.04-arm
+    name: Build and attest (linux/arm64)
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install cross toolchain + arm64 FFmpeg development libraries
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Verify generated shim contract
+        run: make -C shim check-contract
+      - name: Install FFmpeg development libraries
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu pkg-config
-
-          sudo dpkg --add-architecture arm64
-
-          # The default Ubuntu sources on amd64 runners don't publish arm64 indexes
-          # for security.ubuntu.com, so after enabling multiarch we must explicitly
-          # pin amd64 repos to amd64 and use ports.ubuntu.com for arm64.
-          codename="$(lsb_release -cs)"
-
-          # Ubuntu 24.04 runners use deb822 .sources files by default. If we leave
-          # them enabled after adding arm64, apt will try to fetch arm64 indexes
-          # from security.ubuntu.com and fail with 404s. Replace sources with an
-          # explicit multiarch configuration.
-          sudo rm -f /etc/apt/sources.list.d/*.sources || true
-          sudo rm -f /etc/apt/sources.list.d/*.list || true
-
-          sudo tee /etc/apt/sources.list >/dev/null <<EOF
-          deb [arch=amd64] http://archive.ubuntu.com/ubuntu ${codename} main restricted universe multiverse
-          deb [arch=amd64] http://archive.ubuntu.com/ubuntu ${codename}-updates main restricted universe multiverse
-          deb [arch=amd64] http://archive.ubuntu.com/ubuntu ${codename}-backports main restricted universe multiverse
-          deb [arch=amd64] http://security.ubuntu.com/ubuntu ${codename}-security main restricted universe multiverse
-          EOF
-
-          sudo tee /etc/apt/sources.list.d/arm64-ports.list >/dev/null <<EOF
-          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports ${codename} main restricted universe multiverse
-          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports ${codename}-updates main restricted universe multiverse
-          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports ${codename}-backports main restricted universe multiverse
-          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports ${codename}-security main restricted universe multiverse
-          EOF
-
-          sudo apt-get update
-
-          # Install arm64 FFmpeg dev libs (used by the cross linker).
-          sudo apt-get install -y libavutil-dev:arm64 libavcodec-dev:arm64 libavformat-dev:arm64
-
-      - name: Build shim
-        working-directory: shim
-        env:
-          CC: aarch64-linux-gnu-gcc
-          PKG_CONFIG: pkg-config
-          PKG_CONFIG_LIBDIR: /usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig
+          sudo apt-get install -y libavcodec-dev libavformat-dev libavutil-dev libavdevice-dev
+      - name: Build, verify, and attest shim
         run: |
-          mkdir -p prebuilt/linux-arm64
-          aarch64-linux-gnu-gcc -shared -fPIC -Wall -Wextra -O2 \
-            $(pkg-config --cflags libavutil libavcodec libavformat) \
-            -o prebuilt/linux-arm64/libffshim.so ffshim.c \
-            $(pkg-config --libs libavutil libavcodec libavformat)
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+          set -eu
+          make -C shim native
+          major="$(CGO_ENABLED=0 go run ./cmd/ffshim-manifest -shim-dir "$PWD/shim" -field ffmpeg-major)"
+          destination="$PWD/dist/shim/prebuilt/linux-arm64/ffmpeg-$major"
+          mkdir -p "$destination"
+          cp shim/libffshim.so "$destination/"
+          CGO_ENABLED=0 go run ./cmd/ffshim-manifest -shim-dir "$destination" -output "$destination/manifest.json"
+          CGO_ENABLED=0 go run ./cmd/ffshim-manifest -verify "$destination/manifest.json"
+      - uses: actions/upload-artifact@v4
         with:
           name: shim-linux-arm64
-          path: shim/prebuilt/linux-arm64/
+          path: dist/shim/
 
-  # Build on macOS (both amd64 and arm64 native)
   build-macos-amd64:
     runs-on: macos-15-intel
-    name: Build (darwin/amd64)
+    name: Build and attest (darwin/amd64)
     steps:
       - uses: actions/checkout@v4
-
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Verify generated shim contract
+        run: make -C shim check-contract
       - name: Install FFmpeg
         run: brew install ffmpeg
-
-      - name: Build shim
-        working-directory: shim
+      - name: Build, verify, and attest shim
         run: |
-          make native
-          mkdir -p prebuilt/darwin-amd64
-          cp libffshim.dylib prebuilt/darwin-amd64/
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+          set -eu
+          make -C shim native
+          major="$(CGO_ENABLED=0 go run ./cmd/ffshim-manifest -shim-dir "$PWD/shim" -field ffmpeg-major)"
+          destination="$PWD/dist/shim/prebuilt/darwin-amd64/ffmpeg-$major"
+          mkdir -p "$destination"
+          cp shim/libffshim.dylib "$destination/"
+          CGO_ENABLED=0 go run ./cmd/ffshim-manifest -shim-dir "$destination" -output "$destination/manifest.json"
+          CGO_ENABLED=0 go run ./cmd/ffshim-manifest -verify "$destination/manifest.json"
+      - uses: actions/upload-artifact@v4
         with:
           name: shim-darwin-amd64
-          path: shim/prebuilt/darwin-amd64/
+          path: dist/shim/
 
   build-macos-arm64:
     runs-on: macos-15
-    name: Build (darwin/arm64)
+    name: Build and attest (darwin/arm64)
     steps:
       - uses: actions/checkout@v4
-
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Verify generated shim contract
+        run: make -C shim check-contract
       - name: Install FFmpeg
         run: brew install ffmpeg
-
-      - name: Build shim
-        working-directory: shim
+      - name: Build, verify, and attest shim
         run: |
-          make native
-          mkdir -p prebuilt/darwin-arm64
-          cp libffshim.dylib prebuilt/darwin-arm64/
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+          set -eu
+          make -C shim native
+          major="$(CGO_ENABLED=0 go run ./cmd/ffshim-manifest -shim-dir "$PWD/shim" -field ffmpeg-major)"
+          destination="$PWD/dist/shim/prebuilt/darwin-arm64/ffmpeg-$major"
+          mkdir -p "$destination"
+          cp shim/libffshim.dylib "$destination/"
+          CGO_ENABLED=0 go run ./cmd/ffshim-manifest -shim-dir "$destination" -output "$destination/manifest.json"
+          CGO_ENABLED=0 go run ./cmd/ffshim-manifest -verify "$destination/manifest.json"
+      - uses: actions/upload-artifact@v4
         with:
           name: shim-darwin-arm64
-          path: shim/prebuilt/darwin-arm64/
+          path: dist/shim/
 
-  # Build on Windows
   build-windows-amd64:
     runs-on: windows-latest
-    name: Build (windows/amd64)
+    name: Build and attest (windows/amd64)
     steps:
       - uses: actions/checkout@v4
-
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Verify generated shim contract
+        shell: pwsh
+        run: go run ./internal/shim/cmd/gencontract -check
       - name: Setup MSYS2
         uses: msys2/setup-msys2@v2
         with:
@@ -176,56 +175,65 @@ jobs:
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-ffmpeg
             pkg-config
-
       - name: Build shim
         shell: msys2 {0}
         working-directory: shim
+        run: make native
+      - name: Verify and attest shim
+        shell: pwsh
         run: |
-          make native
-          mkdir -p prebuilt/windows-amd64
-          cp ffshim.dll prebuilt/windows-amd64/
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+          $ErrorActionPreference = 'Stop'
+          $env:Path = "C:\\msys64\\mingw64\\bin;$env:Path"
+          $major = (go run ./cmd/ffshim-manifest -shim-dir "$PWD/shim" -field ffmpeg-major).Trim()
+          $destination = "$PWD/dist/shim/prebuilt/windows-amd64/ffmpeg-$major"
+          New-Item -ItemType Directory -Force -Path $destination | Out-Null
+          Copy-Item shim/ffshim.dll "$destination/ffshim.dll"
+          go run ./cmd/ffshim-manifest -shim-dir $destination -output "$destination/manifest.json"
+          go run ./cmd/ffshim-manifest -verify "$destination/manifest.json"
+      - uses: actions/upload-artifact@v4
         with:
           name: shim-windows-amd64
-          path: shim/prebuilt/windows-amd64/
+          path: dist/shim/
 
-  # Combine all artifacts into a single release asset
   package:
     needs: [build-linux-amd64, build-linux-arm64, build-macos-amd64, build-macos-arm64, build-windows-amd64]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
-
-      - name: Download all artifacts
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Verify generated shim contract
+        run: make -C shim check-contract
+      - name: Download all attested artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
-
-      - name: Package shims
+      - name: Verify manifests and package versioned shims
         run: |
+          set -eu
           mkdir -p release/shim/prebuilt
-
-          # Copy all platform shims
-          for dir in artifacts/shim-*/; do
-            platform=$(basename "$dir" | sed 's/shim-//')
-            if [ -d "$dir" ] && [ "$(ls -A "$dir")" ]; then
-              mkdir -p "release/shim/prebuilt/$platform"
-              cp -r "$dir"/* "release/shim/prebuilt/$platform/"
-            fi
+          for platform in linux-amd64 linux-arm64 darwin-amd64 darwin-arm64 windows-amd64; do
+            source="artifacts/shim-$platform/prebuilt/$platform"
+            test -d "$source"
+            manifests="$(find "$source" -mindepth 2 -maxdepth 2 -name manifest.json -print | sort)"
+            test "$(printf '%s\n' "$manifests" | sed '/^$/d' | wc -l)" -eq 1
+            manifest="$(printf '%s\n' "$manifests" | sed '/^$/d')"
+            case "$manifest" in
+              "$source"/ffmpeg-[6-9]/manifest.json) ;;
+              *) echo "unexpected versioned shim manifest: $manifest" >&2; exit 1 ;;
+            esac
+            CGO_ENABLED=0 go run ./cmd/ffshim-manifest -verify "$manifest"
+            mkdir -p "release/shim/prebuilt/$platform"
+            cp -a "$source/." "release/shim/prebuilt/$platform/"
           done
-
-          # Create archive
-          cd release
-          tar -czvf ../ffshim-prebuilt.tar.gz shim/
-          cd ..
-
-          # Create checksums
+          find release/shim/prebuilt -name manifest.json -print | sort > release/shim/MANIFESTS
+          test "$(wc -l < release/shim/MANIFESTS)" -eq 5
+          tar -C release -czvf ffshim-prebuilt.tar.gz shim/
           sha256sum ffshim-prebuilt.tar.gz > ffshim-prebuilt.tar.gz.sha256
-
       - name: Upload release asset
-        # Avoid "skipped" steps: always run and no-op on non-release events.
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -233,13 +241,9 @@ jobs:
             echo "Not a release event (${GITHUB_EVENT_NAME}); skipping release upload."
             exit 0
           fi
-
           tag="${GITHUB_REF_NAME}"
-          echo "Uploading prebuilt shims to release ${tag}..."
           gh release upload "${tag}" ffshim-prebuilt.tar.gz ffshim-prebuilt.tar.gz.sha256 --clobber
-
-      - name: Upload package artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: ffshim-prebuilt
           path: |
