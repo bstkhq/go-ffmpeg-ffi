@@ -4,6 +4,7 @@ package ffgo
 
 import (
 	"errors"
+	"runtime"
 	"sync"
 	"time"
 	"unsafe"
@@ -105,7 +106,9 @@ func NewSubtitleDecoder(stream *StreamInfo) (*SubtitleDecoder, error) {
 	}
 
 	// Copy parameters
-	if err := avcodec.ParametersToContext(codecCtx, codecPar); err != nil {
+	err := avcodec.ParametersToContext(codecCtx, codecPar)
+	runtime.KeepAlive(stream)
+	if err != nil {
 		avcodec.FreeContext(&codecCtx)
 		return nil, err
 	}
@@ -157,13 +160,17 @@ func NewSubtitleDecoderFromFile(inputPath string) (*SubtitleDecoder, error) {
 	// Build a minimal StreamInfo with codec parameters so NewSubtitleDecoder can work.
 	stream := avformat.GetStream(formatCtx, int(subIdx))
 	codecPar := avformat.GetStreamCodecPar(stream)
+	ownedCodecPar, err := ownCodecParameters(codecPar)
+	if err != nil {
+		return nil, err
+	}
 	tbNum, tbDen := avformat.GetStreamTimeBase(stream)
 	si := &StreamInfo{
 		Index:    int(subIdx),
 		Type:     MediaTypeSubtitle,
 		CodecID:  CodecID(avformat.GetCodecParCodecID(codecPar)),
 		TimeBase: Rational{Num: tbNum, Den: tbDen},
-		codecPar: codecPar,
+		codecPar: ownedCodecPar,
 	}
 	return NewSubtitleDecoder(si)
 }
@@ -373,7 +380,11 @@ func (d *Decoder) SubtitleStream() *StreamInfo {
 		mediaType := avformat.GetCodecParType(codecPar)
 		if mediaType == avutil.MediaTypeSubtitle {
 			// Use the shared stream info extractor to ensure codec parameters are present.
-			return d.getStreamInfo(i)
+			info, err := d.getStreamInfo(i)
+			if err != nil {
+				return nil
+			}
+			return info
 		}
 	}
 	return nil

@@ -84,12 +84,20 @@ func (d *Decoder) selectProgramStreams(programID int, wantVideo, wantAudio bool)
 			}
 			mt := avformat.GetCodecParType(codecPar)
 			if wantVideo && d.videoStreamIdx < 0 && mt == avutil.MediaTypeVideo {
+				info, err := d.getStreamInfo(si)
+				if err != nil {
+					return err
+				}
 				d.videoStreamIdx = si
-				d.videoInfo = d.getStreamInfo(si)
+				d.videoInfo = info
 			}
 			if wantAudio && d.audioStreamIdx < 0 && mt == avutil.MediaTypeAudio {
+				info, err := d.getStreamInfo(si)
+				if err != nil {
+					return err
+				}
 				d.audioStreamIdx = si
-				d.audioInfo = d.getStreamInfo(si)
+				d.audioInfo = info
 			}
 			if (!wantVideo || d.videoStreamIdx >= 0) && (!wantAudio || d.audioStreamIdx >= 0) {
 				break

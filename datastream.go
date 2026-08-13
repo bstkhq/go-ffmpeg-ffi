@@ -33,7 +33,13 @@ func (d *Decoder) DataStreams() []*StreamInfo {
 			continue
 		}
 		if avformat.GetCodecParType(codecPar) == avutil.MediaTypeData {
-			out = append(out, d.getStreamInfo(i))
+			info, err := d.getStreamInfo(i)
+			if err != nil {
+				return nil
+			}
+			if info != nil {
+				out = append(out, info)
+			}
 		}
 	}
 	return out

@@ -278,6 +278,49 @@ func TestFreeContextPropagatesNativePointerUpdate(t *testing.T) {
 	}
 }
 
+func TestParametersAllocFree(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+
+	parameters := ParametersAlloc()
+	if parameters == nil {
+		t.Fatal("ParametersAlloc returned nil")
+	}
+	ParametersFree(&parameters)
+	if parameters != nil {
+		t.Fatalf("ParametersFree left parameters at %p", parameters)
+	}
+
+	ParametersFree(&parameters)
+}
+
+func TestParametersFreePropagatesNativePointerUpdate(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+
+	originalParametersFree := avcodecParametersFree
+	t.Cleanup(func() { avcodecParametersFree = originalParametersFree })
+
+	nativeParameters := allocNativeTestPointer(t)
+	avcodecParametersFree = func(slot *unsafe.Pointer) {
+		if slot == nil {
+			t.Fatal("avcodec_parameters_free received a nil slot")
+		}
+		if *slot != nativeParameters {
+			t.Fatalf("avcodec_parameters_free received %p, want %p", *slot, nativeParameters)
+		}
+		*slot = nil
+	}
+
+	parameters := Parameters(nativeParameters)
+	ParametersFree(&parameters)
+	if parameters != nil {
+		t.Fatalf("ParametersFree left parameters at %p", parameters)
+	}
+}
+
 func TestOpen2PropagatesDictionaryUpdate(t *testing.T) {
 	if !requireFFmpeg(t) {
 		return
