@@ -13,6 +13,7 @@
 #include <libavutil/channel_layout.h>
 #include <libavutil/version.h>
 #include <libavutil/mem.h>
+#include <libavutil/buffer.h>
 #include <libavutil/frame.h>
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
@@ -498,7 +499,13 @@ void ffshim_codecctx_set_hw_device_ctx(void *ctx, void *ref) {
     if (ctx == NULL) {
         return;
     }
-    ((AVCodecContext*)ctx)->hw_device_ctx = (AVBufferRef*)ref;
+    AVBufferRef *replacement = ref == NULL ? NULL : av_buffer_ref((AVBufferRef*)ref);
+    if (ref != NULL && replacement == NULL) {
+        return;
+    }
+    AVCodecContext *codec_ctx = (AVCodecContext*)ctx;
+    av_buffer_unref(&codec_ctx->hw_device_ctx);
+    codec_ctx->hw_device_ctx = replacement;
 }
 
 void* ffshim_codecctx_hw_frames_ctx(void *ctx) {
@@ -512,7 +519,13 @@ void ffshim_codecctx_set_hw_frames_ctx(void *ctx, void *ref) {
     if (ctx == NULL) {
         return;
     }
-    ((AVCodecContext*)ctx)->hw_frames_ctx = (AVBufferRef*)ref;
+    AVBufferRef *replacement = ref == NULL ? NULL : av_buffer_ref((AVBufferRef*)ref);
+    if (ref != NULL && replacement == NULL) {
+        return;
+    }
+    AVCodecContext *codec_ctx = (AVCodecContext*)ctx;
+    av_buffer_unref(&codec_ctx->hw_frames_ctx);
+    codec_ctx->hw_frames_ctx = replacement;
 }
 
 /* ============================================================================

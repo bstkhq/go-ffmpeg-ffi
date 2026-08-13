@@ -10,7 +10,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"unsafe"
 
+	"github.com/bstkhq/go-ffmpeg-ffi/avcodec"
+	"github.com/bstkhq/go-ffmpeg-ffi/avutil"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/abi"
 )
 
@@ -125,6 +128,74 @@ func TestExpectedLibraryName(t *testing.T) {
 		if name != "ffshim.dll" {
 			t.Errorf("expected ffshim.dll on windows, got %s", name)
 		}
+	}
+}
+
+func TestCodecCtxHWSettersRetainAndReplaceReferences(t *testing.T) {
+	if testing.Short() {
+		t.Skip("hardware reference ownership requires FFmpeg and ffshim")
+	}
+	if err := Load(); err != nil {
+		t.Fatal(err)
+	}
+	if !IsLoaded() {
+		t.Skip("ffshim is not available")
+	}
+
+	tests := []struct {
+		name string
+		set  func(unsafe.Pointer, unsafe.Pointer) error
+		get  func(unsafe.Pointer) (unsafe.Pointer, error)
+	}{
+		{name: "device", set: CodecCtxSetHWDeviceCtx, get: CodecCtxHWDeviceCtx},
+		{name: "frames", set: CodecCtxSetHWFramesCtx, get: CodecCtxHWFramesCtx},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := avcodec.AllocContext3(nil)
+			if ctx == nil {
+				t.Fatal("allocate codec context")
+			}
+			defer avcodec.FreeContext(&ctx)
+
+			data := avutil.Malloc(1)
+			if data == nil {
+				t.Fatal("av_malloc failed")
+			}
+			source := avutil.BufferCreate(data, 1, 0, 0, 0)
+			if source == nil {
+				avutil.Free(data)
+				t.Fatal("av_buffer_create failed")
+			}
+			defer avutil.FreeBufferRef(&source)
+
+			if err := tt.set(ctx, source); err != nil {
+				t.Fatal(err)
+			}
+			stored, err := tt.get(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if stored == nil {
+				t.Fatal("codec context did not retain the source")
+			}
+			if stored == source {
+				t.Fatal("codec context borrowed the caller's AVBufferRef instead of retaining it")
+			}
+
+			avutil.FreeBufferRef(&source)
+			if err := tt.set(ctx, nil); err != nil {
+				t.Fatal(err)
+			}
+			stored, err = tt.get(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if stored != nil {
+				t.Fatal("nil assignment did not release the retained reference")
+			}
+		})
 	}
 }
 

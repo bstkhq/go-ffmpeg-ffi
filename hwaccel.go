@@ -4,6 +4,7 @@ package ffgo
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"sync"
 
@@ -88,6 +89,18 @@ func (d *HWDevice) Context() avutil.HWDeviceContext {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.deviceCtx
+}
+
+func (d *HWDevice) attachToCodecContext(codecCtx avcodec.Context) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.closed || d.deviceCtx == nil {
+		return closedError("hardware device")
+	}
+	if err := avcodec.SetCtxHWDeviceCtx(codecCtx, d.deviceCtx); err != nil {
+		return fmt.Errorf("ffgo: attach hardware device: %w", err)
+	}
+	return nil
 }
 
 // Close releases the hardware device resources.
@@ -194,8 +207,14 @@ func NewHWDecoder(inputPath string, cfg *HWDecoderConfig) (*HWDecoder, error) {
 		return nil, err
 	}
 
-	// Set hardware device context BEFORE opening the codec
-	avcodec.SetCtxHWDeviceCtx(codecCtx, cfg.HWDevice.Context())
+	// Set hardware device context BEFORE opening the codec. Retain the device
+	// reference while holding its lock so Close cannot invalidate it between
+	// reading the pointer and av_buffer_ref.
+	if err := cfg.HWDevice.attachToCodecContext(codecCtx); err != nil {
+		avcodec.FreeContext(&codecCtx)
+		avformat.CloseInput(&formatCtx)
+		return nil, err
+	}
 
 	// Open codec
 	if err := avcodec.Open2(codecCtx, decoder, nil); err != nil {
@@ -315,12 +334,11 @@ func (d *HWDecoder) nextVideoFrameLocked(outputSoftware bool) (Frame, error) {
 			return Frame{}, err
 		}
 		if ready {
-			if outputSoftware && d.swFrame != nil {
-				avutil.FrameUnref(d.swFrame)
-				if err := avutil.HWFrameTransferData(d.swFrame, d.frame, 0); err == nil {
-					avutil.SetFramePTS(d.swFrame, avutil.GetFramePTS(d.frame))
-					return Frame{ptr: d.swFrame, owned: false}, nil
+			if outputSoftware {
+				if err := transferHWFrameToSystem(d.swFrame, d.frame, avutil.HWFrameTransferData); err != nil {
+					return Frame{}, err
 				}
+				return Frame{ptr: d.swFrame, owned: false}, nil
 			}
 			return Frame{ptr: d.frame, owned: false}, nil
 		}
@@ -374,14 +392,26 @@ func (d *HWDecoder) TransferToSystem(hwFrame Frame) (Frame, error) {
 		return Frame{}, errors.New("ffgo: failed to allocate frame")
 	}
 
-	if err := avutil.HWFrameTransferData(swFrame, hwFrame.ptr, 0); err != nil {
+	if err := transferHWFrameToSystem(swFrame, hwFrame.ptr, avutil.HWFrameTransferData); err != nil {
 		avutil.FrameFree(&swFrame)
 		return Frame{}, err
 	}
 
-	// Copy PTS
-	avutil.SetFramePTS(swFrame, avutil.GetFramePTS(hwFrame.ptr))
 	return Frame{ptr: swFrame, owned: true}, nil
+}
+
+type hwFrameTransferFunc func(dst, src avutil.Frame, flags int32) error
+
+func transferHWFrameToSystem(dst, src avutil.Frame, transfer hwFrameTransferFunc) error {
+	if dst == nil {
+		return ErrOutOfMemory
+	}
+	avutil.FrameUnref(dst)
+	if err := transfer(dst, src, 0); err != nil {
+		return fmt.Errorf("ffgo: transfer hardware frame to system memory: %w", err)
+	}
+	avutil.SetFramePTS(dst, avutil.GetFramePTS(src))
+	return nil
 }
 
 // TransferToSoftware transfers a hardware frame to a software frame.
