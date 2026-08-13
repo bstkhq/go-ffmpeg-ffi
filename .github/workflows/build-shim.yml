@@ -170,6 +170,7 @@ jobs:
         with:
           msystem: MINGW64
           update: true
+          path-type: inherit
           install: >-
             make
             mingw-w64-x86_64-gcc
@@ -180,25 +181,18 @@ jobs:
         working-directory: shim
         run: make native
       - name: Verify and attest shim
-        shell: pwsh
+        shell: msys2 {0}
         run: |
-          $ErrorActionPreference = 'Stop'
-          $mingwBin = 'C:\msys64\mingw64\bin'
-          if (-not (Test-Path -LiteralPath $mingwBin)) {
-            throw "MSYS2 MINGW64 runtime directory is missing: $mingwBin"
-          }
-          $avutil = Get-ChildItem -Path (Join-Path $mingwBin 'avutil-*.dll') -File |
-            Select-Object -First 1
-          if ($null -eq $avutil) {
-            throw "MSYS2 did not install an avutil runtime DLL in $mingwBin"
-          }
-          Write-Host "Using FFmpeg runtime: $($avutil.Name)"
-          $env:Path = "$mingwBin;$env:Path"
-          $major = (go run ./cmd/ffshim-manifest -shim-dir "$PWD/shim" -field ffmpeg-major).Trim()
-          $destination = "$PWD/dist/shim/prebuilt/windows-amd64/ffmpeg-$major"
-          New-Item -ItemType Directory -Force -Path $destination | Out-Null
-          Copy-Item shim/ffshim.dll "$destination/ffshim.dll"
-          go run ./cmd/ffshim-manifest -shim-dir $destination -output "$destination/manifest.json"
+          set -eu
+          command -v go
+          avutil="$(find /mingw64/bin -maxdepth 1 -type f -name 'avutil-*.dll' -print -quit)"
+          test -n "$avutil"
+          echo "Using FFmpeg runtime: $avutil"
+          major="$(go run ./cmd/ffshim-manifest -shim-dir "$PWD/shim" -field ffmpeg-major)"
+          destination="$PWD/dist/shim/prebuilt/windows-amd64/ffmpeg-$major"
+          mkdir -p "$destination"
+          cp shim/ffshim.dll "$destination/ffshim.dll"
+          go run ./cmd/ffshim-manifest -shim-dir "$destination" -output "$destination/manifest.json"
           go run ./cmd/ffshim-manifest -verify "$destination/manifest.json"
       - uses: actions/upload-artifact@v4
         with:
