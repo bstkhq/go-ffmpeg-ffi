@@ -37,6 +37,7 @@ import (
 
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/abi"
 	"github.com/bstkhq/go-ffmpeg-ffi/internal/bindings"
+	"github.com/bstkhq/go-ffmpeg-ffi/internal/dynlib"
 	"github.com/ebitengine/purego"
 )
 
@@ -174,7 +175,7 @@ func Load() error {
 		return nil
 	}
 
-	lib, err := purego.Dlopen(path, purego.RTLD_NOW|purego.RTLD_GLOBAL)
+	lib, err := dynlib.Open(path)
 	if err != nil {
 		if runtime.GOOS == "android" {
 			// Android native libraries can live in the APK linker namespace and
@@ -195,7 +196,7 @@ func Load() error {
 		info, err = validateVersionInfo(bindings.ABI(), info)
 	}
 	if err != nil {
-		_ = purego.Dlclose(lib)
+		_ = dynlib.Close(lib)
 		loadErr = fmt.Errorf("%w at %s: %v", ErrIncompatibleShim, path, err)
 		searchErr = loadErr.Error()
 		return loadErr

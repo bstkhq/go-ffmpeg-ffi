@@ -137,13 +137,13 @@ func newIOCallbackPointers(newCallback func(any) uintptr) (callbacks ioCallbackP
 	}()
 
 	// Read callback: int read_packet(void *opaque, uint8_t *buf, int buf_size)
-	callbacks.read = newCallback(customIOReadCallback)
+	callbacks.read = newCallback(nativeCustomIOReadCallback)
 
 	// Write callback: int write_packet(void *opaque, uint8_t *buf, int buf_size)
-	callbacks.write = newCallback(customIOWriteCallback)
+	callbacks.write = newCallback(nativeCustomIOWriteCallback)
 
 	// Seek callback: int64_t seek(void *opaque, int64_t offset, int whence)
-	callbacks.seek = newCallback(customIOSeekCallback)
+	callbacks.seek = newCallback(nativeCustomIOSeekCallback)
 
 	return callbacks, nil
 }

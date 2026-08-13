@@ -35,10 +35,23 @@ Support means that the exact loaded library family is recognized and that the
 same required test suite passes. It does not mean that every FFmpeg build has
 the same codecs, filters, devices, or hardware accelerators.
 
+Desktop validation is tracked separately by operating system and architecture:
+
+| Target | Validation |
+| --- | --- |
+| macOS `amd64` and `arm64` | Native FFmpeg runtime, ABI probe, shim, unit, and integration CI. |
+| Windows `amd64` | Native FFmpeg runtime, ABI probe, shim, unit, and integration CI. |
+| Windows `arm64` | Complete package and test compilation; native runtime qualification awaits a public runner. |
+
+Desktop Go applications remain buildable with `CGO_ENABLED=0`. They must ship
+or install a coherent FFmpeg 6, 7, or 8 shared-library family for their target
+OS. The optional C shim is built separately and is required for features that
+cannot be expressed safely through direct PureGo calls.
+
 ## Design in brief
 
 - Exported FFmpeg functions are loaded with PureGo. Supported desktop
-  applications remain buildable with `CGO_ENABLED=0`; planned Android and iOS
+  applications remain buildable with `CGO_ENABLED=0`; Android and planned iOS
   builds follow PureGo's requirement for `CGO_ENABLED=1`.
 - Version-specific Go ABI layouts cover simple, verified structure access.
 - A small versioned C shim handles C features that cannot be expressed safely

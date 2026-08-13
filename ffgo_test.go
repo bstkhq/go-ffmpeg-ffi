@@ -2622,7 +2622,7 @@ func TestNewNetworkDecoder(t *testing.T) {
 
 	// Test with protocol options using local file
 	// This tests that the options are properly passed through
-	decoder, err := NewNetworkDecoder("file://"+testFile, &ProtocolOptions{
+	decoder, err := NewNetworkDecoder(testFile, &ProtocolOptions{
 		Timeout:    5 * time.Second,
 		BufferSize: 32768,
 	})

@@ -9,8 +9,9 @@ than in additional plan documents.
 - [Architecture](architecture.md): support policy, runtime layers, ABI rules,
   C shim boundaries, ownership, and initialization.
 - [Roadmap](roadmap.md): the single implementation plan, covering the six
-  bootstrap pull requests and the Android-first platform rollout with explicit
-  compile, integration, and hardware-qualification gates.
+  bootstrap pull requests and the Android-first platform rollout through the
+  Windows/macOS desktop closure, with explicit compile, integration, and
+  hardware-qualification gates.
 
 ## Inherited reference documents
 
