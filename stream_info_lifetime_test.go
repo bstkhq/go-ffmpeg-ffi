@@ -16,7 +16,7 @@ func TestStreamInfoOwnsCodecParametersAfterDecoderClose(t *testing.T) {
 		return
 	}
 
-	decoder, err := NewDecoder(createTestVideo(t))
+	decoder, err := NewDecoder(createTestVideo(t), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ func TestStreamCopySourceRetainsStreamInfoParameters(t *testing.T) {
 		return
 	}
 
-	decoder, err := NewDecoder(createTestVideo(t))
+	decoder, err := NewDecoder(createTestVideo(t), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

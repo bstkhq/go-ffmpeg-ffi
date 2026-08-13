@@ -97,7 +97,7 @@ func muxDelayedFrames(t *testing.T) (string, *Muxer) {
 
 func assertDecodedVideoFrames(t *testing.T, output string, want int) {
 	t.Helper()
-	decoder, err := NewDecoder(output, WithStreams(MediaTypeVideo))
+	decoder, err := NewDecoder(output, &DecoderOptions{Streams: []MediaType{MediaTypeVideo}})
 	if err != nil {
 		t.Fatal(err)
 	}

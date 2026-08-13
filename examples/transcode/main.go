@@ -39,7 +39,7 @@ func main() {
 
 	// Open input file
 	fmt.Printf("\nOpening input: %s\n", inputFile)
-	decoder, err := ffgo.NewDecoder(inputFile)
+	decoder, err := ffgo.NewDecoder(inputFile, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to open input: %v\n", err)
 		os.Exit(1)

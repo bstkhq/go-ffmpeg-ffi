@@ -111,7 +111,7 @@ func runDecoderLifecycleTest(t *testing.T, iterations int, assertMemory bool) {
 }
 
 func exerciseDecoderLifecycle(input string) error {
-	decoder, err := NewDecoder(input)
+	decoder, err := NewDecoder(input, nil)
 	if err != nil {
 		return err
 	}

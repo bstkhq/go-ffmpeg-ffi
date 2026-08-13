@@ -21,7 +21,7 @@ func TwoPassTranscode(input, output string, opts *EncoderOptions) error {
 		return errors.New("ffgo: EncoderOptions.Video is required")
 	}
 
-	dec, err := NewDecoder(input)
+	dec, err := NewDecoder(input, nil)
 	if err != nil {
 		return err
 	}

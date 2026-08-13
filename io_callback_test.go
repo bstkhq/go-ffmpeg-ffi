@@ -143,7 +143,7 @@ func TestDecoderFromIOPreservesReadError(t *testing.T) {
 
 	_, err := NewDecoderFromIO(&IOCallbacks{
 		Read: func([]byte) (int, error) { return 0, wantErr },
-	}, "")
+	}, nil)
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("NewDecoderFromIO error %v does not preserve %v", err, wantErr)
 	}
@@ -249,7 +249,7 @@ func TestDecoderFromIOContextCancelsBlockedOpen(t *testing.T) {
 				<-ctx.Done()
 				return 0, ctx.Err()
 			},
-		}, "mpegts")
+		}, &DecoderOptions{Format: "mpegts"})
 		result <- err
 	}()
 

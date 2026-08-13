@@ -15,7 +15,7 @@ func TestDecoderReadFrameDrainsAllSelectedStreams(t *testing.T) {
 	if !requireFFmpeg(t) {
 		return
 	}
-	decoder, err := NewDecoder(createTestVideo(t))
+	decoder, err := NewDecoder(createTestVideo(t), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestDecoderSingleStreamCallsPreserveInterleavedPackets(t *testing.T) {
 	if !requireFFmpeg(t) {
 		return
 	}
-	decoder, err := NewDecoder(createTestVideo(t))
+	decoder, err := NewDecoder(createTestVideo(t), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestDecoderPropagatesTruncatedInputError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	decoder, err := NewDecoder(truncated)
+	decoder, err := NewDecoder(truncated, nil)
 	if err != nil {
 		t.Fatalf("open truncated fixture: %v", err)
 	}

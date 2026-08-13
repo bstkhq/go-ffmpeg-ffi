@@ -57,7 +57,7 @@ func TestDecoderPrograms_ListAndSelect(t *testing.T) {
 		return
 	}
 
-	dec, err := NewDecoder(ts)
+	dec, err := NewDecoder(ts, nil)
 	if err != nil {
 		t.Fatalf("NewDecoder failed: %v", err)
 	}
@@ -82,11 +82,12 @@ func TestDecoderPrograms_ListAndSelect(t *testing.T) {
 	t.Logf("program 1 metadata: %#v", ids[1].Metadata)
 
 	// Selecting program 2 should choose streams within that program.
-	dec2, err := NewDecoderWithOptions(ts, &DecoderOptions{
+	dec2, err := NewDecoder(ts, &DecoderOptions{
 		ProgramID: 2,
 	})
+
 	if err != nil {
-		t.Fatalf("NewDecoderWithOptions failed: %v", err)
+		t.Fatalf("NewDecoder failed: %v", err)
 	}
 	defer dec2.Close()
 

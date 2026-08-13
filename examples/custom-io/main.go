@@ -51,7 +51,7 @@ func main() {
 	// Create decoder from io.Reader
 	// Since *os.File implements both io.Reader and io.Seeker,
 	// the decoder will support seeking
-	decoder, err := ffgo.NewDecoderFromReader(file, "")
+	decoder, err := ffgo.NewDecoderFromReader(file, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create decoder: %v\n", err)
 		os.Exit(1)
@@ -149,7 +149,7 @@ func demonstrateCustomCallbacks(inputFile string) {
 	}
 
 	// Create decoder with custom callbacks
-	decoder, err := ffgo.NewDecoderFromIO(callbacks, "")
+	decoder, err := ffgo.NewDecoderFromIO(callbacks, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create decoder with callbacks: %v\n", err)
 		return

@@ -105,7 +105,7 @@ func TestEncoderFlushPreservesDelayedFrames(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	decoder, err := NewDecoder(output, WithStreams(MediaTypeVideo))
+	decoder, err := NewDecoder(output, &DecoderOptions{Streams: []MediaType{MediaTypeVideo}})
 	if err != nil {
 		t.Fatal(err)
 	}

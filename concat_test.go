@@ -12,19 +12,19 @@ import (
 )
 
 func TestNewConcatDecoder_Errors(t *testing.T) {
-	if _, err := NewConcatDecoder(nil); err == nil {
+	if _, err := NewConcatDecoder(nil, nil); err == nil {
 		t.Fatalf("expected error for empty file list")
 	}
-	if _, err := NewConcatDecoder([]string{""}); err == nil {
+	if _, err := NewConcatDecoder([]string{""}, nil); err == nil {
 		t.Fatalf("expected error for empty path")
 	}
-	if _, err := NewConcatDecoder([]string{"does-not-exist.mp4"}); err == nil {
+	if _, err := NewConcatDecoder([]string{"does-not-exist.mp4"}, nil); err == nil {
 		t.Fatalf("expected error for missing input file")
 	}
-	if _, err := NewConcatDecoderFromFFConcat(nil); err == nil {
+	if _, err := NewConcatDecoderFromFFConcat(nil, nil); err == nil {
 		t.Fatalf("expected error for empty ffconcat script")
 	}
-	if _, err := NewConcatDecoderFromFile(""); err == nil {
+	if _, err := NewConcatDecoderFromFile("", nil); err == nil {
 		t.Fatalf("expected error for empty ffconcat list path")
 	}
 }
@@ -37,7 +37,7 @@ func TestNewConcatDecoder_ConcatsVideo(t *testing.T) {
 	in := filepath.Join("testdata", "test.mp4")
 
 	// Baseline single-file duration + frame count.
-	d1, err := NewDecoder(in)
+	d1, err := NewDecoder(in, nil)
 	if err != nil {
 		t.Fatalf("NewDecoder failed: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestNewConcatDecoder_ConcatsVideo(t *testing.T) {
 	}
 
 	// Concat same file twice.
-	d2, err := NewConcatDecoder([]string{in, in})
+	d2, err := NewConcatDecoder([]string{in, in}, nil)
 	if err != nil {
 		t.Fatalf("NewConcatDecoder failed: %v", err)
 	}

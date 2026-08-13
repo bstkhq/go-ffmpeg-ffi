@@ -26,7 +26,7 @@ func TestEncoderStreamCopyMapsNonzeroVideoIndex(t *testing.T) {
 		{name: "video only", copyAudio: false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			source, err := NewDecoder(sourcePath)
+			source, err := NewDecoder(sourcePath, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -65,7 +65,7 @@ func TestEncoderStreamCopyMapsNonzeroVideoIndex(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			decoded, err := NewDecoder(outputPath)
+			decoded, err := NewDecoder(outputPath, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

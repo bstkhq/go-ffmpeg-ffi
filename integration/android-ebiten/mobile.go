@@ -156,7 +156,9 @@ func (g *probeGame) run(ctx context.Context, mediaPath string) {
 }
 
 func (g *probeGame) decodeAndPlayAudio(ctx context.Context, mediaPath string) (frames, samples int, err error) {
-	decoder, err := ffgo.NewDecoder(mediaPath, ffgo.WithStreams(ffgo.MediaTypeAudio))
+	decoder, err := ffgo.NewDecoder(mediaPath, &ffgo.DecoderOptions{
+		Streams: []ffgo.MediaType{ffgo.MediaTypeAudio},
+	})
 	if err != nil {
 		return 0, 0, fmt.Errorf("open media fixture: %w", err)
 	}
@@ -299,7 +301,9 @@ func (g *probeGame) decodeVideo(ctx context.Context, mediaPath string) (frames, 
 		return 0, 0, 0, fmt.Errorf("media fixture path was not provided by Android")
 	}
 
-	decoder, err := ffgo.NewDecoder(mediaPath, ffgo.WithStreams(ffgo.MediaTypeVideo))
+	decoder, err := ffgo.NewDecoder(mediaPath, &ffgo.DecoderOptions{
+		Streams: []ffgo.MediaType{ffgo.MediaTypeVideo},
+	})
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("open media fixture: %w", err)
 	}

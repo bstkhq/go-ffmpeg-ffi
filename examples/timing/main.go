@@ -24,7 +24,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	dec, err := ffgo.NewDecoder(in)
+	dec, err := ffgo.NewDecoder(in, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to open input: %v\n", err)
 		os.Exit(1)

@@ -90,7 +90,7 @@ func TestDecoder(t *testing.T) {
 		return
 	}
 
-	decoder, err := NewDecoder(testFile)
+	decoder, err := NewDecoder(testFile, nil)
 	if err != nil {
 		t.Fatalf("NewDecoder failed: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestDecoderDecodeVideo(t *testing.T) {
 		return
 	}
 
-	decoder, err := NewDecoder(testFile)
+	decoder, err := NewDecoder(testFile, nil)
 	if err != nil {
 		t.Fatalf("NewDecoder failed: %v", err)
 	}
@@ -210,7 +210,7 @@ func TestScalerWithDecoder(t *testing.T) {
 		return
 	}
 
-	decoder, err := NewDecoder(testFile)
+	decoder, err := NewDecoder(testFile, nil)
 	if err != nil {
 		t.Fatalf("NewDecoder failed: %v", err)
 	}
@@ -421,7 +421,7 @@ func TestEncoderWriteFrames(t *testing.T) {
 	t.Logf("Encoded %d frames to %s (%d bytes)", numFrames, outFile, info.Size())
 
 	// Verify output file can be read
-	decoder, err := NewDecoder(outFile)
+	decoder, err := NewDecoder(outFile, nil)
 	if err != nil {
 		t.Fatalf("Cannot read output file: %v", err)
 	}
@@ -495,7 +495,7 @@ func TestEncoderWithDecoder(t *testing.T) {
 	outputFile := filepath.Join(tmpDir, "transcoded.mp4")
 
 	// Open input
-	decoder, err := NewDecoder(inputFile)
+	decoder, err := NewDecoder(inputFile, nil)
 	if err != nil {
 		t.Fatalf("NewDecoder failed: %v", err)
 	}
@@ -576,7 +576,7 @@ func TestDecoderFromReader(t *testing.T) {
 	defer file.Close()
 
 	// Create decoder from reader
-	decoder, err := NewDecoderFromReader(file, "")
+	decoder, err := NewDecoderFromReader(file, nil)
 	if err != nil {
 		t.Fatalf("NewDecoderFromReader failed: %v", err)
 	}
@@ -617,7 +617,7 @@ func TestDecoderFromReaderWithDecode(t *testing.T) {
 	defer file.Close()
 
 	// Create decoder from reader
-	decoder, err := NewDecoderFromReader(file, "")
+	decoder, err := NewDecoderFromReader(file, nil)
 	if err != nil {
 		t.Fatalf("NewDecoderFromReader failed: %v", err)
 	}
@@ -688,7 +688,7 @@ func TestDecoderFromIOCallbacks(t *testing.T) {
 	}
 
 	// Create decoder with custom callbacks
-	decoder, err := NewDecoderFromIO(callbacks, "")
+	decoder, err := NewDecoderFromIO(callbacks, nil)
 	if err != nil {
 		t.Fatalf("NewDecoderFromIO failed: %v", err)
 	}
@@ -882,7 +882,7 @@ func TestEncoderWriteVideoAndAudioFrames(t *testing.T) {
 		numVideoFrames, numAudioFrames, outFile, info.Size())
 
 	// Verify output can be read
-	decoder, err := NewDecoder(outFile)
+	decoder, err := NewDecoder(outFile, nil)
 	if err != nil {
 		t.Fatalf("Cannot read output: %v", err)
 	}
@@ -1635,7 +1635,7 @@ func TestRemuxer(t *testing.T) {
 	dstDir := t.TempDir()
 	dstPath := filepath.Join(dstDir, "remuxed.mkv")
 
-	decoder, err := NewDecoder(srcPath)
+	decoder, err := NewDecoder(srcPath, nil)
 	if err != nil {
 		t.Fatalf("Failed to open source: %v", err)
 	}
@@ -1714,7 +1714,7 @@ func TestRemuxerSelectStreams(t *testing.T) {
 	enc.Close()
 
 	// Open source and remux only video stream
-	decoder, err := NewDecoder(srcPath)
+	decoder, err := NewDecoder(srcPath, nil)
 	if err != nil {
 		t.Fatalf("Failed to open source: %v", err)
 	}
@@ -1766,7 +1766,7 @@ func TestMetadataRead(t *testing.T) {
 	}
 
 	// Open and read metadata
-	decoder, err := NewDecoder(testFile)
+	decoder, err := NewDecoder(testFile, nil)
 	if err != nil {
 		t.Fatalf("Failed to open file: %v", err)
 	}
@@ -1849,7 +1849,7 @@ func TestMetadataWrite(t *testing.T) {
 	}
 
 	// Also verify by opening with decoder
-	decoder, err := NewDecoder(testFile)
+	decoder, err := NewDecoder(testFile, nil)
 	if err != nil {
 		t.Fatalf("Failed to open written file: %v", err)
 	}
@@ -1981,7 +1981,7 @@ func TestSeekPrecise(t *testing.T) {
 		return
 	}
 
-	decoder, err := NewDecoder(testFile)
+	decoder, err := NewDecoder(testFile, nil)
 	if err != nil {
 		t.Fatalf("Failed to open file: %v", err)
 	}
@@ -2022,7 +2022,7 @@ func TestSeekToFrame(t *testing.T) {
 		return
 	}
 
-	decoder, err := NewDecoder(testFile)
+	decoder, err := NewDecoder(testFile, nil)
 	if err != nil {
 		t.Fatalf("Failed to open file: %v", err)
 	}
@@ -2073,7 +2073,7 @@ func TestExtractThumbnail(t *testing.T) {
 		return
 	}
 
-	decoder, err := NewDecoder(testFile)
+	decoder, err := NewDecoder(testFile, nil)
 	if err != nil {
 		t.Fatalf("Failed to open file: %v", err)
 	}
@@ -2104,7 +2104,7 @@ func TestExtractThumbnails(t *testing.T) {
 		return
 	}
 
-	decoder, err := NewDecoder(testFile)
+	decoder, err := NewDecoder(testFile, nil)
 	if err != nil {
 		t.Fatalf("Failed to open file: %v", err)
 	}
@@ -2141,7 +2141,7 @@ func TestTotalFrames(t *testing.T) {
 		return
 	}
 
-	decoder, err := NewDecoder(testFile)
+	decoder, err := NewDecoder(testFile, nil)
 	if err != nil {
 		t.Fatalf("Failed to open file: %v", err)
 	}
@@ -2166,7 +2166,7 @@ func TestSubtitleDetection(t *testing.T) {
 		return
 	}
 
-	decoder, err := NewDecoder(testFile)
+	decoder, err := NewDecoder(testFile, nil)
 	if err != nil {
 		t.Fatalf("Failed to open file: %v", err)
 	}
@@ -2240,7 +2240,7 @@ func TestSubtitleDecoder(t *testing.T) {
 		return
 	}
 
-	dec, err := NewDecoder(testFile)
+	dec, err := NewDecoder(testFile, nil)
 	if err != nil {
 		t.Fatalf("Failed to open file: %v", err)
 	}
@@ -2340,7 +2340,7 @@ func TestBitstreamFilterH264(t *testing.T) {
 	}
 
 	// Open decoder to get codec parameters
-	decoder, err := NewDecoder(testFile)
+	decoder, err := NewDecoder(testFile, nil)
 	if err != nil {
 		t.Fatalf("Failed to open file: %v", err)
 	}
@@ -2412,7 +2412,7 @@ func TestStreamMetadata(t *testing.T) {
 	enc.Close()
 
 	// Read back
-	decoder, err := NewDecoder(testFile)
+	decoder, err := NewDecoder(testFile, nil)
 	if err != nil {
 		t.Fatalf("Failed to open written file: %v", err)
 	}
@@ -2443,7 +2443,7 @@ func TestSaveFrame(t *testing.T) {
 	// Test PNG with its own decoder and frame
 	// Note: Don't call FrameFree on frames from DecodeVideo - decoder owns them
 	t.Run("PNG", func(t *testing.T) {
-		decoder, err := NewDecoder(testFile)
+		decoder, err := NewDecoder(testFile, nil)
 		if err != nil {
 			t.Fatalf("Failed to open file: %v", err)
 		}
@@ -2468,7 +2468,7 @@ func TestSaveFrame(t *testing.T) {
 
 	// Test JPEG with its own decoder and frame
 	t.Run("JPEG", func(t *testing.T) {
-		decoder, err := NewDecoder(testFile)
+		decoder, err := NewDecoder(testFile, nil)
 		if err != nil {
 			t.Fatalf("Failed to open file: %v", err)
 		}
@@ -2493,7 +2493,7 @@ func TestSaveFrame(t *testing.T) {
 
 	// Test BMP with its own decoder and frame
 	t.Run("BMP", func(t *testing.T) {
-		decoder, err := NewDecoder(testFile)
+		decoder, err := NewDecoder(testFile, nil)
 		if err != nil {
 			t.Fatalf("Failed to open file: %v", err)
 		}
@@ -2587,7 +2587,7 @@ func TestGetKeyframes(t *testing.T) {
 		return
 	}
 
-	decoder, err := NewDecoder(testFile)
+	decoder, err := NewDecoder(testFile, nil)
 	if err != nil {
 		t.Fatalf("Failed to open file: %v", err)
 	}
@@ -2674,7 +2674,7 @@ func TestGetAttachments(t *testing.T) {
 		t.Fatalf("Failed to create test video with attachment: %v\n%s", err, out)
 	}
 
-	decoder, err := NewDecoder(testFile)
+	decoder, err := NewDecoder(testFile, nil)
 	if err != nil {
 		t.Fatalf("Failed to open file: %v", err)
 	}
@@ -2749,7 +2749,7 @@ title=Main Content
 		t.Fatalf("Failed to create test video with chapters: %v\n%s", err, out)
 	}
 
-	decoder, err := NewDecoder(testFile)
+	decoder, err := NewDecoder(testFile, nil)
 	if err != nil {
 		t.Fatalf("Failed to open file: %v", err)
 	}
@@ -2936,7 +2936,7 @@ This is a test
 	}
 
 	// Open video to get frame dimensions
-	decoder, err := NewDecoder(testFile)
+	decoder, err := NewDecoder(testFile, nil)
 	if err != nil {
 		t.Fatalf("NewDecoder failed: %v", err)
 	}
@@ -3137,7 +3137,7 @@ func TestMuxer(t *testing.T) {
 	t.Logf("Created output file: %s (%d bytes)", outputPath, info.Size())
 
 	// Verify output file can be opened
-	decoder, err := NewDecoder(outputPath)
+	decoder, err := NewDecoder(outputPath, nil)
 	if err != nil {
 		t.Fatalf("Failed to open output: %v", err)
 	}

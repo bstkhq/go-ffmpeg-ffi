@@ -127,103 +127,6 @@ type DecoderOptions struct {
 	HWDevice string
 }
 
-// DecoderOption is a functional option for configuring a decoder.
-type DecoderOption func(*DecoderOptions)
-
-// WithFormat sets the format hint for the decoder.
-func WithFormat(format string) DecoderOption {
-	return func(o *DecoderOptions) {
-		o.Format = format
-	}
-}
-
-// WithStreams specifies which stream types to decode.
-// Only the specified stream types will be available for decoding.
-func WithStreams(types ...MediaType) DecoderOption {
-	return func(o *DecoderOptions) {
-		o.Streams = types
-	}
-}
-
-// WithProgramID selects a specific program to decode in multi-program inputs (e.g. MPEG-TS).
-func WithProgramID(id int) DecoderOption {
-	return func(o *DecoderOptions) {
-		o.ProgramID = id
-	}
-}
-
-// WithHWDevice enables hardware acceleration using the specified device.
-// Common values: "cuda" (NVIDIA), "vaapi" (Linux VA-API), "videotoolbox" (macOS).
-// Note: Hardware acceleration support depends on FFmpeg build and available hardware.
-func WithHWDevice(device string) DecoderOption {
-	return func(o *DecoderOptions) {
-		o.HWDevice = device
-	}
-}
-
-// WithAVOptions sets FFmpeg options passed to avformat_open_input.
-func WithAVOptions(options map[string]string) DecoderOption {
-	return func(o *DecoderOptions) {
-		o.AVOptions = options
-	}
-}
-
-// WithProbeSize sets the maximum probing size in bytes (FFmpeg "probesize").
-func WithProbeSize(n int) DecoderOption {
-	return func(o *DecoderOptions) {
-		o.ProbeSizeBytes = n
-	}
-}
-
-// WithAnalyzeDuration sets the maximum analyze duration (FFmpeg "analyzeduration").
-func WithAnalyzeDuration(d time.Duration) DecoderOption {
-	return func(o *DecoderOptions) {
-		o.AnalyzeDuration = d
-	}
-}
-
-// WithMaxProbePackets sets the maximum number of probe packets (FFmpeg "max_probe_packets").
-func WithMaxProbePackets(n int) DecoderOption {
-	return func(o *DecoderOptions) {
-		o.MaxProbePackets = n
-	}
-}
-
-// WithFormatWhitelist sets the demuxer format whitelist (FFmpeg "format_whitelist").
-func WithFormatWhitelist(v ...string) DecoderOption {
-	return func(o *DecoderOptions) {
-		o.FormatWhitelist = v
-	}
-}
-
-// WithCodecWhitelist sets the codec whitelist (FFmpeg "codec_whitelist").
-func WithCodecWhitelist(v ...string) DecoderOption {
-	return func(o *DecoderOptions) {
-		o.CodecWhitelist = v
-	}
-}
-
-// WithProbeScore requires a minimum probe score for the detected format.
-func WithProbeScore(min int) DecoderOption {
-	return func(o *DecoderOptions) {
-		o.ProbeScore = min
-	}
-}
-
-// WithFormatBlacklist excludes demuxers from TryMultipleFormats attempts.
-func WithFormatBlacklist(v ...string) DecoderOption {
-	return func(o *DecoderOptions) {
-		o.FormatBlacklist = v
-	}
-}
-
-// WithTryMultipleFormats enables retries with forced demuxers when probing is ambiguous.
-func WithTryMultipleFormats(enabled bool) DecoderOption {
-	return func(o *DecoderOptions) {
-		o.TryMultipleFormats = enabled
-	}
-}
-
 func buildDecoderAVOptions(opts *DecoderOptions) map[string]string {
 	if opts == nil {
 		return nil
@@ -251,28 +154,37 @@ func buildDecoderAVOptions(opts *DecoderOptions) map[string]string {
 	return out
 }
 
+func cloneDecoderOptions(opts *DecoderOptions) *DecoderOptions {
+	if opts == nil {
+		return &DecoderOptions{}
+	}
+	clone := *opts
+	clone.AVOptions = cloneStringMap(opts.AVOptions)
+	clone.FormatWhitelist = append([]string(nil), opts.FormatWhitelist...)
+	clone.CodecWhitelist = append([]string(nil), opts.CodecWhitelist...)
+	clone.FormatBlacklist = append([]string(nil), opts.FormatBlacklist...)
+	clone.Streams = append([]MediaType(nil), opts.Streams...)
+	return &clone
+}
+
+func cloneStringMap(values map[string]string) map[string]string {
+	if values == nil {
+		return nil
+	}
+	clone := make(map[string]string, len(values))
+	for key, value := range values {
+		clone[key] = value
+	}
+	return clone
+}
+
 // NewDecoder opens a media file for decoding.
-// Optional functional options can be passed to configure the decoder.
-func NewDecoder(path string, options ...DecoderOption) (*Decoder, error) {
-	return NewDecoderContext(context.Background(), path, options...)
+func NewDecoder(path string, opts *DecoderOptions) (*Decoder, error) {
+	return NewDecoderContext(context.Background(), path, opts)
 }
 
 // NewDecoderContext opens a media file and allows FFmpeg probing and I/O to be canceled.
-func NewDecoderContext(ctx context.Context, path string, options ...DecoderOption) (*Decoder, error) {
-	opts := &DecoderOptions{}
-	for _, opt := range options {
-		opt(opts)
-	}
-	return NewDecoderWithOptionsContext(ctx, path, opts)
-}
-
-// NewDecoderWithOptions opens a media file with custom options.
-func NewDecoderWithOptions(path string, opts *DecoderOptions) (*Decoder, error) {
-	return NewDecoderWithOptionsContext(context.Background(), path, opts)
-}
-
-// NewDecoderWithOptionsContext opens a media file with custom options and cancellation.
-func NewDecoderWithOptionsContext(ctx context.Context, path string, opts *DecoderOptions) (*Decoder, error) {
+func NewDecoderContext(ctx context.Context, path string, opts *DecoderOptions) (*Decoder, error) {
 	if ctx == nil {
 		return nil, errors.New("ffgo: context cannot be nil")
 	}

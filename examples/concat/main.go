@@ -24,7 +24,7 @@ func main() {
 	}
 
 	files := os.Args[1:]
-	dec, err := ffgo.NewConcatDecoder(files, ffgo.WithConcatSafeMode(false))
+	dec, err := ffgo.NewConcatDecoder(files, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to open concat decoder: %v\n", err)
 		os.Exit(1)

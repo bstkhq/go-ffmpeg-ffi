@@ -156,7 +156,7 @@ func TestBitstreamFilterNullPreservesPacketCount(t *testing.T) {
 		return
 	}
 
-	decoder, err := NewDecoder(createTestVideo(t))
+	decoder, err := NewDecoder(createTestVideo(t), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

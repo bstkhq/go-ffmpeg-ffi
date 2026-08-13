@@ -43,10 +43,11 @@ func NewImageSequenceDecoder(config ImageSequenceConfig) (*Decoder, error) {
 		opts["framerate"] = fmt.Sprintf("%d/%d", config.FrameRate.Num, config.FrameRate.Den)
 	}
 
-	return NewDecoderWithOptions(config.Pattern, &DecoderOptions{
+	return NewDecoder(config.Pattern, &DecoderOptions{
 		Format:    "image2",
 		AVOptions: opts,
 	})
+
 }
 
 // NewImageSequenceEncoder creates an encoder that writes video as an image sequence.

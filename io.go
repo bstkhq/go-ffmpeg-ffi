@@ -640,7 +640,6 @@ func (c *CustomIOContext) AVIOContext() avformat.IOContext {
 }
 
 // NewDecoderFromIO creates a decoder with custom I/O.
-// format is the format hint (e.g., "mp4", "mkv", "avi") - can be empty for auto-detection.
 //
 // This constructor opens the input and reads stream information before it
 // returns, so Read can be called immediately and repeatedly. A live source must
@@ -648,28 +647,15 @@ func (c *CustomIOContext) AVIOContext() avformat.IOContext {
 // RTP payloads are not a demuxable byte stream by themselves; depacketize them
 // first (for example into Annex B H.264/H.265 access units) and pass the
 // corresponding format hint such as "h264" or "hevc".
-func NewDecoderFromIO(callbacks *IOCallbacks, format string) (*Decoder, error) {
-	return NewDecoderFromIOContext(context.Background(), callbacks, format)
+func NewDecoderFromIO(callbacks *IOCallbacks, opts *DecoderOptions) (*Decoder, error) {
+	return NewDecoderFromIOContext(context.Background(), callbacks, opts)
 }
 
 // NewDecoderFromIOContext creates a decoder with custom I/O and cancellation.
-func NewDecoderFromIOContext(ctx context.Context, callbacks *IOCallbacks, format string) (*Decoder, error) {
-	return NewDecoderFromIOWithOptionsContext(ctx, callbacks, &DecoderOptions{Format: format})
-}
-
-// NewDecoderFromIOWithOptions creates a decoder with custom I/O and DecoderOptions.
-//
-// It supports passing typed probing controls (probesize/analyzeduration/etc) and a format hint.
-// The returned decoder owns the CustomIOContext and will close it on Decoder.Close().
-// Like NewDecoderFromIO, this call performs FFmpeg probing synchronously and
-// therefore needs enough valid input bytes to identify the stream before it can
-// return a Decoder.
-func NewDecoderFromIOWithOptions(callbacks *IOCallbacks, opts *DecoderOptions) (*Decoder, error) {
-	return NewDecoderFromIOWithOptionsContext(context.Background(), callbacks, opts)
-}
-
-// NewDecoderFromIOWithOptionsContext creates a decoder with custom I/O, options, and cancellation.
-func NewDecoderFromIOWithOptionsContext(ctx context.Context, callbacks *IOCallbacks, opts *DecoderOptions) (*Decoder, error) {
+// The returned decoder owns the CustomIOContext and closes it with Decoder.Close.
+// Construction performs FFmpeg probing synchronously and therefore needs enough
+// valid input bytes to identify the stream before it can return.
+func NewDecoderFromIOContext(ctx context.Context, callbacks *IOCallbacks, opts *DecoderOptions) (*Decoder, error) {
 	if ctx == nil {
 		return nil, errors.New("ffgo: context cannot be nil")
 	}
@@ -796,41 +782,12 @@ func NewDecoderFromIOWithOptionsContext(ctx context.Context, callbacks *IOCallba
 
 // NewDecoderFromReader creates a decoder that reads from an io.Reader.
 // If r implements io.Seeker, seeking will be supported.
-// format is the format hint (e.g., "mp4", "mkv") - can be empty for auto-detection.
-func NewDecoderFromReader(r io.Reader, format string) (*Decoder, error) {
-	return NewDecoderFromReaderContext(context.Background(), r, format)
+func NewDecoderFromReader(r io.Reader, opts *DecoderOptions) (*Decoder, error) {
+	return NewDecoderFromReaderContext(context.Background(), r, opts)
 }
 
 // NewDecoderFromReaderContext creates a decoder from an io.Reader with cancellation.
-func NewDecoderFromReaderContext(ctx context.Context, r io.Reader, format string) (*Decoder, error) {
-	if r == nil {
-		return nil, errors.New("ffgo: reader cannot be nil")
-	}
-
-	callbacks := &IOCallbacks{
-		Read: func(buf []byte) (int, error) {
-			return r.Read(buf)
-		},
-	}
-
-	// Check if reader supports seeking
-	if seeker, ok := r.(io.Seeker); ok {
-		callbacks.Seek = func(offset int64, whence int) (int64, error) {
-			return seeker.Seek(offset, whence)
-		}
-	}
-
-	return NewDecoderFromIOContext(ctx, callbacks, format)
-}
-
-// NewDecoderFromReaderWithOptions creates a decoder that reads from an io.Reader using DecoderOptions.
-// If r implements io.Seeker, seeking will be supported.
-func NewDecoderFromReaderWithOptions(r io.Reader, opts *DecoderOptions) (*Decoder, error) {
-	return NewDecoderFromReaderWithOptionsContext(context.Background(), r, opts)
-}
-
-// NewDecoderFromReaderWithOptionsContext creates a decoder from an io.Reader with options and cancellation.
-func NewDecoderFromReaderWithOptionsContext(ctx context.Context, r io.Reader, opts *DecoderOptions) (*Decoder, error) {
+func NewDecoderFromReaderContext(ctx context.Context, r io.Reader, opts *DecoderOptions) (*Decoder, error) {
 	if r == nil {
 		return nil, errors.New("ffgo: reader cannot be nil")
 	}
@@ -847,7 +804,7 @@ func NewDecoderFromReaderWithOptionsContext(ctx context.Context, r io.Reader, op
 		}
 	}
 
-	return NewDecoderFromIOWithOptionsContext(ctx, callbacks, opts)
+	return NewDecoderFromIOContext(ctx, callbacks, opts)
 }
 
 // NewEncoderToWriter creates an encoder that writes to an io.Writer.
