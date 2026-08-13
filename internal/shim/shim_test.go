@@ -134,6 +134,7 @@ func TestValidateVersionInfoSupportedFamilies(t *testing.T) {
 		{ffmpeg: 6, avutil: 58, avcodec: 60, avformat: 60},
 		{ffmpeg: 7, avutil: 59, avcodec: 61, avformat: 61},
 		{ffmpeg: 8, avutil: 60, avcodec: 62, avformat: 62},
+		{ffmpeg: 9, avutil: 61, avcodec: 63, avformat: 63},
 	}
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("FFmpeg %d", tt.ffmpeg), func(t *testing.T) {

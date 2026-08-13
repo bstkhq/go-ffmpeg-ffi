@@ -35,7 +35,7 @@ func TestFindLibraryVersions(t *testing.T) {
 	// We just test that the function doesn't panic
 
 	// Try to find avutil (most basic FFmpeg library)
-	versions := []int{60, 59, 58}
+	versions := []int{61, 60, 59, 58}
 	_, err := FindLibrary("avutil", versions)
 
 	// We don't fail if FFmpeg isn't installed - just log
@@ -114,6 +114,19 @@ func TestValidateLibraryVersionFFmpeg8(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := validateLibraryVersion(layout, "swresample", version(5, 1, 0)); !errors.Is(err, abi.ErrUnsupported) {
+		t.Fatalf("wrong swresample major error = %v, want ErrUnsupported", err)
+	}
+}
+
+func TestValidateLibraryVersionFFmpeg9(t *testing.T) {
+	layout, ok := abi.ForFFmpegMajor(9)
+	if !ok {
+		t.Fatal("FFmpeg 9 layout is missing")
+	}
+	if err := validateLibraryVersion(layout, "swresample", version(7, 1, 101)); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateLibraryVersion(layout, "swresample", version(6, 1, 0)); !errors.Is(err, abi.ErrUnsupported) {
 		t.Fatalf("wrong swresample major error = %v, want ErrUnsupported", err)
 	}
 }

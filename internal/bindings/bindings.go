@@ -150,7 +150,7 @@ func selectCoreLibraries(loader dynamicLoader) (coreLibraries, error) {
 	failures = append(failures, fmt.Sprintf("unversioned: %v", err))
 
 	return coreLibraries{}, fmt.Errorf(
-		"%w: no complete FFmpeg 6, 7, or 8 core set found (%s)",
+		"%w: no complete FFmpeg 6, 7, 8, or 9 core set found (%s)",
 		ErrLibraryNotFound, strings.Join(failures, "; "),
 	)
 }

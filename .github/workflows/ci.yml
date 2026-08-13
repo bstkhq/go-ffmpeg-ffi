@@ -129,6 +129,8 @@ jobs:
             sha256: '6136812ea6d4e68bdba27e33c2a94382711cdf4f8602ffef056ff792bd6f9818'
           - ffmpeg: '8.1.2'
             sha256: '464beb5e7bf0c311e68b45ae2f04e9cc2af88851abb4082231742a74d97b524c'
+          - ffmpeg: '9.0.1'
+            sha256: 'cf38e0e28c7e5605942c4a77755349b0145804a397af37eb1fb4c77cb237f635'
     env:
       FFMPEG_PREFIX: ${{ github.workspace }}/.ffmpeg/${{ matrix.ffmpeg }}
     steps:

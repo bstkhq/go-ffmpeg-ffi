@@ -39,6 +39,12 @@ func TestDetectSupportedLayouts(t *testing.T) {
 			codecParFormat: 44, codecParSampleRate: 152, channelLayout: 352,
 			codecWidth: 112, codecPixelFormat: 136, subtitleType: 76, subtitleFlags: 72,
 		},
+		{
+			name: "FFmpeg 9", versions: [3]uint32{version(61, 1, 101), version(63, 1, 101), version(63, 1, 101)},
+			ffmpeg: 9, duration: 104, interruptCallback: 216, frameSampleRate: 180, frameFlags: 276,
+			codecParFormat: 44, codecParSampleRate: 152, channelLayout: 352,
+			codecWidth: 112, codecPixelFormat: 136, subtitleType: 76, subtitleFlags: 72,
+		},
 	}
 
 	for _, tt := range tests {
@@ -104,7 +110,7 @@ func TestDetectRejectsMixedLibraries(t *testing.T) {
 }
 
 func TestDetectRejectsUnknownMajor(t *testing.T) {
-	_, err := Detect(version(61, 1, 0), version(63, 1, 0), version(63, 1, 0))
+	_, err := Detect(version(62, 1, 0), version(64, 1, 0), version(64, 1, 0))
 	if !errors.Is(err, ErrUnsupported) {
 		t.Fatalf("Detect() error = %v, want ErrUnsupported", err)
 	}
@@ -112,10 +118,10 @@ func TestDetectRejectsUnknownMajor(t *testing.T) {
 
 func TestSupportedPreferenceOrder(t *testing.T) {
 	got := Supported()
-	if len(got) != 3 {
-		t.Fatalf("Supported() returned %d layouts, want 3", len(got))
+	if len(got) != 4 {
+		t.Fatalf("Supported() returned %d layouts, want 4", len(got))
 	}
-	for i, want := range []int{8, 7, 6} {
+	for i, want := range []int{9, 8, 7, 6} {
 		if got[i].FFmpegMajor != want {
 			t.Fatalf("Supported()[%d] = FFmpeg %d, want %d", i, got[i].FFmpegMajor, want)
 		}

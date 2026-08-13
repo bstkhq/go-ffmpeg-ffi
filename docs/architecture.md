@@ -3,14 +3,14 @@
 ## Status
 
 This document defines the target architecture for the go-ffmpeg-ffi hard fork.
-FFmpeg 6-8 ABI selection, codec send/receive state machines, frame ownership,
+FFmpeg 6-9 ABI selection, codec send/receive state machines, frame ownership,
 callback containment, and cancellable decoder I/O are implemented. The public
 API remains transitional until the first hard-fork release.
 
 ## Goals
 
 - Provide a safe Go API over dynamically loaded FFmpeg libraries without CGO.
-- Officially support FFmpeg 6, 7, and 8.
+- Officially support FFmpeg 6, 7, 8, and 9.
 - Fail closed when a library set or structure layout is unsupported or mixed.
 - Keep native artifacts small, auditable, versioned, and optional where
   practical.
@@ -20,8 +20,8 @@ API remains transitional until the first hard-fork release.
 ## Non-goals
 
 - FFmpeg 4 and older.
-- FFmpeg 9 or current FFmpeg `master` before FFmpeg 9 is released and its ABI is
-  fixed.
+- FFmpeg 10 or current FFmpeg `master` before the next major ABI is released
+  and qualified.
 - Static linking of FFmpeg.
 - Hiding features that are absent from the installed FFmpeg build.
 - Claiming complete FFmpeg API coverage.
@@ -36,7 +36,8 @@ The desired support matrix is:
 | 6.x | `58/60/60` | Official support target. |
 | 7.x | `59/61/61` | Official support target. |
 | 8.x | `60/62/62` | Official support target. |
-| 9/master | future majors | Unsupported until an official FFmpeg 9 release is available. |
+| 9.x | `61/63/63` | Official support target, initially pinned to 9.0.1. |
+| 10/master | future majors | Unsupported until an official release is available and qualified. |
 | 4.x and older | older majors | Unsupported. |
 
 FFmpeg names are convenient labels, but runtime compatibility is decided from
