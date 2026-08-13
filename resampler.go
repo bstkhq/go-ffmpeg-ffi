@@ -156,7 +156,7 @@ func (r *Resampler) Resample(frame Frame) (Frame, error) {
 	avutil.FrameSetFormat(outFrame, int32(r.dstFormat.SampleFormat))
 
 	// Calculate output samples
-	inSamples := int(avutil.GetFrameNbSamples(frame.ptr))
+	inSamples := frame.NbSamples()
 	outSamples := swresample.GetOutSamples(r.ctx, inSamples)
 	if outSamples <= 0 {
 		outSamples = inSamples*r.dstFormat.SampleRate/r.srcFormat.SampleRate + 256

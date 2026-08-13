@@ -67,10 +67,10 @@ func TestHLSSegmenter_Integration(t *testing.T) {
 			t.Fatal("Failed to allocate frame")
 		}
 
-		AVUtil.SetFrameWidth(frame, 160)
-		AVUtil.SetFrameHeight(frame, 120)
-		AVUtil.SetFrameFormat(frame, int32(PixelFormatYUV420P))
-		if err := AVUtil.FrameGetBuffer(frame, 32); err != nil {
+		frame.SetWidth(160)
+		frame.SetHeight(120)
+		frame.SetPixelFormat(PixelFormatYUV420P)
+		if err := frame.GetBuffer(32); err != nil {
 			_ = FrameFree(&frame)
 			t.Fatalf("Failed to allocate frame buffer: %v", err)
 		}
@@ -149,10 +149,10 @@ func TestDASHSegmenter_Integration(t *testing.T) {
 			t.Fatal("Failed to allocate frame")
 		}
 
-		AVUtil.SetFrameWidth(frame, 160)
-		AVUtil.SetFrameHeight(frame, 120)
-		AVUtil.SetFrameFormat(frame, int32(PixelFormatYUV420P))
-		if err := AVUtil.FrameGetBuffer(frame, 32); err != nil {
+		frame.SetWidth(160)
+		frame.SetHeight(120)
+		frame.SetPixelFormat(PixelFormatYUV420P)
+		if err := frame.GetBuffer(32); err != nil {
 			_ = FrameFree(&frame)
 			t.Fatalf("Failed to allocate frame buffer: %v", err)
 		}

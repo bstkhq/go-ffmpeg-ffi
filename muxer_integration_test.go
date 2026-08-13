@@ -76,14 +76,14 @@ func muxDelayedFrames(t *testing.T) (string, *Muxer) {
 		t.Fatal("failed to allocate frame")
 	}
 	defer func() { _ = FrameFree(&frame) }()
-	AVUtil.SetFrameWidth(frame, 160)
-	AVUtil.SetFrameHeight(frame, 120)
-	AVUtil.SetFrameFormat(frame, int32(PixelFormatYUV420P))
-	if err := AVUtil.FrameGetBuffer(frame, 0); err != nil {
+	frame.SetWidth(160)
+	frame.SetHeight(120)
+	frame.SetPixelFormat(PixelFormatYUV420P)
+	if err := frame.GetBuffer(0); err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < frameCount; i++ {
-		if err := AVUtil.FrameMakeWritable(frame); err != nil {
+		if err := frame.MakeWritable(); err != nil {
 			t.Fatal(err)
 		}
 		fillTestFrame(frame, i, 160, 120)

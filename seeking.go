@@ -65,7 +65,7 @@ func (d *Decoder) SeekPrecise(ts time.Duration) error {
 			}
 			return err
 		}
-		pts := avutil.GetFramePTS(frame.ptr)
+		pts := frame.PTS()
 		if pts == avutil.NoPTSValue {
 			return errors.New("ffgo: precise seek requires frame timestamps")
 		}

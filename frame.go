@@ -16,6 +16,167 @@ type FrameWrapper struct {
 	mediaType MediaType
 }
 
+// Raw returns the underlying AVFrame* pointer for passing into low-level APIs.
+func (f Frame) Raw() avutil.Frame {
+	if f.IsNil() {
+		return nil
+	}
+	return f.ptr
+}
+
+// PTS returns the presentation timestamp of the frame.
+func (f Frame) PTS() int64 {
+	if f.IsNil() {
+		return avutil.AV_NOPTS_VALUE
+	}
+	return avutil.GetFramePTS(f.ptr)
+}
+
+// SetPTS sets the presentation timestamp of the frame.
+func (f Frame) SetPTS(pts int64) {
+	if !f.IsNil() {
+		avutil.SetFramePTS(f.ptr, pts)
+	}
+}
+
+// MediaType returns the media type represented by the AVFrame fields.
+func (f Frame) MediaType() MediaType {
+	if f.IsNil() {
+		return MediaTypeUnknown
+	}
+	switch {
+	case f.Width() > 0 && f.Height() > 0:
+		return MediaTypeVideo
+	case f.NbSamples() > 0 || f.SampleRate() > 0:
+		return MediaTypeAudio
+	default:
+		return MediaTypeUnknown
+	}
+}
+
+// Width returns the frame width (video only).
+func (f Frame) Width() int {
+	if f.IsNil() {
+		return 0
+	}
+	return int(avutil.GetFrameWidth(f.ptr))
+}
+
+// SetWidth sets the frame width.
+func (f Frame) SetWidth(width int) {
+	if !f.IsNil() {
+		avutil.SetFrameWidth(f.ptr, int32(width))
+	}
+}
+
+// Height returns the frame height (video only).
+func (f Frame) Height() int {
+	if f.IsNil() {
+		return 0
+	}
+	return int(avutil.GetFrameHeight(f.ptr))
+}
+
+// SetHeight sets the frame height.
+func (f Frame) SetHeight(height int) {
+	if !f.IsNil() {
+		avutil.SetFrameHeight(f.ptr, int32(height))
+	}
+}
+
+// Format returns the AVPixelFormat or AVSampleFormat value stored in the frame.
+func (f Frame) Format() int32 {
+	if f.IsNil() {
+		return -1
+	}
+	return avutil.GetFrameFormat(f.ptr)
+}
+
+// SetFormat sets the raw AVPixelFormat or AVSampleFormat value.
+func (f Frame) SetFormat(format int32) {
+	if !f.IsNil() {
+		avutil.SetFrameFormat(f.ptr, format)
+	}
+}
+
+// PixelFormat returns the frame format as an AVPixelFormat.
+func (f Frame) PixelFormat() PixelFormat { return PixelFormat(f.Format()) }
+
+// SetPixelFormat sets the frame's AVPixelFormat.
+func (f Frame) SetPixelFormat(format PixelFormat) { f.SetFormat(int32(format)) }
+
+// SampleFormat returns the frame format as an AVSampleFormat.
+func (f Frame) SampleFormat() SampleFormat { return SampleFormat(f.Format()) }
+
+// SetSampleFormat sets the frame's AVSampleFormat.
+func (f Frame) SetSampleFormat(format SampleFormat) { f.SetFormat(int32(format)) }
+
+// NbSamples returns AVFrame.nb_samples (audio only).
+func (f Frame) NbSamples() int {
+	if f.IsNil() {
+		return 0
+	}
+	return int(avutil.GetFrameNbSamples(f.ptr))
+}
+
+// SetNbSamples sets AVFrame.nb_samples.
+func (f Frame) SetNbSamples(samples int) {
+	if !f.IsNil() {
+		avutil.SetFrameNbSamples(f.ptr, int32(samples))
+	}
+}
+
+// SampleRate returns the sample rate (audio only).
+func (f Frame) SampleRate() int {
+	if f.IsNil() {
+		return 0
+	}
+	return int(avutil.GetFrameSampleRate(f.ptr))
+}
+
+// SetSampleRate sets the sample rate.
+func (f Frame) SetSampleRate(sampleRate int) {
+	if !f.IsNil() {
+		avutil.SetFrameSampleRate(f.ptr, int32(sampleRate))
+	}
+}
+
+// Channels returns the number of audio channels.
+func (f Frame) Channels() int {
+	if f.IsNil() {
+		return 0
+	}
+	return int(avutil.GetFrameChannels(f.ptr))
+}
+
+// SetChannels sets the default channel layout for the requested channel count.
+func (f Frame) SetChannels(channels int) {
+	if !f.IsNil() {
+		avutil.FrameSetChannels(f.ptr, int32(channels))
+	}
+}
+
+// GetBuffer allocates buffers according to the frame's format and dimensions.
+func (f Frame) GetBuffer(align int32) error {
+	if err := f.useError(); err != nil {
+		return err
+	}
+	return avutil.FrameGetBufferErr(f.ptr, align)
+}
+
+// MakeWritable ensures that the frame data can be modified in place.
+func (f Frame) MakeWritable() error {
+	if err := f.useError(); err != nil {
+		return err
+	}
+	return avutil.FrameMakeWritable(f.ptr)
+}
+
+// IsKeyFrame reports whether the frame is marked as a keyframe.
+func (f Frame) IsKeyFrame() bool {
+	return !f.IsNil() && avutil.GetFrameKeyFrame(f.ptr) != 0
+}
+
 // WrapFrame creates a FrameWrapper from a raw Frame.
 func WrapFrame(frame Frame, mediaType MediaType) *FrameWrapper {
 	if frame.IsNil() {
@@ -34,10 +195,10 @@ func (f *FrameWrapper) Raw() Frame {
 
 // PTS returns the presentation timestamp of the frame.
 func (f *FrameWrapper) PTS() int64 {
-	if f == nil || f.frame.IsNil() {
+	if f == nil {
 		return avutil.NoPTSValue
 	}
-	return avutil.GetFramePTS(f.frame.ptr)
+	return f.frame.PTS()
 }
 
 // MediaType returns the type of media (video or audio).
@@ -50,26 +211,26 @@ func (f *FrameWrapper) MediaType() MediaType {
 
 // Width returns the frame width (video only).
 func (f *FrameWrapper) Width() int {
-	if f == nil || f.frame.IsNil() {
+	if f == nil {
 		return 0
 	}
-	return int(avutil.GetFrameWidth(f.frame.ptr))
+	return f.frame.Width()
 }
 
 // Height returns the frame height (video only).
 func (f *FrameWrapper) Height() int {
-	if f == nil || f.frame.IsNil() {
+	if f == nil {
 		return 0
 	}
-	return int(avutil.GetFrameHeight(f.frame.ptr))
+	return f.frame.Height()
 }
 
 // Format returns the pixel format (video) or sample format (audio).
 func (f *FrameWrapper) Format() int32 {
-	if f == nil || f.frame.IsNil() {
+	if f == nil {
 		return -1
 	}
-	return avutil.GetFrameFormat(f.frame.ptr)
+	return f.frame.Format()
 }
 
 // PixelFormat returns the pixel format for video frames.
@@ -89,25 +250,39 @@ func (f *FrameWrapper) SampleFormat() SampleFormat {
 // decoder operation or by Free. Copy it if it must outlive the frame.
 // Returns nil if the plane is not valid or not CPU-addressable.
 func (f *FrameWrapper) Data(plane int) []byte {
-	if f == nil || f.frame.IsNil() || plane < 0 {
+	if f == nil {
+		return nil
+	}
+	return frameData(f.frame, f.mediaType, plane)
+}
+
+// Data returns a borrowed slice to the frame data for the specified plane.
+// It infers whether the frame contains video or audio from its AVFrame fields.
+// The slice is invalidated when the underlying frame is reused or released.
+func (f Frame) Data(plane int) []byte {
+	return frameData(f, f.MediaType(), plane)
+}
+
+func frameData(frame Frame, mediaType MediaType, plane int) []byte {
+	if frame.IsNil() || plane < 0 {
 		return nil
 	}
 
 	var data unsafe.Pointer
 	var size uintptr
-	switch f.mediaType {
+	switch mediaType {
 	case MediaTypeVideo:
 		if plane >= 4 {
 			return nil
 		}
-		data = avutil.GetFrameDataPlane(f.frame.ptr, plane)
+		data = avutil.GetFrameDataPlane(frame.ptr, plane)
 		if data == nil {
 			return nil
 		}
-		linesizes := avutil.GetFrameLinesize(f.frame.ptr)
+		linesizes := avutil.GetFrameLinesize(frame.ptr)
 		planeSizes, err := avutil.ImagePlaneSizes(
-			f.PixelFormat(),
-			f.Height(),
+			frame.PixelFormat(),
+			frame.Height(),
 			[4]int32{linesizes[0], linesizes[1], linesizes[2], linesizes[3]},
 		)
 		if err != nil {
@@ -122,8 +297,8 @@ func (f *FrameWrapper) Data(plane int) []byte {
 			}
 		}
 	case MediaTypeAudio:
-		format := f.SampleFormat()
-		channels := int(avutil.GetFrameChannels(f.frame.ptr))
+		format := frame.SampleFormat()
+		channels := frame.Channels()
 		if channels <= 0 {
 			return nil
 		}
@@ -135,7 +310,7 @@ func (f *FrameWrapper) Data(plane int) []byte {
 			return nil
 		}
 		bytesPerSample := avutil.BytesPerSample(format)
-		samples := f.NumSamples()
+		samples := frame.NbSamples()
 		if bytesPerSample <= 0 || samples <= 0 {
 			return nil
 		}
@@ -150,7 +325,7 @@ func (f *FrameWrapper) Data(plane int) []byte {
 			return nil
 		}
 		size = uintptr(size64)
-		data = avutil.GetFrameExtendedDataPlane(f.frame.ptr, plane)
+		data = avutil.GetFrameExtendedDataPlane(frame.ptr, plane)
 	default:
 		return nil
 	}
@@ -163,13 +338,25 @@ func (f *FrameWrapper) Data(plane int) []byte {
 
 // Linesize returns the line size (stride) for the specified plane.
 func (f *FrameWrapper) Linesize(plane int) int {
-	if f == nil || f.frame.IsNil() || plane < 0 {
+	if f == nil {
 		return 0
 	}
-	linesize := avutil.GetFrameLinesize(f.frame.ptr)
-	if f.mediaType == MediaTypeAudio {
-		format := f.SampleFormat()
-		channels := int(avutil.GetFrameChannels(f.frame.ptr))
+	return frameLinesize(f.frame, f.mediaType, plane)
+}
+
+// Linesize returns the line size (stride) for the specified plane.
+func (f Frame) Linesize(plane int) int {
+	return frameLinesize(f, f.MediaType(), plane)
+}
+
+func frameLinesize(frame Frame, mediaType MediaType, plane int) int {
+	if frame.IsNil() || plane < 0 {
+		return 0
+	}
+	linesize := avutil.GetFrameLinesize(frame.ptr)
+	if mediaType == MediaTypeAudio {
+		format := frame.SampleFormat()
+		channels := frame.Channels()
 		if channels <= 0 || (!avutil.SampleFormatIsPlanar(format) && plane != 0) || plane >= channels {
 			return 0
 		}
@@ -183,26 +370,23 @@ func (f *FrameWrapper) Linesize(plane int) int {
 
 // NumSamples returns the number of audio samples in this frame (audio only).
 func (f *FrameWrapper) NumSamples() int {
-	if f == nil || f.frame.IsNil() {
+	if f == nil {
 		return 0
 	}
-	return int(avutil.GetFrameNbSamples(f.frame.ptr))
+	return f.frame.NbSamples()
 }
 
 // SampleRate returns the sample rate for audio frames.
 func (f *FrameWrapper) SampleRate() int {
-	if f == nil || f.frame.IsNil() {
+	if f == nil {
 		return 0
 	}
-	return int(avutil.GetFrameSampleRate(f.frame.ptr))
+	return f.frame.SampleRate()
 }
 
 // IsKeyFrame returns true if this is a keyframe (video only).
 func (f *FrameWrapper) IsKeyFrame() bool {
-	if f == nil || f.frame.IsNil() {
-		return false
-	}
-	return avutil.GetFrameKeyFrame(f.frame.ptr) != 0
+	return f != nil && f.frame.IsKeyFrame()
 }
 
 // Copy creates a reference to this frame.
@@ -212,18 +396,13 @@ func (f *FrameWrapper) Copy() (*FrameWrapper, error) {
 		return nil, nil
 	}
 
-	newFrame := avutil.FrameAlloc()
-	if newFrame == nil {
-		return nil, ErrOutOfMemory
-	}
-
-	if err := avutil.FrameRef(newFrame, f.frame.ptr); err != nil {
-		avutil.FrameFree(&newFrame)
+	clone, err := f.frame.Clone()
+	if err != nil {
 		return nil, err
 	}
 
 	return &FrameWrapper{
-		frame:     Frame{ptr: newFrame, owned: true},
+		frame:     clone,
 		mediaType: f.mediaType,
 	}, nil
 }

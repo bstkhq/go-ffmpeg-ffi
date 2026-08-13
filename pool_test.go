@@ -168,13 +168,13 @@ func TestFramePoolCopiedLeaseCannotMutateReusedFrame(t *testing.T) {
 	}
 	defer func() { _ = pool.Put(&reused) }()
 
-	AVUtil.SetFrameWidth(reused, 123)
+	reused.SetWidth(123)
 	FrameUnref(copyOfLease)
-	AVUtil.SetFrameWidth(copyOfLease, 456)
-	if got := AVUtil.GetFrameWidth(copyOfLease); got != 0 {
+	copyOfLease.SetWidth(456)
+	if got := copyOfLease.Width(); got != 0 {
 		t.Fatalf("stale lease width = %d, want 0", got)
 	}
-	if got := AVUtil.GetFrameWidth(reused); got != 123 {
+	if got := reused.Width(); got != 123 {
 		t.Fatalf("reused frame width = %d, want 123", got)
 	}
 	if err := copyOfLease.useError(); !errors.Is(err, ErrFrameLeaseReturned) {

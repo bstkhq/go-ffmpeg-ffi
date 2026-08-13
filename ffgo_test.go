@@ -379,12 +379,12 @@ func TestEncoderWriteFrames(t *testing.T) {
 	defer func() { _ = FrameFree(&frame) }()
 
 	// Set up frame
-	AVUtil.SetFrameWidth(frame, 160)
-	AVUtil.SetFrameHeight(frame, 120)
-	AVUtil.SetFrameFormat(frame, int32(PixelFormatYUV420P))
+	frame.SetWidth(160)
+	frame.SetHeight(120)
+	frame.SetPixelFormat(PixelFormatYUV420P)
 
 	// Allocate frame buffer
-	if err := AVUtil.FrameGetBuffer(frame, 0); err != nil {
+	if err := frame.GetBuffer(0); err != nil {
 		t.Fatalf("FrameGetBuffer failed: %v", err)
 	}
 
@@ -392,7 +392,7 @@ func TestEncoderWriteFrames(t *testing.T) {
 	numFrames := 15 // Half a second at 30 fps
 	for i := 0; i < numFrames; i++ {
 		// Make frame writable
-		if err := AVUtil.FrameMakeWritable(frame); err != nil {
+		if err := frame.MakeWritable(); err != nil {
 			t.Fatalf("FrameMakeWritable failed: %v", err)
 		}
 
@@ -442,14 +442,13 @@ func TestEncoderWriteFrames(t *testing.T) {
 
 // fillTestFrame fills a YUV420P frame with a test pattern
 func fillTestFrame(frame Frame, frameNum, width, height int) {
-	fw := WrapFrame(frame, MediaTypeVideo)
-	if fw == nil {
+	if frame.IsNil() {
 		return
 	}
 
 	// Y plane
-	yPlane := fw.Data(0)
-	yStride := fw.Linesize(0)
+	yPlane := frame.Data(0)
+	yStride := frame.Linesize(0)
 	for y := 0; y < height; y++ {
 		row := y * yStride
 		for x := 0; x < width; x++ {
@@ -463,8 +462,8 @@ func fillTestFrame(frame Frame, frameNum, width, height int) {
 	uvHeight := height / 2
 	uvWidth := width / 2
 
-	uPlane := fw.Data(1)
-	uStride := fw.Linesize(1)
+	uPlane := frame.Data(1)
+	uStride := frame.Linesize(1)
 	for y := 0; y < uvHeight; y++ {
 		row := y * uStride
 		for x := 0; x < uvWidth; x++ {
@@ -472,8 +471,8 @@ func fillTestFrame(frame Frame, frameNum, width, height int) {
 		}
 	}
 
-	vPlane := fw.Data(2)
-	vStride := fw.Linesize(2)
+	vPlane := frame.Data(2)
+	vStride := frame.Linesize(2)
 	for y := 0; y < uvHeight; y++ {
 		row := y * vStride
 		for x := 0; x < uvWidth; x++ {
@@ -813,11 +812,11 @@ func TestEncoderWriteVideoAndAudioFrames(t *testing.T) {
 	}
 	defer func() { _ = FrameFree(&videoFrame) }()
 
-	AVUtil.SetFrameWidth(videoFrame, 160)
-	AVUtil.SetFrameHeight(videoFrame, 120)
-	AVUtil.SetFrameFormat(videoFrame, int32(PixelFormatYUV420P))
+	videoFrame.SetWidth(160)
+	videoFrame.SetHeight(120)
+	videoFrame.SetPixelFormat(PixelFormatYUV420P)
 
-	if err := AVUtil.FrameGetBuffer(videoFrame, 0); err != nil {
+	if err := videoFrame.GetBuffer(0); err != nil {
 		encoder.Close()
 		t.Fatalf("Failed to allocate video frame buffer: %v", err)
 	}
@@ -825,7 +824,7 @@ func TestEncoderWriteVideoAndAudioFrames(t *testing.T) {
 	// Write a few video frames
 	numVideoFrames := 10
 	for i := 0; i < numVideoFrames; i++ {
-		if err := AVUtil.FrameMakeWritable(videoFrame); err != nil {
+		if err := videoFrame.MakeWritable(); err != nil {
 			encoder.Close()
 			t.Fatalf("FrameMakeWritable failed: %v", err)
 		}
@@ -844,17 +843,17 @@ func TestEncoderWriteVideoAndAudioFrames(t *testing.T) {
 	}
 	defer func() { _ = FrameFree(&audioFrame) }()
 	audioFrameSize := encoder.AudioFrameSize()
-	avutil.SetFrameFormat(audioFrame.ptr, int32(SampleFormatFLTP))
-	avutil.SetFrameNbSamples(audioFrame.ptr, int32(audioFrameSize))
-	avutil.SetFrameSampleRate(audioFrame.ptr, 44100)
-	avutil.FrameSetChannels(audioFrame.ptr, 2)
-	if err := AVUtil.FrameGetBuffer(audioFrame, 0); err != nil {
+	audioFrame.SetSampleFormat(SampleFormatFLTP)
+	audioFrame.SetNbSamples(audioFrameSize)
+	audioFrame.SetSampleRate(44100)
+	audioFrame.SetChannels(2)
+	if err := audioFrame.GetBuffer(0); err != nil {
 		encoder.Close()
 		t.Fatalf("Failed to allocate audio frame buffer: %v", err)
 	}
 	numAudioFrames := (44100 + audioFrameSize - 1) / audioFrameSize
 	for i := 0; i < numAudioFrames; i++ {
-		if err := AVUtil.FrameMakeWritable(audioFrame); err != nil {
+		if err := audioFrame.MakeWritable(); err != nil {
 			encoder.Close()
 			t.Fatalf("Audio FrameMakeWritable failed: %v", err)
 		}
@@ -1304,10 +1303,10 @@ func TestFilterGraphCloseWaitsForInFlightFilter(t *testing.T) {
 
 	frame := FrameAlloc()
 	defer func() { _ = FrameFree(&frame) }()
-	AVUtil.SetFrameWidth(frame, 32)
-	AVUtil.SetFrameHeight(frame, 32)
-	AVUtil.SetFrameFormat(frame, int32(PixelFormatYUV420P))
-	if err := AVUtil.FrameGetBuffer(frame, 0); err != nil {
+	frame.SetWidth(32)
+	frame.SetHeight(32)
+	frame.SetPixelFormat(PixelFormatYUV420P)
+	if err := frame.GetBuffer(0); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1555,12 +1554,12 @@ func TestEncoderWithAdvancedOptionsEncode(t *testing.T) {
 	}
 	defer func() { _ = FrameFree(&frame) }()
 
-	AVUtil.SetFrameWidth(frame, 160)
-	AVUtil.SetFrameHeight(frame, 120)
-	AVUtil.SetFrameFormat(frame, int32(PixelFormatYUV420P))
+	frame.SetWidth(160)
+	frame.SetHeight(120)
+	frame.SetPixelFormat(PixelFormatYUV420P)
 
 	// Allocate frame buffer
-	if err := AVUtil.FrameGetBuffer(frame, 0); err != nil {
+	if err := frame.GetBuffer(0); err != nil {
 		t.Fatalf("FrameGetBuffer failed: %v", err)
 	}
 
@@ -1613,10 +1612,10 @@ func TestRemuxer(t *testing.T) {
 		t.Fatal("Failed to allocate frame")
 	}
 
-	AVUtil.SetFrameWidth(frame, 160)
-	AVUtil.SetFrameHeight(frame, 120)
-	AVUtil.SetFrameFormat(frame, int32(PixelFormatYUV420P))
-	if err := AVUtil.FrameGetBuffer(frame, 0); err != nil {
+	frame.SetWidth(160)
+	frame.SetHeight(120)
+	frame.SetPixelFormat(PixelFormatYUV420P)
+	if err := frame.GetBuffer(0); err != nil {
 		_ = FrameFree(&frame)
 		enc.Close()
 		t.Fatalf("FrameGetBuffer failed: %v", err)
@@ -1703,10 +1702,10 @@ func TestRemuxerSelectStreams(t *testing.T) {
 		enc.Close()
 		t.Fatal("Failed to allocate frame")
 	}
-	AVUtil.SetFrameWidth(frame, 160)
-	AVUtil.SetFrameHeight(frame, 120)
-	AVUtil.SetFrameFormat(frame, int32(PixelFormatYUV420P))
-	_ = AVUtil.FrameGetBuffer(frame, 0)
+	frame.SetWidth(160)
+	frame.SetHeight(120)
+	frame.SetPixelFormat(PixelFormatYUV420P)
+	_ = frame.GetBuffer(0)
 
 	for i := 0; i < 10; i++ {
 		_ = enc.WriteFrame(frame)
@@ -1829,10 +1828,10 @@ func TestMetadataWrite(t *testing.T) {
 		enc.Close()
 		t.Fatal("Failed to allocate frame")
 	}
-	AVUtil.SetFrameWidth(frame, 160)
-	AVUtil.SetFrameHeight(frame, 120)
-	AVUtil.SetFrameFormat(frame, int32(PixelFormatYUV420P))
-	_ = AVUtil.FrameGetBuffer(frame, 0)
+	frame.SetWidth(160)
+	frame.SetHeight(120)
+	frame.SetPixelFormat(PixelFormatYUV420P)
+	_ = frame.GetBuffer(0)
 
 	for i := 0; i < 10; i++ {
 		_ = enc.WriteFrame(frame)
@@ -2401,10 +2400,10 @@ func TestStreamMetadata(t *testing.T) {
 		enc.Close()
 		t.Fatal("Failed to allocate frame")
 	}
-	AVUtil.SetFrameWidth(frame, 160)
-	AVUtil.SetFrameHeight(frame, 120)
-	AVUtil.SetFrameFormat(frame, int32(PixelFormatYUV420P))
-	_ = AVUtil.FrameGetBuffer(frame, 0)
+	frame.SetWidth(160)
+	frame.SetHeight(120)
+	frame.SetPixelFormat(PixelFormatYUV420P)
+	_ = frame.GetBuffer(0)
 
 	for i := 0; i < 5; i++ {
 		_ = enc.WriteFrame(frame)
@@ -2869,11 +2868,11 @@ func TestImageSequenceEncoder(t *testing.T) {
 			t.Fatal("Failed to allocate frame")
 		}
 
-		AVUtil.SetFrameWidth(frame, int32(width))
-		AVUtil.SetFrameHeight(frame, int32(height))
-		AVUtil.SetFrameFormat(frame, int32(PixelFormatRGB24))
+		frame.SetWidth(width)
+		frame.SetHeight(height)
+		frame.SetPixelFormat(PixelFormatRGB24)
 
-		if err := AVUtil.FrameGetBuffer(frame, 32); err != nil {
+		if err := frame.GetBuffer(32); err != nil {
 			_ = FrameFree(&frame)
 			t.Fatalf("Failed to allocate frame buffer: %v", err)
 		}
@@ -3099,11 +3098,11 @@ func TestMuxer(t *testing.T) {
 			t.Fatal("Failed to allocate frame")
 		}
 
-		AVUtil.SetFrameWidth(frame, 160)
-		AVUtil.SetFrameHeight(frame, 120)
-		AVUtil.SetFrameFormat(frame, int32(PixelFormatYUV420P))
+		frame.SetWidth(160)
+		frame.SetHeight(120)
+		frame.SetPixelFormat(PixelFormatYUV420P)
 
-		if err := AVUtil.FrameGetBuffer(frame, 32); err != nil {
+		if err := frame.GetBuffer(32); err != nil {
 			_ = FrameFree(&frame)
 			t.Fatalf("Failed to allocate frame buffer: %v", err)
 		}

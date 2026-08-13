@@ -491,22 +491,13 @@ func GetFrameInfo(frame Frame) FrameInfo {
 	if frame.IsNil() {
 		return FrameInfo{}
 	}
-	width := int(avutil.GetFrameWidth(frame.ptr))
-	height := int(avutil.GetFrameHeight(frame.ptr))
-	mediaType := MediaTypeUnknown
-	switch {
-	case width > 0 && height > 0:
-		mediaType = MediaTypeVideo
-	case avutil.GetFrameNbSamples(frame.ptr) > 0 || avutil.GetFrameSampleRate(frame.ptr) > 0:
-		mediaType = MediaTypeAudio
-	}
 	return FrameInfo{
-		Width:     width,
-		Height:    height,
-		Format:    avutil.GetFrameFormat(frame.ptr),
-		PTS:       avutil.GetFramePTS(frame.ptr),
-		KeyFrame:  avutil.GetFrameKeyFrame(frame.ptr) != 0,
-		MediaType: mediaType,
+		Width:     frame.Width(),
+		Height:    frame.Height(),
+		Format:    frame.Format(),
+		PTS:       frame.PTS(),
+		KeyFrame:  frame.IsKeyFrame(),
+		MediaType: frame.MediaType(),
 	}
 }
 
@@ -606,49 +597,28 @@ var (
 		FrameRef:   FrameRef,
 		FrameUnref: FrameUnref,
 		FrameGetBuffer: func(frame Frame, align int32) error {
-			if err := frame.useError(); err != nil {
-				return err
-			}
-			return avutil.FrameGetBufferErr(frame.ptr, align)
+			return frame.GetBuffer(align)
 		},
 		FrameMakeWritable: func(frame Frame) error {
-			if err := frame.useError(); err != nil {
-				return err
-			}
-			return avutil.FrameMakeWritable(frame.ptr)
+			return frame.MakeWritable()
 		},
 		GetFrameWidth: func(frame Frame) int32 {
-			if frame.IsNil() {
-				return 0
-			}
-			return avutil.GetFrameWidth(frame.ptr)
+			return int32(frame.Width())
 		},
 		GetFrameHeight: func(frame Frame) int32 {
-			if frame.IsNil() {
-				return 0
-			}
-			return avutil.GetFrameHeight(frame.ptr)
+			return int32(frame.Height())
 		},
 		GetFrameFormat: func(frame Frame) int32 {
-			if frame.IsNil() {
-				return -1
-			}
-			return avutil.GetFrameFormat(frame.ptr)
+			return frame.Format()
 		},
 		SetFrameWidth: func(frame Frame, width int32) {
-			if !frame.IsNil() {
-				avutil.SetFrameWidth(frame.ptr, width)
-			}
+			frame.SetWidth(int(width))
 		},
 		SetFrameHeight: func(frame Frame, height int32) {
-			if !frame.IsNil() {
-				avutil.SetFrameHeight(frame.ptr, height)
-			}
+			frame.SetHeight(int(height))
 		},
 		SetFrameFormat: func(frame Frame, format int32) {
-			if !frame.IsNil() {
-				avutil.SetFrameFormat(frame.ptr, format)
-			}
+			frame.SetFormat(format)
 		},
 	}
 
