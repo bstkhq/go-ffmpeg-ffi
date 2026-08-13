@@ -5,6 +5,7 @@ package avfilter
 
 import (
 	"fmt"
+	"runtime"
 	"sync"
 	"unsafe"
 
@@ -36,13 +37,13 @@ var (
 	avfilter_graph_alloc         func() unsafe.Pointer
 	avfilter_graph_free          func(graph *Graph)
 	avfilter_graph_config        func(graphctx, log_ctx uintptr) int32
-	avfilter_graph_parse2        func(graph uintptr, filters *byte, inputs, outputs *InOut) int32
-	avfilter_graph_alloc_filter  func(graphctx, filter, namePtr uintptr) unsafe.Pointer
-	avfilter_graph_create_filter func(filt_ctx *Context, filt, namePtr, argsPtr, opaque, graphCtx uintptr) int32
+	avfilter_graph_parse2        func(graph uintptr, filters string, inputs, outputs *InOut) int32
+	avfilter_graph_alloc_filter  func(graphctx, filter uintptr, name string) unsafe.Pointer
+	avfilter_graph_create_filter func(filt_ctx *Context, filt uintptr, name, args string, opaque, graphCtx uintptr) int32
 	avfilter_init_str            func(filterctx, argsPtr uintptr) int32
 
 	// Filter lookup
-	avfilter_get_by_name func(name *byte) unsafe.Pointer
+	avfilter_get_by_name func(name string) unsafe.Pointer
 
 	// Filter linking
 	avfilter_link func(src uintptr, srcpad uint32, dst uintptr, dstpad uint32) int32
@@ -175,15 +176,6 @@ func GraphConfig(graph Graph) error {
 	return nil
 }
 
-// cString converts a Go string to a null-terminated C string (as *byte)
-func cString(s string) *byte {
-	if s == "" {
-		return nil
-	}
-	b := append([]byte(s), 0)
-	return &b[0]
-}
-
 // GraphParse2 parses a filter graph description.
 // Returns inputs and outputs that need to be linked.
 func GraphParse2(graph Graph, filters string) (inputs, outputs InOut, err error) {
@@ -194,7 +186,8 @@ func GraphParse2(graph Graph, filters string) (inputs, outputs InOut, err error)
 		return nil, nil, err
 	}
 
-	ret := avfilter_graph_parse2(uintptr(graph), cString(filters), &inputs, &outputs)
+	ret := avfilter_graph_parse2(uintptr(graph), filters, &inputs, &outputs)
+	runtime.KeepAlive(filters)
 	if ret < 0 {
 		return nil, nil, fmt.Errorf("avfilter_graph_parse2 failed: %d", ret)
 	}
@@ -217,11 +210,13 @@ func GraphCreateFilter(graph Graph, filter Filter, name, args string) (Context, 
 	ret := avfilter_graph_create_filter(
 		&ctx,
 		uintptr(filter),
-		uintptr(unsafe.Pointer(cString(name))),
-		uintptr(unsafe.Pointer(cString(args))),
+		name,
+		args,
 		0,
 		uintptr(graph),
 	)
+	runtime.KeepAlive(name)
+	runtime.KeepAlive(args)
 	if ret < 0 {
 		return nil, fmt.Errorf("avfilter_graph_create_filter failed: %d", ret)
 	}
@@ -244,8 +239,9 @@ func GraphAllocFilter(graph Graph, filter Filter, name string) (Context, error) 
 	ctx := avfilter_graph_alloc_filter(
 		uintptr(graph),
 		uintptr(filter),
-		uintptr(unsafe.Pointer(cString(name))),
+		name,
 	)
+	runtime.KeepAlive(name)
 	if ctx == nil {
 		return nil, fmt.Errorf("avfilter_graph_alloc_filter failed")
 	}
@@ -271,7 +267,9 @@ func GetByName(name string) Filter {
 	if err := Init(); err != nil {
 		return nil
 	}
-	return avfilter_get_by_name(cString(name))
+	filter := avfilter_get_by_name(name)
+	runtime.KeepAlive(name)
+	return filter
 }
 
 // Link links two filter contexts together.
