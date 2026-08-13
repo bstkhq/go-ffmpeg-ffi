@@ -106,6 +106,8 @@ func (m *Muxer) AddVideoStream(config *VideoStreamConfig) (*MuxerStream, error) 
 	if config == nil {
 		return nil, errors.New("ffgo: video config is required")
 	}
+	configCopy := *config
+	config = &configCopy
 
 	// Apply defaults
 	if config.Codec == CodecIDNone {
@@ -130,12 +132,6 @@ func (m *Muxer) AddVideoStream(config *VideoStreamConfig) (*MuxerStream, error) 
 		return nil, errors.New("ffgo: video encoder not found")
 	}
 
-	// Create stream
-	stream := avformat.NewStream(m.formatCtx, codec)
-	if stream == nil {
-		return nil, errors.New("ffgo: failed to create video stream")
-	}
-
 	// Create codec context
 	codecCtx := avcodec.AllocContext3(codec)
 	if codecCtx == nil {
@@ -152,9 +148,10 @@ func (m *Muxer) AddVideoStream(config *VideoStreamConfig) (*MuxerStream, error) 
 	avcodec.SetCtxGopSize(codecCtx, int32(config.GOPSize))
 	avcodec.SetCtxMaxBFrames(codecCtx, int32(config.MaxBFrames))
 
-	// Set global header flag (commonly needed for containers like MP4)
-	flags := avcodec.GetCtxFlags(codecCtx)
-	avcodec.SetCtxFlags(codecCtx, flags|avcodec.CodecFlagGlobalHeader)
+	if avformat.NeedsGlobalHeader(m.formatCtx) {
+		flags := avcodec.GetCtxFlags(codecCtx)
+		avcodec.SetCtxFlags(codecCtx, flags|avcodec.CodecFlagGlobalHeader)
+	}
 
 	// Open codec
 	if err := avcodec.Open2(codecCtx, codec, nil); err != nil {
@@ -162,9 +159,26 @@ func (m *Muxer) AddVideoStream(config *VideoStreamConfig) (*MuxerStream, error) 
 		return nil, err
 	}
 
+	packet := avcodec.PacketAlloc()
+	if packet == nil {
+		avcodec.FreeContext(&codecCtx)
+		return nil, errors.New("ffgo: failed to allocate video packet")
+	}
+
+	// Register the stream only after encoder setup succeeds. AVStream entries
+	// cannot be removed from an AVFormatContext, so registering earlier would
+	// leave an unusable stream behind when avcodec_open2 fails.
+	stream := avformat.NewStream(m.formatCtx, codec)
+	if stream == nil {
+		avcodec.PacketFree(&packet)
+		avcodec.FreeContext(&codecCtx)
+		return nil, errors.New("ffgo: failed to create video stream")
+	}
+
 	// Copy parameters to stream
 	codecPar := avformat.GetStreamCodecPar(stream)
 	if err := avcodec.ParametersFromContext(codecPar, codecCtx); err != nil {
+		avcodec.PacketFree(&packet)
 		avcodec.FreeContext(&codecCtx)
 		return nil, err
 	}
@@ -173,12 +187,12 @@ func (m *Muxer) AddVideoStream(config *VideoStreamConfig) (*MuxerStream, error) 
 		muxer:     m,
 		stream:    stream,
 		codecCtx:  codecCtx,
-		index:     len(m.streams),
+		index:     int(avformat.GetStreamIndex(stream)),
 		timeBase:  NewRational(1, int32(config.FrameRate)),
 		mediaType: MediaTypeVideo,
 		encoder: &streamEncoder{
 			codecCtx: codecCtx,
-			packet:   avcodec.PacketAlloc(),
+			packet:   packet,
 		},
 	}
 
@@ -209,6 +223,8 @@ func (m *Muxer) AddAudioStream(config *AudioStreamConfig) (*MuxerStream, error) 
 	if config == nil {
 		return nil, errors.New("ffgo: audio config is required")
 	}
+	configCopy := *config
+	config = &configCopy
 
 	// Apply defaults
 	if config.Codec == CodecIDNone {
@@ -233,12 +249,6 @@ func (m *Muxer) AddAudioStream(config *AudioStreamConfig) (*MuxerStream, error) 
 		return nil, errors.New("ffgo: audio encoder not found")
 	}
 
-	// Create stream
-	stream := avformat.NewStream(m.formatCtx, codec)
-	if stream == nil {
-		return nil, errors.New("ffgo: failed to create audio stream")
-	}
-
 	// Create codec context
 	codecCtx := avcodec.AllocContext3(codec)
 	if codecCtx == nil {
@@ -254,9 +264,10 @@ func (m *Muxer) AddAudioStream(config *AudioStreamConfig) (*MuxerStream, error) 
 	// Set channel layout based on channel count
 	avcodec.SetCtxChannelLayout(codecCtx, int32(config.Channels))
 
-	// Set global header flag (commonly needed for containers like MP4)
-	flags := avcodec.GetCtxFlags(codecCtx)
-	avcodec.SetCtxFlags(codecCtx, flags|avcodec.CodecFlagGlobalHeader)
+	if avformat.NeedsGlobalHeader(m.formatCtx) {
+		flags := avcodec.GetCtxFlags(codecCtx)
+		avcodec.SetCtxFlags(codecCtx, flags|avcodec.CodecFlagGlobalHeader)
+	}
 
 	// Open codec
 	if err := avcodec.Open2(codecCtx, codec, nil); err != nil {
@@ -264,9 +275,23 @@ func (m *Muxer) AddAudioStream(config *AudioStreamConfig) (*MuxerStream, error) 
 		return nil, err
 	}
 
+	packet := avcodec.PacketAlloc()
+	if packet == nil {
+		avcodec.FreeContext(&codecCtx)
+		return nil, errors.New("ffgo: failed to allocate audio packet")
+	}
+
+	stream := avformat.NewStream(m.formatCtx, codec)
+	if stream == nil {
+		avcodec.PacketFree(&packet)
+		avcodec.FreeContext(&codecCtx)
+		return nil, errors.New("ffgo: failed to create audio stream")
+	}
+
 	// Copy parameters to stream
 	codecPar := avformat.GetStreamCodecPar(stream)
 	if err := avcodec.ParametersFromContext(codecPar, codecCtx); err != nil {
+		avcodec.PacketFree(&packet)
 		avcodec.FreeContext(&codecCtx)
 		return nil, err
 	}
@@ -275,12 +300,12 @@ func (m *Muxer) AddAudioStream(config *AudioStreamConfig) (*MuxerStream, error) 
 		muxer:     m,
 		stream:    stream,
 		codecCtx:  codecCtx,
-		index:     len(m.streams),
+		index:     int(avformat.GetStreamIndex(stream)),
 		timeBase:  NewRational(1, int32(config.SampleRate)),
 		mediaType: MediaTypeAudio,
 		encoder: &streamEncoder{
 			codecCtx: codecCtx,
-			packet:   avcodec.PacketAlloc(),
+			packet:   packet,
 		},
 	}
 
@@ -328,7 +353,7 @@ func (m *Muxer) AddCopyStream(config *CopyStreamConfig) (*MuxerStream, error) {
 	ms := &MuxerStream{
 		muxer:     m,
 		stream:    stream,
-		index:     len(m.streams),
+		index:     int(avformat.GetStreamIndex(stream)),
 		timeBase:  config.TimeBase,
 		mediaType: avformat.GetCodecParType(codecPar),
 		copyMode:  true,
@@ -498,6 +523,10 @@ func (m *Muxer) WriteTrailer() error {
 		return errors.New("ffgo: trailer already written")
 	}
 
+	return m.writeTrailerLocked()
+}
+
+func (m *Muxer) writeTrailerLocked() error {
 	var trailerErrors []error
 	for _, ms := range m.streams {
 		if ms.encoder != nil && ms.codecCtx != nil {
@@ -544,6 +573,11 @@ func (m *Muxer) Close() error {
 	if m.closed {
 		return nil
 	}
+
+	var closeErr error
+	if m.headerWritten && !m.trailerWritten {
+		closeErr = m.writeTrailerLocked()
+	}
 	m.closed = true
 
 	// Free encoder resources
@@ -572,14 +606,16 @@ func (m *Muxer) Close() error {
 		m.formatCtx = nil
 	}
 
-	return nil
+	return closeErr
 }
 
 // Streams returns all streams in the muxer.
 func (m *Muxer) Streams() []*MuxerStream {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.streams
+	streams := make([]*MuxerStream, len(m.streams))
+	copy(streams, m.streams)
+	return streams
 }
 
 // Index returns the stream index.

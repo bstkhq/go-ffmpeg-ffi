@@ -46,6 +46,24 @@ func TestFindDecoder(t *testing.T) {
 	t.Logf("H.264 decoder: %s", name)
 }
 
+func TestReceiveFrameRejectsNilPointers(t *testing.T) {
+	valid := unsafe.Pointer(new(byte))
+	for _, tt := range []struct {
+		name  string
+		ctx   Context
+		frame avutil.Frame
+	}{
+		{name: "context", ctx: nil, frame: valid},
+		{name: "frame", ctx: valid, frame: nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if code := avutil.Code(ReceiveFrame(tt.ctx, tt.frame)); code != avutil.AVERROR_EINVAL {
+				t.Fatalf("ReceiveFrame error code = %d, want %d", code, avutil.AVERROR_EINVAL)
+			}
+		})
+	}
+}
+
 func TestFindEncoder(t *testing.T) {
 	if !requireFFmpeg(t) {
 		return

@@ -264,6 +264,9 @@ func WriteTrailer(ctx FormatContext) error {
 
 // ReadFrame reads the next frame of a stream.
 func ReadFrame(ctx FormatContext, pkt avcodec.Packet) error {
+	if ctx == nil || pkt == nil {
+		return avutil.NewError(avutil.AVERROR_EINVAL, "av_read_frame")
+	}
 	if avReadFrame == nil {
 		return bindings.ErrNotLoaded
 	}

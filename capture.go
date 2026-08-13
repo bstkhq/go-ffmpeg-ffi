@@ -275,10 +275,7 @@ func NewCapture(cfg CaptureConfig) (*Decoder, error) {
 	deviceURL := buildDeviceURL(cfg.Device, cfg.DeviceType)
 
 	// Create decoder struct
-	d := &Decoder{
-		videoStreamIdx: -1,
-		audioStreamIdx: -1,
-	}
+	d := newDecoder(newDecoderInterrupt())
 
 	// Open the input with specific format
 	if err := avformat.OpenInput(&d.formatCtx, deviceURL, inputFmt, &avDict); err != nil {
@@ -287,7 +284,6 @@ func NewCapture(cfg CaptureConfig) (*Decoder, error) {
 		}
 		return nil, fmt.Errorf("ffgo: failed to open capture device: %w", err)
 	}
-	d.interrupt = newDecoderInterrupt()
 	d.interrupt.attach(d.formatCtx)
 
 	// Free any remaining dictionary entries
@@ -295,14 +291,22 @@ func NewCapture(cfg CaptureConfig) (*Decoder, error) {
 		avutil.DictFree(&avDict)
 	}
 
-	// Find stream info
-	if err := avformat.FindStreamInfo(d.formatCtx, nil); err != nil {
-		d.interrupt.release(d.formatCtx)
-		avformat.CloseInput(&d.formatCtx)
-		return nil, fmt.Errorf("ffgo: failed to find stream info: %w", err)
+	if err := d.initializeCaptureDecoder(); err != nil {
+		_ = d.Close()
+		return nil, err
 	}
 
-	// Find best streams (same as regular decoder)
+	return d, nil
+}
+
+// initializeCaptureDecoder completes the common decoder state after a device
+// input has been opened. Both hardware-device and screen-capture constructors
+// must pass through this function before publishing the Decoder.
+func (d *Decoder) initializeCaptureDecoder() error {
+	if err := avformat.FindStreamInfo(d.formatCtx, nil); err != nil {
+		return fmt.Errorf("ffgo: failed to find stream info: %w", err)
+	}
+
 	d.videoStreamIdx = int(avformat.FindBestStream(d.formatCtx, avutil.MediaTypeVideo, -1, -1, nil, 0))
 	if d.videoStreamIdx >= 0 {
 		d.videoInfo = d.getStreamInfo(d.videoStreamIdx)
@@ -313,7 +317,7 @@ func NewCapture(cfg CaptureConfig) (*Decoder, error) {
 		d.audioInfo = d.getStreamInfo(d.audioStreamIdx)
 	}
 
-	return d, nil
+	return d.allocateDecodeResources()
 }
 
 // getInputFormat returns the FFmpeg input format name for capture on the current platform.
@@ -534,10 +538,7 @@ func CaptureScreenWithOptions(opts ScreenCaptureOptions) (*Decoder, error) {
 	}
 
 	// Create decoder struct
-	d := &Decoder{
-		videoStreamIdx: -1,
-		audioStreamIdx: -1,
-	}
+	d := newDecoder(newDecoderInterrupt())
 
 	// Open the input with specific format
 	if err := avformat.OpenInput(&d.formatCtx, display, inputFmt, &avDict); err != nil {
@@ -546,7 +547,6 @@ func CaptureScreenWithOptions(opts ScreenCaptureOptions) (*Decoder, error) {
 		}
 		return nil, fmt.Errorf("ffgo: failed to open screen capture: %w", err)
 	}
-	d.interrupt = newDecoderInterrupt()
 	d.interrupt.attach(d.formatCtx)
 
 	// Free any remaining dictionary entries
@@ -554,22 +554,9 @@ func CaptureScreenWithOptions(opts ScreenCaptureOptions) (*Decoder, error) {
 		avutil.DictFree(&avDict)
 	}
 
-	// Find stream info
-	if err := avformat.FindStreamInfo(d.formatCtx, nil); err != nil {
-		d.interrupt.release(d.formatCtx)
-		avformat.CloseInput(&d.formatCtx)
-		return nil, fmt.Errorf("ffgo: failed to find stream info: %w", err)
-	}
-
-	// Find best streams
-	d.videoStreamIdx = int(avformat.FindBestStream(d.formatCtx, avutil.MediaTypeVideo, -1, -1, nil, 0))
-	if d.videoStreamIdx >= 0 {
-		d.videoInfo = d.getStreamInfo(d.videoStreamIdx)
-	}
-
-	d.audioStreamIdx = int(avformat.FindBestStream(d.formatCtx, avutil.MediaTypeAudio, -1, -1, nil, 0))
-	if d.audioStreamIdx >= 0 {
-		d.audioInfo = d.getStreamInfo(d.audioStreamIdx)
+	if err := d.initializeCaptureDecoder(); err != nil {
+		_ = d.Close()
+		return nil, err
 	}
 
 	return d, nil

@@ -14,13 +14,46 @@ func TestMuxerTrailerDrainsDelayedFrames(t *testing.T) {
 	if !requireFFmpeg(t) {
 		return
 	}
+	output, muxer := muxDelayedFrames(t)
+
+	if err := muxer.WriteTrailer(); err != nil {
+		t.Fatal(err)
+	}
+	if err := muxer.WriteTrailer(); err == nil {
+		t.Fatal("second trailer write succeeded")
+	}
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	assertDecodedVideoFrames(t, output, 20)
+}
+
+func TestMuxerCloseWritesTrailerAndDrainsDelayedFrames(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+	output, muxer := muxDelayedFrames(t)
+
+	if err := muxer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !muxer.trailerWritten {
+		t.Fatal("Close did not write the trailer")
+	}
+
+	assertDecodedVideoFrames(t, output, 20)
+}
+
+func muxDelayedFrames(t *testing.T) (string, *Muxer) {
+	t.Helper()
 	const frameCount = 20
 	output := filepath.Join(t.TempDir(), "muxed-delayed.mp4")
 	muxer, err := NewMuxer(output, "mp4")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer muxer.Close()
+	t.Cleanup(func() { _ = muxer.Close() })
 	stream, err := muxer.AddVideoStream(&VideoStreamConfig{
 		Codec:       avcodec.CodecIDMPEG4,
 		Width:       160,
@@ -59,22 +92,17 @@ func TestMuxerTrailerDrainsDelayedFrames(t *testing.T) {
 			t.Fatalf("write frame %d: %v", i, err)
 		}
 	}
-	if err := muxer.WriteTrailer(); err != nil {
-		t.Fatal(err)
-	}
-	if err := muxer.WriteTrailer(); err == nil {
-		t.Fatal("second trailer write succeeded")
-	}
-	if err := muxer.Close(); err != nil {
-		t.Fatal(err)
-	}
+	return output, muxer
+}
 
+func assertDecodedVideoFrames(t *testing.T, output string, want int) {
+	t.Helper()
 	decoder, err := NewDecoder(output, WithStreams(MediaTypeVideo))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer decoder.Close()
-	if got := drainDecodedFrames(t, decoder.DecodeVideo); got != frameCount {
-		t.Fatalf("decoded frames = %d, want %d", got, frameCount)
+	if got := drainDecodedFrames(t, decoder.DecodeVideo); got != want {
+		t.Fatalf("decoded frames = %d, want %d", got, want)
 	}
 }
