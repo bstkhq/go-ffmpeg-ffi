@@ -57,6 +57,9 @@ func TestHLSSegmenter_Integration(t *testing.T) {
 		t.Logf("WriteHeaderWithOptions failed (hls may be missing in this FFmpeg build): %v", err)
 		return
 	}
+	if hls.ioCtx != nil {
+		t.Fatal("HLS muxer opened the primary playlist despite AVFMT_NOFILE")
+	}
 
 	for i := 0; i < 60; i++ {
 		frame := FrameAlloc()
@@ -135,6 +138,9 @@ func TestDASHSegmenter_Integration(t *testing.T) {
 	if err := dash.WriteHeaderWithOptions(cfg.HeaderOptions()); err != nil {
 		t.Logf("WriteHeaderWithOptions failed (dash may be missing in this FFmpeg build): %v", err)
 		return
+	}
+	if dash.ioCtx != nil {
+		t.Fatal("DASH muxer opened the primary manifest despite AVFMT_NOFILE")
 	}
 
 	for i := 0; i < 60; i++ {

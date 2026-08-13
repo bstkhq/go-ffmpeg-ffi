@@ -395,11 +395,15 @@ func (m *Muxer) WriteHeaderWithOptions(opts map[string]string) error {
 }
 
 func (m *Muxer) writeHeaderLocked(dict *avutil.Dictionary) error {
-	// Open output file
-	if err := avformat.IOOpen(&m.ioCtx, m.path, avformat.IOFlagWrite); err != nil {
-		return err
+	// Formats marked AVFMT_NOFILE, such as HLS and DASH, open and atomically
+	// replace their own manifests and segments. Holding the primary path open
+	// here prevents those replacements on Windows.
+	if !avformat.HasNoFile(m.formatCtx) {
+		if err := avformat.IOOpen(&m.ioCtx, m.path, avformat.IOFlagWrite); err != nil {
+			return err
+		}
+		avformat.SetIOContext(m.formatCtx, m.ioCtx)
 	}
-	avformat.SetIOContext(m.formatCtx, m.ioCtx)
 
 	// Write header
 	if err := avformat.WriteHeader(m.formatCtx, dict); err != nil {
