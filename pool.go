@@ -256,12 +256,14 @@ func (f *Frame) WrapBuffer(data []byte, width, height int, format PixelFormat) e
 
 	initWrapCallback()
 
+	// Release the frame's current reference before reserving its replacement.
+	// If this frame is its final owner, the wrapped-buffer callback updates the
+	// accounting synchronously; references held by other frames remain counted.
+	avutil.FrameUnref(f.ptr)
+
 	if !reserveWrappedBufferBytes(int64(need)) {
 		return errWrappedBufferMemoryLimit
 	}
-
-	// Clear existing refs/buffers.
-	avutil.FrameUnref(f.ptr)
 
 	// Keep the backing []byte alive until FFmpeg releases the AVBufferRef.
 	pinner := new(runtime.Pinner)
