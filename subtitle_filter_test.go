@@ -5,6 +5,7 @@ package ffgo
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -55,7 +56,13 @@ func TestSubtitleRendererAcceptsSpecialCharacters(t *testing.T) {
 	if !requireFFmpeg(t) {
 		return
 	}
-	dir := filepath.Join(t.TempDir(), "Movie, The [2020] 'cut':1")
+	pathSuffix := ":1"
+	if runtime.GOOS == "windows" {
+		// A drive letter already exercises colon handling in the full path;
+		// colons are not legal inside Windows path components.
+		pathSuffix = ";1"
+	}
+	dir := filepath.Join(t.TempDir(), "Movie, The [2020] 'cut'"+pathSuffix)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +71,7 @@ func TestSubtitleRendererAcceptsSpecialCharacters(t *testing.T) {
 	if err := os.WriteFile(srtPath, []byte(srt), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	fontsDir := filepath.Join(dir, "fonts, reader's [fonts]:1")
+	fontsDir := filepath.Join(dir, "fonts, reader's [fonts]"+pathSuffix)
 	if err := os.MkdirAll(fontsDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
