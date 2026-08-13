@@ -810,206 +810,41 @@ func NewDecoderFromReaderContext(ctx context.Context, r io.Reader, opts *Decoder
 // NewEncoderToWriter creates an encoder that writes to an io.Writer.
 // If w implements io.Seeker, seeking will be supported.
 // format is the output format (e.g., "mp4", "mkv", "avi").
-func NewEncoderToWriter(w io.Writer, format string, config EncoderConfig) (*Encoder, error) {
-	frameRate := normalizeVideoFrameRate(NewRational(int32(config.FrameRate), 1))
-	return newEncoderToWriter(w, format, config, frameRate)
-}
-
-func newEncoderToWriter(w io.Writer, format string, config EncoderConfig, frameRate Rational) (*Encoder, error) {
+func NewEncoderToWriter(w io.Writer, format string, opts *EncoderOptions) (*Encoder, error) {
 	if w == nil {
 		return nil, errors.New("ffgo: writer cannot be nil")
 	}
-
 	callbacks := &IOCallbacks{
 		Write: func(buf []byte) (int, error) {
 			return w.Write(buf)
 		},
 	}
-
-	// Check if writer supports seeking
 	if seeker, ok := w.(io.Seeker); ok {
 		callbacks.Seek = func(offset int64, whence int) (int64, error) {
 			return seeker.Seek(offset, whence)
 		}
 	}
-
-	return newEncoderFromIO(callbacks, format, config, frameRate)
-}
-
-// NewEncoderToWriterWithOptions creates an encoder that writes to an io.Writer
-// using the EncoderOptions configuration.
-// If w implements io.Seeker, seeking will be supported.
-// format is the output format (e.g., "mp4", "mkv", "avi").
-func NewEncoderToWriterWithOptions(w io.Writer, format string, opts *EncoderOptions) (*Encoder, error) {
-	if opts == nil || opts.Video == nil {
-		return nil, errors.New("ffgo: EncoderOptions.Video is required")
-	}
-
-	video := opts.Video
-
-	// Convert VideoEncoderConfig to EncoderConfig
-	cfg := EncoderConfig{
-		Width:       video.Width,
-		Height:      video.Height,
-		PixelFormat: video.PixelFormat,
-		CodecID:     video.Codec,
-		BitRate:     video.Bitrate,
-		GOPSize:     video.GOPSize,
-		MaxBFrames:  video.MaxBFrames,
-	}
-
-	// Apply defaults
-	if cfg.CodecID == CodecIDNone {
-		cfg.CodecID = CodecIDH264
-	}
-	if cfg.BitRate <= 0 {
-		cfg.BitRate = 2000000
-	}
-	if cfg.PixelFormat == PixelFormatNone {
-		cfg.PixelFormat = PixelFormatYUV420P
-	}
-
-	return newEncoderToWriter(w, format, cfg, normalizeVideoFrameRate(video.FrameRate))
+	return NewEncoderFromIO(callbacks, format, opts)
 }
 
 // NewEncoderFromIO creates an encoder with custom I/O.
-// format is the output format (e.g., "mp4", "mkv", "avi").
-func NewEncoderFromIO(callbacks *IOCallbacks, format string, config EncoderConfig) (*Encoder, error) {
-	frameRate := normalizeVideoFrameRate(NewRational(int32(config.FrameRate), 1))
-	return newEncoderFromIO(callbacks, format, config, frameRate)
-}
-
-func newEncoderFromIO(callbacks *IOCallbacks, format string, config EncoderConfig, frameRate Rational) (*Encoder, error) {
-	// Ensure FFmpeg is loaded
-	if err := bindings.Load(); err != nil {
-		return nil, err
+// The encoder owns the CustomIOContext and closes it with Encoder.Close.
+func NewEncoderFromIO(callbacks *IOCallbacks, format string, opts *EncoderOptions) (*Encoder, error) {
+	if opts == nil {
+		return nil, errors.New("ffgo: EncoderOptions is required")
 	}
-
-	// Create custom I/O context (writable)
 	ioCtx, err := NewCustomIOContext(callbacks, true)
 	if err != nil {
 		return nil, err
 	}
-
-	// Allocate output context with format
-	var formatCtx avformat.FormatContext
-	if err := avformat.AllocOutputContext2(&formatCtx, nil, format, ""); err != nil {
-		ioCtx.Close()
+	options := *opts
+	if format != "" {
+		options.Format = format
+	}
+	encoder, err := newEncoder("", &options, ioCtx)
+	if err != nil {
+		_ = ioCtx.Close()
 		return nil, err
 	}
-
-	if formatCtx == nil {
-		ioCtx.Close()
-		return nil, errors.New("ffgo: failed to allocate output context")
-	}
-
-	// Set custom I/O
-	avformat.SetIOContext(formatCtx, ioCtx.AVIOContext())
-	avformat.AddFlags(formatCtx, avformat.AVFMT_FLAG_CUSTOM_IO)
-
-	// Create a new stream in the output container
-	stream := avformat.NewStream(formatCtx, nil)
-	if stream == nil {
-		avformat.FreeContext(formatCtx)
-		ioCtx.Close()
-		return nil, errors.New("ffgo: failed to create output stream")
-	}
-
-	frameRate = normalizeVideoFrameRate(frameRate)
-	timeBase := frameRate.Invert()
-	avformat.SetStreamTimeBase(stream, timeBase.Num, timeBase.Den)
-
-	// Find encoder
-	codec := avcodec.FindEncoder(config.CodecID)
-	if codec == nil {
-		avformat.FreeContext(formatCtx)
-		ioCtx.Close()
-		return nil, errors.New("ffgo: encoder not found")
-	}
-
-	// Allocate codec context
-	codecCtx := avcodec.AllocContext3(codec)
-	if codecCtx == nil {
-		avformat.FreeContext(formatCtx)
-		ioCtx.Close()
-		return nil, errors.New("ffgo: failed to allocate codec context")
-	}
-
-	// Configure codec context
-	avcodec.SetCtxWidth(codecCtx, int32(config.Width))
-	avcodec.SetCtxHeight(codecCtx, int32(config.Height))
-	avcodec.SetCtxPixFmt(codecCtx, int32(config.PixelFormat))
-	avcodec.SetCtxBitRate(codecCtx, config.BitRate)
-
-	if config.GOPSize > 0 {
-		avcodec.SetCtxGopSize(codecCtx, int32(config.GOPSize))
-	} else {
-		avcodec.SetCtxGopSize(codecCtx, 12)
-	}
-
-	avcodec.SetCtxMaxBFrames(codecCtx, int32(config.MaxBFrames))
-
-	avcodec.SetCtxFramerate(codecCtx, frameRate.Num, frameRate.Den)
-	avcodec.SetCtxTimeBase(codecCtx, timeBase.Num, timeBase.Den)
-
-	// Check if global header is needed
-	if avformat.NeedsGlobalHeader(formatCtx) {
-		flags := avcodec.GetCtxFlags(codecCtx)
-		avcodec.SetCtxFlags(codecCtx, flags|avcodec.CodecFlagGlobalHeader)
-	}
-
-	// Open codec
-	if err := avcodec.Open2(codecCtx, codec, nil); err != nil {
-		avcodec.FreeContext(&codecCtx)
-		avformat.FreeContext(formatCtx)
-		ioCtx.Close()
-		return nil, err
-	}
-
-	// Copy codec parameters to stream
-	codecPar := avformat.GetStreamCodecPar(stream)
-	if err := avcodec.ParametersFromContext(codecPar, codecCtx); err != nil {
-		avcodec.FreeContext(&codecCtx)
-		avformat.FreeContext(formatCtx)
-		ioCtx.Close()
-		return nil, err
-	}
-
-	// Write header
-	ioCtx.beginOperation()
-	if err := ioCtx.finishOperation(avformat.WriteHeader(formatCtx, nil)); err != nil {
-		avcodec.FreeContext(&codecCtx)
-		avformat.FreeContext(formatCtx)
-		ioCtx.Close()
-		return nil, err
-	}
-
-	// Allocate packet
-	packet := avcodec.PacketAlloc()
-	if packet == nil {
-		avcodec.FreeContext(&codecCtx)
-		avformat.FreeContext(formatCtx)
-		ioCtx.Close()
-		return nil, errors.New("ffgo: failed to allocate packet")
-	}
-
-	return &Encoder{
-		formatCtx:     formatCtx,
-		ioCtx:         ioCtx.AVIOContext(),
-		customIO:      ioCtx,
-		videoCodecCtx: codecCtx,
-		videoStream:   stream,
-		videoPacket:   packet,
-		codecCtx:      codecCtx,
-		stream:        stream,
-		packet:        packet,
-		width:         config.Width,
-		height:        config.Height,
-		pixFmt:        config.PixelFormat,
-		frameCount:    0,
-		timeBaseNum:   timeBase.Num,
-		timeBaseDen:   timeBase.Den,
-		headerWritten: true, // Header was already written above
-		hasVideo:      true,
-	}, nil
+	return encoder, nil
 }

@@ -321,15 +321,17 @@ func TestEncoder(t *testing.T) {
 	outFile := filepath.Join(tmpDir, "output.mp4")
 
 	// Create encoder
-	encoder, err := NewEncoder(outFile, EncoderConfig{
-		Width:       320,
-		Height:      240,
-		PixelFormat: PixelFormatYUV420P,
-		CodecID:     CodecIDH264,
-		BitRate:     1000000,
-		FrameRate:   30,
-		GOPSize:     12,
-		MaxBFrames:  0,
+	encoder, err := NewEncoder(outFile, &EncoderOptions{
+		Video: &VideoEncoderConfig{
+			Width:       320,
+			Height:      240,
+			PixelFormat: PixelFormatYUV420P,
+			Codec:       CodecIDH264,
+			Bitrate:     1000000,
+			FrameRate:   NewRational(30, 1),
+			GOPSize:     12,
+			MaxBFrames:  0,
+		},
 	})
 	if err != nil {
 		t.Fatalf("NewEncoder failed: %v", err)
@@ -358,14 +360,16 @@ func TestEncoderWriteFrames(t *testing.T) {
 	outFile := filepath.Join(tmpDir, "output.mp4")
 
 	// Create encoder
-	encoder, err := NewEncoder(outFile, EncoderConfig{
-		Width:       160,
-		Height:      120,
-		PixelFormat: PixelFormatYUV420P,
-		CodecID:     CodecIDH264,
-		BitRate:     500000,
-		FrameRate:   15,
-		GOPSize:     10,
+	encoder, err := NewEncoder(outFile, &EncoderOptions{
+		Video: &VideoEncoderConfig{
+			Width:       160,
+			Height:      120,
+			PixelFormat: PixelFormatYUV420P,
+			Codec:       CodecIDH264,
+			Bitrate:     500000,
+			FrameRate:   NewRational(15, 1),
+			GOPSize:     10,
+		},
 	})
 	if err != nil {
 		t.Fatalf("NewEncoder failed: %v", err)
@@ -508,14 +512,16 @@ func TestEncoderWithDecoder(t *testing.T) {
 	videoInfo := decoder.VideoStream()
 
 	// Create encoder with same dimensions
-	encoder, err := NewEncoder(outputFile, EncoderConfig{
-		Width:       videoInfo.Width,
-		Height:      videoInfo.Height,
-		PixelFormat: PixelFormatYUV420P,
-		CodecID:     CodecIDH264,
-		BitRate:     500000,
-		FrameRate:   30,
-		GOPSize:     12,
+	encoder, err := NewEncoder(outputFile, &EncoderOptions{
+		Video: &VideoEncoderConfig{
+			Width:       videoInfo.Width,
+			Height:      videoInfo.Height,
+			PixelFormat: PixelFormatYUV420P,
+			Codec:       CodecIDH264,
+			Bitrate:     500000,
+			FrameRate:   NewRational(30, 1),
+			GOPSize:     12,
+		},
 	})
 	if err != nil {
 		t.Fatalf("NewEncoder failed: %v", err)
@@ -730,7 +736,7 @@ func TestEncoderWithAudio(t *testing.T) {
 	outFile := filepath.Join(tmpDir, "audio_video.mp4")
 
 	// Create encoder with audio
-	encoder, err := NewEncoderWithOptions(outFile, &EncoderOptions{
+	encoder, err := NewEncoder(outFile, &EncoderOptions{
 		Video: &VideoEncoderConfig{
 			Codec:       CodecIDH264,
 			Width:       320,
@@ -747,8 +753,9 @@ func TestEncoderWithAudio(t *testing.T) {
 			Bitrate:    128000,
 		},
 	})
+
 	if err != nil {
-		t.Fatalf("NewEncoderWithOptions failed: %v", err)
+		t.Fatalf("NewEncoder failed: %v", err)
 	}
 	defer encoder.Close()
 
@@ -783,7 +790,7 @@ func TestEncoderWriteVideoAndAudioFrames(t *testing.T) {
 	outFile := filepath.Join(tmpDir, "av_output.mp4")
 
 	// Create encoder with audio
-	encoder, err := NewEncoderWithOptions(outFile, &EncoderOptions{
+	encoder, err := NewEncoder(outFile, &EncoderOptions{
 		Video: &VideoEncoderConfig{
 			Codec:       CodecIDH264,
 			Width:       160,
@@ -800,8 +807,9 @@ func TestEncoderWriteVideoAndAudioFrames(t *testing.T) {
 			Bitrate:    96000,
 		},
 	})
+
 	if err != nil {
-		t.Fatalf("NewEncoderWithOptions failed: %v", err)
+		t.Fatalf("NewEncoder failed: %v", err)
 	}
 
 	// Allocate video frame
@@ -1418,19 +1426,20 @@ func TestEncoderWithPreset(t *testing.T) {
 	dir := t.TempDir()
 	outPath := filepath.Join(dir, "preset_test.mp4")
 
-	enc, err := NewEncoderWithOptions(outPath, &EncoderOptions{
+	enc, err := NewEncoder(outPath, &EncoderOptions{
 		Video: &VideoEncoderConfig{
 			Width:       320,
 			Height:      240,
 			FrameRate:   Rational{Num: 30, Den: 1},
 			Bitrate:     500000,
 			PixelFormat: PixelFormatYUV420P,
-			Preset:      PresetUltrafast, // Should produce fast encoding
+			Preset:      PresetUltrafast,
 			GOPSize:     10,
 		},
 	})
+
 	if err != nil {
-		t.Fatalf("NewEncoderWithOptions with preset failed: %v", err)
+		t.Fatalf("NewEncoder with preset failed: %v", err)
 	}
 	defer enc.Close()
 
@@ -1444,20 +1453,21 @@ func TestEncoderWithCRF(t *testing.T) {
 	dir := t.TempDir()
 	outPath := filepath.Join(dir, "crf_test.mp4")
 
-	enc, err := NewEncoderWithOptions(outPath, &EncoderOptions{
+	enc, err := NewEncoder(outPath, &EncoderOptions{
 		Video: &VideoEncoderConfig{
 			Width:       320,
 			Height:      240,
 			FrameRate:   Rational{Num: 30, Den: 1},
 			PixelFormat: PixelFormatYUV420P,
 			RateControl: RateControlCRF,
-			CRF:         23, // Typical quality setting
+			CRF:         23,
 			Preset:      PresetMedium,
 			GOPSize:     10,
 		},
 	})
+
 	if err != nil {
-		t.Fatalf("NewEncoderWithOptions with CRF failed: %v", err)
+		t.Fatalf("NewEncoder with CRF failed: %v", err)
 	}
 	defer enc.Close()
 
@@ -1471,21 +1481,22 @@ func TestEncoderWithProfile(t *testing.T) {
 	dir := t.TempDir()
 	outPath := filepath.Join(dir, "profile_test.mp4")
 
-	enc, err := NewEncoderWithOptions(outPath, &EncoderOptions{
+	enc, err := NewEncoder(outPath, &EncoderOptions{
 		Video: &VideoEncoderConfig{
 			Width:       320,
 			Height:      240,
 			FrameRate:   Rational{Num: 30, Den: 1},
 			Bitrate:     500000,
 			PixelFormat: PixelFormatYUV420P,
-			Profile:     ProfileBaseline, // Most compatible
+			Profile:     ProfileBaseline,
 			Level:       Level3,
 			Preset:      PresetFast,
 			GOPSize:     10,
 		},
 	})
+
 	if err != nil {
-		t.Fatalf("NewEncoderWithOptions with profile failed: %v", err)
+		t.Fatalf("NewEncoder with profile failed: %v", err)
 	}
 	defer enc.Close()
 
@@ -1499,7 +1510,7 @@ func TestEncoderWithCodecOptions(t *testing.T) {
 	dir := t.TempDir()
 	outPath := filepath.Join(dir, "options_test.mp4")
 
-	enc, err := NewEncoderWithOptions(outPath, &EncoderOptions{
+	enc, err := NewEncoder(outPath, &EncoderOptions{
 		Video: &VideoEncoderConfig{
 			Width:       320,
 			Height:      240,
@@ -1509,12 +1520,13 @@ func TestEncoderWithCodecOptions(t *testing.T) {
 			Preset:      PresetFast,
 			GOPSize:     10,
 			CodecOptions: map[string]string{
-				"bf": "0", // No B-frames
+				"bf": "0",
 			},
 		},
 	})
+
 	if err != nil {
-		t.Fatalf("NewEncoderWithOptions with codec options failed: %v", err)
+		t.Fatalf("NewEncoder with codec options failed: %v", err)
 	}
 	defer enc.Close()
 
@@ -1528,7 +1540,7 @@ func TestEncoderWithAdvancedOptionsEncode(t *testing.T) {
 	dir := t.TempDir()
 	outPath := filepath.Join(dir, "advanced_encode.mp4")
 
-	enc, err := NewEncoderWithOptions(outPath, &EncoderOptions{
+	enc, err := NewEncoder(outPath, &EncoderOptions{
 		Video: &VideoEncoderConfig{
 			Width:       160,
 			Height:      120,
@@ -1542,8 +1554,9 @@ func TestEncoderWithAdvancedOptionsEncode(t *testing.T) {
 			MaxBFrames:  0,
 		},
 	})
+
 	if err != nil {
-		t.Fatalf("NewEncoderWithOptions failed: %v", err)
+		t.Fatalf("NewEncoder failed: %v", err)
 	}
 	defer enc.Close()
 
@@ -1594,12 +1607,14 @@ func TestRemuxer(t *testing.T) {
 	srcPath := filepath.Join(srcDir, "source.mp4")
 
 	// Create a source file with encoder
-	enc, err := NewEncoder(srcPath, EncoderConfig{
-		Width:     160,
-		Height:    120,
-		FrameRate: 30,
-		BitRate:   500000,
-		GOPSize:   5,
+	enc, err := NewEncoder(srcPath, &EncoderOptions{
+		Video: &VideoEncoderConfig{
+			Width:     160,
+			Height:    120,
+			FrameRate: NewRational(30, 1),
+			Bitrate:   500000,
+			GOPSize:   5,
+		},
 	})
 	if err != nil {
 		t.Fatalf("Failed to create encoder: %v", err)
@@ -1677,7 +1692,7 @@ func TestRemuxerSelectStreams(t *testing.T) {
 	srcDir := t.TempDir()
 	srcPath := filepath.Join(srcDir, "source.mp4")
 
-	enc, err := NewEncoderWithOptions(srcPath, &EncoderOptions{
+	enc, err := NewEncoder(srcPath, &EncoderOptions{
 		Video: &VideoEncoderConfig{
 			Width:       160,
 			Height:      120,
@@ -1692,6 +1707,7 @@ func TestRemuxerSelectStreams(t *testing.T) {
 			Bitrate:    64000,
 		},
 	})
+
 	if err != nil {
 		t.Fatalf("Failed to create encoder: %v", err)
 	}
@@ -1797,7 +1813,7 @@ func TestMetadataWrite(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "metadata_write.mkv")
 
 	// Create encoder with metadata
-	enc, err := NewEncoderWithOptions(testFile, &EncoderOptions{
+	enc, err := NewEncoder(testFile, &EncoderOptions{
 		Video: &VideoEncoderConfig{
 			Width:       160,
 			Height:      120,
@@ -1807,6 +1823,7 @@ func TestMetadataWrite(t *testing.T) {
 			GOPSize:     5,
 		},
 	})
+
 	if err != nil {
 		t.Fatalf("Failed to create encoder: %v", err)
 	}
@@ -2371,7 +2388,7 @@ func TestStreamMetadata(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "stream_meta.mkv")
 
 	// Create encoder
-	enc, err := NewEncoderWithOptions(testFile, &EncoderOptions{
+	enc, err := NewEncoder(testFile, &EncoderOptions{
 		Video: &VideoEncoderConfig{
 			Width:       160,
 			Height:      120,
@@ -2381,6 +2398,7 @@ func TestStreamMetadata(t *testing.T) {
 			GOPSize:     5,
 		},
 	})
+
 	if err != nil {
 		t.Fatalf("Failed to create encoder: %v", err)
 	}

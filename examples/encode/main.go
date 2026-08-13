@@ -44,15 +44,17 @@ func main() {
 
 	fmt.Printf("\nCreating encoder: %dx%d, %d fps, %d frames\n", width, height, frameRate, totalFrames)
 
-	encoder, err := ffgo.NewEncoder(outputFile, ffgo.EncoderConfig{
-		Width:       width,
-		Height:      height,
-		PixelFormat: ffgo.PixelFormatYUV420P,
-		CodecID:     ffgo.CodecIDH264,
-		BitRate:     1000000, // 1 Mbps
-		FrameRate:   frameRate,
-		GOPSize:     12,
-		MaxBFrames:  0,
+	encoder, err := ffgo.NewEncoder(outputFile, &ffgo.EncoderOptions{
+		Video: &ffgo.VideoEncoderConfig{
+			Width:       width,
+			Height:      height,
+			PixelFormat: ffgo.PixelFormatYUV420P,
+			Codec:       ffgo.CodecIDH264,
+			Bitrate:     1000000, // 1 Mbps
+			FrameRate:   ffgo.NewRational(int32(frameRate), 1),
+			GOPSize:     12,
+			MaxBFrames:  0,
+		},
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create encoder: %v\n", err)

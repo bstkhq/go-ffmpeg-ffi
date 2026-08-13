@@ -162,13 +162,15 @@ func TestEncoderFromIOOwnsContextAndWritesFrames(t *testing.T) {
 		WriteContext: func(_ context.Context, data []byte) (int, error) {
 			return output.Write(data)
 		},
-	}, "mpegts", EncoderConfig{
-		Width:       16,
-		Height:      16,
-		PixelFormat: PixelFormatYUV420P,
-		CodecID:     avcodec.CodecIDMPEG2VIDEO,
-		BitRate:     100_000,
-		FrameRate:   10,
+	}, "mpegts", &EncoderOptions{
+		Video: &VideoEncoderConfig{
+			Width:       16,
+			Height:      16,
+			PixelFormat: PixelFormatYUV420P,
+			Codec:       avcodec.CodecIDMPEG2VIDEO,
+			Bitrate:     100_000,
+			FrameRate:   NewRational(10, 1),
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -203,13 +205,29 @@ func TestEncoderFromIOOwnsContextAndWritesFrames(t *testing.T) {
 	}
 }
 
+func TestEncoderFromIONilOptionsDoesNotLeakContext(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+	before := handles.Count()
+	_, err := NewEncoderFromIO(&IOCallbacks{
+		Write: func(data []byte) (int, error) { return len(data), nil },
+	}, "mpegts", nil)
+	if err == nil {
+		t.Fatal("expected nil options to fail")
+	}
+	if got := handles.Count(); got != before {
+		t.Fatalf("registered handles = %d, want baseline %d", got, before)
+	}
+}
+
 func TestEncoderToWriterPreservesFractionalFrameRate(t *testing.T) {
 	if !requireFFmpeg(t) {
 		return
 	}
 
 	var output bytes.Buffer
-	encoder, err := NewEncoderToWriterWithOptions(&output, "mpegts", &EncoderOptions{
+	encoder, err := NewEncoderToWriter(&output, "mpegts", &EncoderOptions{
 		Video: &VideoEncoderConfig{
 			Codec:       avcodec.CodecIDMPEG2VIDEO,
 			Width:       16,

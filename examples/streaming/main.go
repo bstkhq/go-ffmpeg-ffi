@@ -12,7 +12,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/bstkhq/go-ffmpeg-ffi"
 )
@@ -48,8 +47,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	enc, err := ffgo.NewStreamingEncoder(outURL,
-		ffgo.WithVideoEncoder(&ffgo.VideoEncoderConfig{
+	enc, err := ffgo.NewStreamingEncoder(outURL, &ffgo.EncoderOptions{
+		Video: &ffgo.VideoEncoderConfig{
 			Codec:       ffgo.CodecIDH264,
 			Width:       v.Width,
 			Height:      v.Height,
@@ -58,12 +57,13 @@ func main() {
 			RateControl: ffgo.RateControlCRF,
 			CRF:         23,
 			Preset:      ffgo.PresetVeryfast,
-		}),
-		ffgo.WithStreamingOptions(&ffgo.StreamingOptions{
-			Timeout:  10 * time.Second,
-			MaxDelay: 500 * time.Millisecond,
-		}),
-	)
+		},
+		IOOptions: map[string]string{
+			"timeout":    "10000000",
+			"rw_timeout": "10000000",
+			"max_delay":  "500000",
+		},
+	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create streaming encoder: %v\n", err)
 		os.Exit(1)

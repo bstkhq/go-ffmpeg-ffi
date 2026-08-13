@@ -16,7 +16,7 @@ func TestEncoderPreservesFractionalFrameRate(t *testing.T) {
 		return
 	}
 
-	encoder, err := NewEncoderWithOptions(filepath.Join(t.TempDir(), "ntsc.mkv"), &EncoderOptions{
+	encoder, err := NewEncoder(filepath.Join(t.TempDir(), "ntsc.mkv"), &EncoderOptions{
 		Video: &VideoEncoderConfig{
 			Codec:       avcodec.CodecIDMPEG4,
 			Width:       16,
@@ -26,6 +26,7 @@ func TestEncoderPreservesFractionalFrameRate(t *testing.T) {
 			Bitrate:     100_000,
 		},
 	})
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,15 +51,17 @@ func TestEncoderFlushPreservesDelayedFrames(t *testing.T) {
 	}
 	const frameCount = 30
 	output := filepath.Join(t.TempDir(), "delayed.mp4")
-	encoder, err := NewEncoder(output, EncoderConfig{
-		Width:       160,
-		Height:      120,
-		PixelFormat: PixelFormatYUV420P,
-		CodecID:     avcodec.CodecIDMPEG4,
-		BitRate:     300000,
-		FrameRate:   15,
-		GOPSize:     12,
-		MaxBFrames:  2,
+	encoder, err := NewEncoder(output, &EncoderOptions{
+		Video: &VideoEncoderConfig{
+			Width:       160,
+			Height:      120,
+			PixelFormat: PixelFormatYUV420P,
+			Codec:       avcodec.CodecIDMPEG4,
+			Bitrate:     300000,
+			FrameRate:   NewRational(15, 1),
+			GOPSize:     12,
+			MaxBFrames:  2,
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
