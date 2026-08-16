@@ -26,28 +26,30 @@ type ImageSequenceConfig struct {
 // NewImageSequenceDecoder creates a decoder that reads an image sequence as video.
 // The pattern should use printf-style format specifier (e.g., "frame_%04d.png").
 // The sequence is decoded as a video stream with the specified frame rate.
-func NewImageSequenceDecoder(config ImageSequenceConfig) (*Decoder, error) {
+func NewImageSequenceDecoder(config ImageSequenceConfig, decoderOpts *DecoderOptions) (*Decoder, error) {
 	if config.Pattern == "" {
 		return nil, fmt.Errorf("ffmpeg: image sequence pattern cannot be empty")
 	}
+	return NewDecoder(config.Pattern, imageSequenceDecoderOptions(config, decoderOpts))
+}
 
-	opts := map[string]string{
-		"pattern_type": "sequence", // Required for glob-style patterns
+func imageSequenceDecoderOptions(config ImageSequenceConfig, decoderOpts *DecoderOptions) *DecoderOptions {
+	decoderOpts = cloneDecoderOptions(decoderOpts)
+	if decoderOpts.AVOptions == nil {
+		decoderOpts.AVOptions = make(map[string]string)
 	}
+	decoderOpts.Format = "image2"
+	decoderOpts.AVOptions["pattern_type"] = "sequence"
 
 	if config.StartNumber > 0 {
-		opts["start_number"] = fmt.Sprintf("%d", config.StartNumber)
+		decoderOpts.AVOptions["start_number"] = fmt.Sprintf("%d", config.StartNumber)
 	}
 
 	if config.FrameRate.Num > 0 && config.FrameRate.Den > 0 {
-		opts["framerate"] = fmt.Sprintf("%d/%d", config.FrameRate.Num, config.FrameRate.Den)
+		decoderOpts.AVOptions["framerate"] = fmt.Sprintf("%d/%d", config.FrameRate.Num, config.FrameRate.Den)
 	}
 
-	return NewDecoder(config.Pattern, &DecoderOptions{
-		Format:    "image2",
-		AVOptions: opts,
-	})
-
+	return decoderOpts
 }
 
 // NewImageSequenceEncoder creates an encoder that writes video as an image sequence.

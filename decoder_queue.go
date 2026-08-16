@@ -249,6 +249,7 @@ func (d *Decoder) clearDecodeStateLocked() {
 	d.prefetchedMedia = MediaTypeUnknown
 	avcodec.PacketUnref(d.packet)
 	avutil.FrameUnref(d.frame)
+	avutil.FrameUnref(d.hardwareSoftwareFrame)
 }
 
 func (d *Decoder) prefetchCurrentFrameLocked(mediaType MediaType) error {

@@ -27,11 +27,12 @@ type Decoder struct {
 	mu          sync.Mutex
 	closeSignal sync.Once
 
-	formatCtx     avformat.FormatContext
-	videoCodecCtx avcodec.Context
-	audioCodecCtx avcodec.Context
-	packet        avcodec.Packet
-	frame         avutil.Frame
+	formatCtx             avformat.FormatContext
+	videoCodecCtx         avcodec.Context
+	audioCodecCtx         avcodec.Context
+	packet                avcodec.Packet
+	frame                 avutil.Frame
+	hardwareSoftwareFrame avutil.Frame
 
 	videoStreamIdx int
 	audioStreamIdx int
@@ -54,14 +55,21 @@ type Decoder struct {
 	interrupt        *decoderInterrupt
 	cleanup          func()
 	closed           bool
+
+	hardwareConfig         *HWDecoderConfig
+	ownedHWDevice          *HWDevice
+	hardwarePixelFormat    int32
+	hardwareSoftwareOutput bool
+	videoDecoderInfo       VideoDecoderInfo
 }
 
 func newDecoder(interrupt *decoderInterrupt) *Decoder {
 	return &Decoder{
-		videoStreamIdx:  -1,
-		audioStreamIdx:  -1,
-		interrupt:       interrupt,
-		streamInfoCache: make(map[int]*StreamInfo),
+		videoStreamIdx:      -1,
+		audioStreamIdx:      -1,
+		interrupt:           interrupt,
+		streamInfoCache:     make(map[int]*StreamInfo),
+		hardwarePixelFormat: int32(avutil.PixelFormatNone),
 	}
 }
 
@@ -122,8 +130,9 @@ type DecoderOptions struct {
 	// When set, ffmpeg will pick the best video/audio streams within the program.
 	ProgramID int
 
-	// HWDevice specifies the hardware device for hardware acceleration (e.g., "cuda", "vaapi")
-	HWDevice string
+	// Hardware enables video hardware acceleration. Nil keeps software decoding.
+	// Use an empty HWDecoderConfig for automatic platform-aware selection.
+	Hardware *HWDecoderConfig
 }
 
 func buildDecoderAVOptions(opts *DecoderOptions) map[string]string {
@@ -163,6 +172,7 @@ func cloneDecoderOptions(opts *DecoderOptions) *DecoderOptions {
 	clone.CodecWhitelist = append([]string(nil), opts.CodecWhitelist...)
 	clone.FormatBlacklist = append([]string(nil), opts.FormatBlacklist...)
 	clone.Streams = append([]MediaType(nil), opts.Streams...)
+	clone.Hardware = cloneHWDecoderConfig(opts.Hardware)
 	return &clone
 }
 
@@ -191,11 +201,16 @@ func NewDecoderContext(ctx context.Context, path string, opts *DecoderOptions) (
 	if err := bindings.Load(); err != nil {
 		return nil, err
 	}
-	if opts == nil {
-		opts = &DecoderOptions{}
+	opts = cloneDecoderOptions(opts)
+	if err := validateHWDecoderConfig(opts.Hardware); err != nil {
+		return nil, err
 	}
 
 	d := newDecoder(newDecoderInterrupt())
+	d.hardwareConfig = opts.Hardware
+	if opts.Hardware != nil && opts.Hardware.Mode != HardwareAccelerationDisabled {
+		d.videoDecoderInfo.HardwareState = HardwareStatePending
+	}
 	if err := d.beginInterrupt(ctx); err != nil {
 		d.interrupt.release(nil)
 		return nil, err
@@ -447,32 +462,15 @@ func (d *Decoder) openVideoDecoderLocked() error {
 	codecPar := avformat.GetStreamCodecPar(stream)
 	codecID := avformat.GetCodecParCodecID(codecPar)
 
-	// Find decoder
-	codec := avcodec.FindDecoder(codecID)
-	if codec == nil {
-		return errors.New("ffmpeg: decoder not found")
-	}
+	return d.openHardwareVideoDecoderLocked(codecPar, codecID)
+}
 
-	// Allocate codec context
-	d.videoCodecCtx = avcodec.AllocContext3(codec)
-	if d.videoCodecCtx == nil {
-		return errors.New("ffmpeg: failed to allocate codec context")
-	}
-
-	// Copy codec parameters
-	if err := avcodec.ParametersToContext(d.videoCodecCtx, codecPar); err != nil {
-		avcodec.FreeContext(&d.videoCodecCtx)
-		return err
-	}
-
-	// Open codec
-	if err := avcodec.Open2(d.videoCodecCtx, codec, nil); err != nil {
-		avcodec.FreeContext(&d.videoCodecCtx)
-		return err
-	}
-
-	d.videoDecoderOpen = true
-	return nil
+// VideoDecoderInfo returns the resolved decoder and hardware state. Hardware
+// selection is lazy, so HardwareState is pending until the video decoder opens.
+func (d *Decoder) VideoDecoderInfo() VideoDecoderInfo {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.videoDecoderInfo
 }
 
 // OpenAudioDecoder opens a codec context for audio decoding.
@@ -595,7 +593,7 @@ func (d *Decoder) decodePacketLocked(mediaType MediaType, packet *Packet) (Frame
 		}
 		return Frame{}, nil
 	}
-	return Frame{ptr: d.frame, owned: false}, nil
+	return d.prepareDecodedFrameLocked(mediaType)
 }
 
 // DecodeAudioPacketCopy decodes an audio packet and returns an owned frame.
@@ -822,6 +820,9 @@ func (d *Decoder) Close() error {
 	if d.frame != nil {
 		avutil.FrameFree(&d.frame)
 	}
+	if d.hardwareSoftwareFrame != nil {
+		avutil.FrameFree(&d.hardwareSoftwareFrame)
+	}
 
 	// Free packet
 	if d.packet != nil {
@@ -831,6 +832,10 @@ func (d *Decoder) Close() error {
 	// Free video codec context
 	if d.videoCodecCtx != nil {
 		avcodec.FreeContext(&d.videoCodecCtx)
+	}
+	if d.ownedHWDevice != nil {
+		_ = d.ownedHWDevice.Close()
+		d.ownedHWDevice = nil
 	}
 
 	// Free audio codec context

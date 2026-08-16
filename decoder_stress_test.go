@@ -20,7 +20,16 @@ func TestDecoderLifecycle(t *testing.T) {
 	if !requireFFmpeg(t) {
 		return
 	}
-	runDecoderLifecycleTest(t, 8, false)
+	runDecoderLifecycleTest(t, 8, false, nil)
+}
+
+func TestDecoderAutoHardwareLifecycle(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+	runDecoderLifecycleTest(t, 8, false, &DecoderOptions{
+		Hardware: &HWDecoderConfig{},
+	})
 }
 
 func TestDecoderLifecycleStress(t *testing.T) {
@@ -39,10 +48,12 @@ func TestDecoderLifecycleStress(t *testing.T) {
 		}
 		iterations = parsed
 	}
-	runDecoderLifecycleTest(t, iterations, true)
+	runDecoderLifecycleTest(t, iterations, true, &DecoderOptions{
+		Hardware: &HWDecoderConfig{},
+	})
 }
 
-func runDecoderLifecycleTest(t *testing.T, iterations int, assertMemory bool) {
+func runDecoderLifecycleTest(t *testing.T, iterations int, assertMemory bool, opts *DecoderOptions) {
 	t.Helper()
 	input := createTestVideo(t)
 	runtime.GC()
@@ -67,7 +78,7 @@ func runDecoderLifecycleTest(t *testing.T, iterations int, assertMemory bool) {
 		go func() {
 			defer group.Done()
 			for iteration := range jobs {
-				if err := exerciseDecoderLifecycle(input); err != nil {
+				if err := exerciseDecoderLifecycle(input, opts); err != nil {
 					errorsFound <- fmt.Errorf("iteration %d: %w", iteration, err)
 				}
 			}
@@ -110,8 +121,8 @@ func runDecoderLifecycleTest(t *testing.T, iterations int, assertMemory bool) {
 	}
 }
 
-func exerciseDecoderLifecycle(input string) error {
-	decoder, err := NewDecoder(input, nil)
+func exerciseDecoderLifecycle(input string, opts *DecoderOptions) error {
+	decoder, err := NewDecoder(input, opts)
 	if err != nil {
 		return err
 	}
@@ -143,6 +154,13 @@ func exerciseDecoderLifecycle(input string) error {
 	if _, err := decoder.DecodeVideo(); err != nil {
 		_ = decoder.Close()
 		return err
+	}
+	if opts != nil && opts.Hardware != nil {
+		state := decoder.VideoDecoderInfo().HardwareState
+		if state != HardwareStateActive && state != HardwareStateFallback {
+			_ = decoder.Close()
+			return fmt.Errorf("hardware decoder state after output is %s", state)
+		}
 	}
 	return decoder.Close()
 }

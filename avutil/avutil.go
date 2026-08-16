@@ -40,6 +40,7 @@ var (
 	avFrameAlloc          func() unsafe.Pointer
 	avFrameFree           func(frame *unsafe.Pointer)
 	avFrameRef            func(dst, src uintptr) int32
+	avFrameCopyProps      func(dst, src uintptr) int32
 	avFrameUnref          func(frame uintptr)
 	avFrameGetBuffer      func(frame uintptr, align int32) int32
 	avFrameMakeWritable   func(frame uintptr) int32
@@ -71,6 +72,7 @@ var (
 	avHWDeviceCtxCreate      func(deviceCtx *unsafe.Pointer, deviceType int32, device string, opts uintptr, flags int32) int32
 	avHWDeviceFindTypeByName func(name string) int32
 	avHWDeviceGetTypeName    func(deviceType int32) unsafe.Pointer
+	avHWDeviceIterateTypes   func(previousType int32) int32
 	avHWFrameTransferData    func(dst, src uintptr, flags int32) int32
 
 	// Buffer reference functions
@@ -106,6 +108,7 @@ func registerBindings() {
 	purego.RegisterLibFunc(&avFrameAlloc, lib, "av_frame_alloc")
 	purego.RegisterLibFunc(&avFrameFree, lib, "av_frame_free")
 	purego.RegisterLibFunc(&avFrameRef, lib, "av_frame_ref")
+	purego.RegisterLibFunc(&avFrameCopyProps, lib, "av_frame_copy_props")
 	purego.RegisterLibFunc(&avFrameUnref, lib, "av_frame_unref")
 	purego.RegisterLibFunc(&avFrameGetBuffer, lib, "av_frame_get_buffer")
 	purego.RegisterLibFunc(&avFrameMakeWritable, lib, "av_frame_make_writable")
@@ -137,6 +140,7 @@ func registerBindings() {
 	purego.RegisterLibFunc(&avHWDeviceCtxCreate, lib, "av_hwdevice_ctx_create")
 	purego.RegisterLibFunc(&avHWDeviceFindTypeByName, lib, "av_hwdevice_find_type_by_name")
 	purego.RegisterLibFunc(&avHWDeviceGetTypeName, lib, "av_hwdevice_get_type_name")
+	purego.RegisterLibFunc(&avHWDeviceIterateTypes, lib, "av_hwdevice_iterate_types")
 	purego.RegisterLibFunc(&avHWFrameTransferData, lib, "av_hwframe_transfer_data")
 
 	// Buffer reference functions
@@ -175,6 +179,18 @@ func FrameRef(dst, src Frame) error {
 	ret := avFrameRef(uintptr(dst), uintptr(src))
 	if ret < 0 {
 		return NewError(ret, "av_frame_ref")
+	}
+	return nil
+}
+
+// FrameCopyProps copies frame metadata without copying its data buffers.
+func FrameCopyProps(dst, src Frame) error {
+	if avFrameCopyProps == nil {
+		return bindings.ErrNotLoaded
+	}
+	ret := avFrameCopyProps(uintptr(dst), uintptr(src))
+	if ret < 0 {
+		return NewError(ret, "av_frame_copy_props")
 	}
 	return nil
 }
@@ -674,6 +690,9 @@ const (
 	HWDeviceTypeOpenCL       HWDeviceType = 9
 	HWDeviceTypeMediaCodec   HWDeviceType = 10
 	HWDeviceTypeVulkan       HWDeviceType = 11
+	HWDeviceTypeD3D12VA      HWDeviceType = 12
+	HWDeviceTypeAMF          HWDeviceType = 13
+	HWDeviceTypeOHCodec      HWDeviceType = 14
 )
 
 // HWDeviceCtxCreate creates a hardware device context.
@@ -711,6 +730,15 @@ func HWDeviceGetTypeName(deviceType HWDeviceType) string {
 		return ""
 	}
 	return cstr.String(ptr, 256)
+}
+
+// HWDeviceIterateTypes returns the next hardware device type supported by the
+// loaded FFmpeg build, or HWDeviceTypeNone after the last type.
+func HWDeviceIterateTypes(previousType HWDeviceType) HWDeviceType {
+	if avHWDeviceIterateTypes == nil {
+		return HWDeviceTypeNone
+	}
+	return HWDeviceType(avHWDeviceIterateTypes(int32(previousType)))
 }
 
 // HWFrameTransferData copies data from a hardware frame to a software frame.

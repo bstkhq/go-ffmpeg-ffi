@@ -47,6 +47,10 @@ func TestCloneDecoderOptionsDeepCopiesMutableFields(t *testing.T) {
 		FormatBlacklist:    []string{"mpegts"},
 		Streams:            []MediaType{MediaTypeVideo},
 		TryMultipleFormats: true,
+		Hardware: &HWDecoderConfig{
+			Mode:       HardwareAccelerationRequired,
+			DeviceType: HWDeviceTypeVAAPI,
+		},
 	}
 
 	clone := cloneDecoderOptions(original)
@@ -55,10 +59,11 @@ func TestCloneDecoderOptionsDeepCopiesMutableFields(t *testing.T) {
 	clone.CodecWhitelist[0] = "aac"
 	clone.FormatBlacklist[0] = "avi"
 	clone.Streams[0] = MediaTypeAudio
+	clone.Hardware.DeviceType = HWDeviceTypeCUDA
 
 	if original.AVOptions["safe"] != "1" || original.FormatWhitelist[0] != "mov" ||
 		original.CodecWhitelist[0] != "h264" || original.FormatBlacklist[0] != "mpegts" ||
-		original.Streams[0] != MediaTypeVideo {
+		original.Streams[0] != MediaTypeVideo || original.Hardware.DeviceType != HWDeviceTypeVAAPI {
 		t.Fatalf("clone mutated caller options: %#v", original)
 	}
 }

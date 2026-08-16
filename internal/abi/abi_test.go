@@ -98,6 +98,12 @@ func TestDetectSupportedLayouts(t *testing.T) {
 			if layout.Codec.Name != 0 {
 				t.Fatalf("codec name offset = %d, want 0", layout.Codec.Name)
 			}
+			if layout.Codec.ID != 20 {
+				t.Fatalf("codec id offset = %d, want 20", layout.Codec.ID)
+			}
+			if layout.CodecHWConfig != (CodecHWConfigLayout{PixelFormat: 0, Methods: 4, DeviceType: 8}) {
+				t.Fatalf("codec hardware config layout = %#v", layout.CodecHWConfig)
+			}
 		})
 	}
 }

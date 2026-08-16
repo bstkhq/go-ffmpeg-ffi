@@ -504,7 +504,7 @@ func FrameAlloc() Frame {
 // Important: only call FrameFree on frames you OWN, e.g.:
 // - frames you allocated with FrameAlloc()
 // - frames returned by APIs that explicitly say "caller must free"
-// - frames returned from FrameClone / FrameWrapper.Copy / HWDecoder.TransferToSystem
+// - frames returned from FrameClone or FrameWrapper.Copy
 //
 // Do NOT call FrameFree on decoder-owned frames returned from Decoder.Decode* / Decoder.ReadFrame,
 // which are reused internally by the decoder. If you need to keep a decoder frame, call FrameClone

@@ -3,6 +3,7 @@
 package ffmpeg
 
 import (
+	"context"
 	"fmt"
 	"time"
 )
@@ -36,86 +37,98 @@ type ProtocolOptions struct {
 	AVOptions map[string]string // Additional raw FFmpeg options
 }
 
-// NewNetworkDecoder opens a network stream with protocol-specific options.
+// NewNetworkDecoder opens a network stream with decoder and protocol-specific
+// options.
 // Supports RTMP, RTSP, HLS (HTTP), SRT, and other FFmpeg-supported protocols.
-func NewNetworkDecoder(url string, opts *ProtocolOptions) (*Decoder, error) {
-	if opts == nil {
-		opts = &ProtocolOptions{}
+func NewNetworkDecoder(url string, decoderOpts *DecoderOptions, protocolOpts *ProtocolOptions) (*Decoder, error) {
+	return NewNetworkDecoderContext(context.Background(), url, decoderOpts, protocolOpts)
+}
+
+// NewNetworkDecoderContext opens a network stream and allows connection,
+// probing, and I/O to be canceled through ctx.
+func NewNetworkDecoderContext(ctx context.Context, url string, decoderOpts *DecoderOptions, protocolOpts *ProtocolOptions) (*Decoder, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("ffmpeg: context cannot be nil")
+	}
+	return NewDecoderContext(ctx, url, mergeProtocolDecoderOptions(decoderOpts, protocolOpts))
+}
+
+func mergeProtocolDecoderOptions(decoderOpts *DecoderOptions, protocolOpts *ProtocolOptions) *DecoderOptions {
+	if protocolOpts == nil {
+		protocolOpts = &ProtocolOptions{}
+	}
+	decoderOpts = cloneDecoderOptions(decoderOpts)
+	if decoderOpts.AVOptions == nil {
+		decoderOpts.AVOptions = make(map[string]string)
 	}
 
-	// Build AVOptions from ProtocolOptions
-	avOpts := make(map[string]string)
-
-	// Copy any additional AVOptions first
-	for k, v := range opts.AVOptions {
-		avOpts[k] = v
+	// Protocol raw options override generic raw options. Typed protocol fields
+	// are applied afterwards and therefore have the final say.
+	for key, value := range protocolOpts.AVOptions {
+		decoderOpts.AVOptions[key] = value
 	}
 
 	// Connection options
-	if opts.Timeout > 0 {
+	if protocolOpts.Timeout > 0 {
 		// FFmpeg uses microseconds for timeout
-		avOpts["timeout"] = fmt.Sprintf("%d", opts.Timeout.Microseconds())
+		decoderOpts.AVOptions["timeout"] = fmt.Sprintf("%d", protocolOpts.Timeout.Microseconds())
 		// Also set connect timeout for TCP
-		avOpts["stimeout"] = fmt.Sprintf("%d", opts.Timeout.Microseconds())
+		decoderOpts.AVOptions["stimeout"] = fmt.Sprintf("%d", protocolOpts.Timeout.Microseconds())
 	}
 
-	if opts.ReconnectCount > 0 {
-		avOpts["reconnect"] = "1"
-		avOpts["reconnect_streamed"] = "1"
-		avOpts["reconnect_delay_max"] = fmt.Sprintf("%d", int(opts.ReconnectDelay.Seconds()))
+	if protocolOpts.ReconnectCount > 0 {
+		decoderOpts.AVOptions["reconnect"] = "1"
+		decoderOpts.AVOptions["reconnect_streamed"] = "1"
+		decoderOpts.AVOptions["reconnect_delay_max"] = fmt.Sprintf("%d", int(protocolOpts.ReconnectDelay.Seconds()))
 		// Note: reconnect_at_eof and reconnect_on_network_error may also be useful
 	}
 
 	// Buffer options
-	if opts.BufferSize > 0 {
-		avOpts["buffer_size"] = fmt.Sprintf("%d", opts.BufferSize)
+	if protocolOpts.BufferSize > 0 {
+		decoderOpts.AVOptions["buffer_size"] = fmt.Sprintf("%d", protocolOpts.BufferSize)
 	}
 
-	if opts.MaxDelay > 0 {
-		avOpts["max_delay"] = fmt.Sprintf("%d", opts.MaxDelay.Microseconds())
+	if protocolOpts.MaxDelay > 0 {
+		decoderOpts.AVOptions["max_delay"] = fmt.Sprintf("%d", protocolOpts.MaxDelay.Microseconds())
 	}
 
 	// RTMP options
-	if opts.RTMPApp != "" {
-		avOpts["rtmp_app"] = opts.RTMPApp
+	if protocolOpts.RTMPApp != "" {
+		decoderOpts.AVOptions["rtmp_app"] = protocolOpts.RTMPApp
 	}
-	if opts.RTMPPlayPath != "" {
-		avOpts["rtmp_playpath"] = opts.RTMPPlayPath
+	if protocolOpts.RTMPPlayPath != "" {
+		decoderOpts.AVOptions["rtmp_playpath"] = protocolOpts.RTMPPlayPath
 	}
-	if opts.RTMPLive {
-		avOpts["rtmp_live"] = "live"
+	if protocolOpts.RTMPLive {
+		decoderOpts.AVOptions["rtmp_live"] = "live"
 	}
 
 	// HTTP options
-	if len(opts.HTTPHeaders) > 0 {
+	if len(protocolOpts.HTTPHeaders) > 0 {
 		// Format headers as "Key: Value\r\nKey2: Value2\r\n"
 		var headers string
-		for k, v := range opts.HTTPHeaders {
+		for k, v := range protocolOpts.HTTPHeaders {
 			headers += fmt.Sprintf("%s: %s\r\n", k, v)
 		}
-		avOpts["headers"] = headers
+		decoderOpts.AVOptions["headers"] = headers
 	}
-	if opts.HTTPCookies != "" {
-		avOpts["cookies"] = opts.HTTPCookies
+	if protocolOpts.HTTPCookies != "" {
+		decoderOpts.AVOptions["cookies"] = protocolOpts.HTTPCookies
 	}
 
 	// TLS options
-	if !opts.TLSVerify {
+	if !protocolOpts.TLSVerify {
 		// Only set if explicitly disabled - FFmpeg verifies by default
-		avOpts["tls_verify"] = "0"
+		decoderOpts.AVOptions["tls_verify"] = "0"
 	}
-	if opts.TLSCert != "" {
-		avOpts["cert"] = opts.TLSCert
+	if protocolOpts.TLSCert != "" {
+		decoderOpts.AVOptions["cert"] = protocolOpts.TLSCert
 	}
-	if opts.TLSKey != "" {
-		avOpts["key"] = opts.TLSKey
+	if protocolOpts.TLSKey != "" {
+		decoderOpts.AVOptions["key"] = protocolOpts.TLSKey
 	}
 
-	// Create decoder with AVOptions
-	return NewDecoder(url, &DecoderOptions{
-		AVOptions: avOpts,
-	})
-
+	return decoderOpts
 }
 
 // Common timeout presets for network streams

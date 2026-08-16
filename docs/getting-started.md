@@ -139,6 +139,45 @@ defer frame.Free()
 Plane data returned by `Frame.Data` is also borrowed. Copy it before the frame
 is reused or freed.
 
+## Hardware decoding
+
+Hardware decoding uses the normal `Decoder`; it is not a separate decoder API.
+An empty `HWDecoderConfig` asks FFmpeg for the compatible decoders and device
+configurations compiled into the loaded libraries, ranks them for the current
+platform, and falls back to software if none can be opened:
+
+```go
+decoder, err := ffmpeg.NewDecoder("video.mp4", &ffmpeg.DecoderOptions{
+	Hardware: &ffmpeg.HWDecoderConfig{},
+})
+```
+
+Use `HardwareAccelerationRequired` when software fallback is unacceptable, or
+set `DeviceType`, `Device`, or a borrowed `HWDevice` for explicit control.
+Frames returned by the normal decode methods remain CPU-accessible; hardware
+frames are transferred to system memory when the selected FFmpeg decoder
+returns GPU-backed frames. Since some accelerators initialize lazily, required
+mode can report `ErrHardwareAccelerationUnavailable` from the first decode call
+even when `OpenVideoDecoder` succeeded.
+
+Selection is lazy. `VideoDecoderInfo` reports `pending` before the video decoder
+opens, `selected` after a hardware codec and device open, and `active` or
+`fallback` after decoding establishes the actual output path. Always inspect
+`FallbackReason` before making performance claims:
+
+```go
+if err := decoder.OpenVideoDecoder(); err != nil {
+	return err
+}
+info := decoder.VideoDecoderInfo()
+log.Printf("decoder=%s hardware=%s device=%s fallback=%s",
+	info.CodecName, info.HardwareState, info.HWDeviceName, info.FallbackReason)
+```
+
+Automatic selection cannot add a backend omitted from the native FFmpeg build.
+For example, Android MediaCodec requires a MediaCodec-enabled FFmpeg build and
+a compatible codec/profile on the device.
+
 ## Encoding and finalization
 
 Encoding, muxing, filters, capture, and hardware acceleration have less
