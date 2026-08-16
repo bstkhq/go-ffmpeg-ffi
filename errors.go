@@ -53,6 +53,10 @@ var (
 	// (e.g. missing shim wrappers, unsupported FFmpeg build, or platform constraints).
 	ErrDeviceEnumerationUnavailable = errors.New("ffmpeg: device enumeration not available")
 
+	// ErrHardwareAccelerationUnavailable indicates that hardware decoding was
+	// required but no compatible decoder and device could be opened.
+	ErrHardwareAccelerationUnavailable = errors.New("ffmpeg: hardware acceleration unavailable")
+
 	// ErrFrameLeaseReturned indicates a copied pooled frame was used after its lease was returned.
 	ErrFrameLeaseReturned = errors.New("ffmpeg: frame pool lease has already been returned")
 )

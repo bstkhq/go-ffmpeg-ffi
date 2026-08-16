@@ -1955,7 +1955,7 @@ func TestHWDevice(t *testing.T) {
 	t.Logf("HW device created: %s", device.TypeName())
 }
 
-func TestHWDecoder(t *testing.T) {
+func TestDecoderWithExplicitHWDevice(t *testing.T) {
 	if !requireFFmpeg(t) {
 		return
 	}
@@ -1983,23 +1983,29 @@ func TestHWDecoder(t *testing.T) {
 		return
 	}
 
-	// Create HW decoder
-	hwDec, err := NewHWDecoder(testFile, &HWDecoderConfig{
-		HWDevice:             device,
-		OutputSoftwareFrames: true,
+	decoder, err := NewDecoder(testFile, &DecoderOptions{
+		Streams: []MediaType{MediaTypeVideo},
+		Hardware: &HWDecoderConfig{
+			Mode:     HardwareAccelerationRequired,
+			HWDevice: device,
+		},
 	})
 	if err != nil {
 		t.Logf("HW decoder not supported for this codec/device: %v", err)
 		return
 	}
-	defer hwDec.Close()
+	defer decoder.Close()
+	if err := decoder.OpenVideoDecoder(); err != nil {
+		t.Logf("HW decoder not supported for this codec/device: %v", err)
+		return
+	}
 
-	t.Logf("Video: %dx%d", hwDec.VideoStream().Width, hwDec.VideoStream().Height)
+	t.Logf("Video: %dx%d", decoder.VideoStream().Width, decoder.VideoStream().Height)
 
 	// Decode a few frames
 	frameCount := 0
 	for frameCount < 5 {
-		frame, err := hwDec.DecodeVideo()
+		frame, err := decoder.DecodeVideo()
 		if err != nil {
 			if IsEOF(err) {
 				break
@@ -2012,7 +2018,8 @@ func TestHWDecoder(t *testing.T) {
 		}
 	}
 
-	t.Logf("Decoded %d frames using hardware acceleration", frameCount)
+	info := decoder.VideoDecoderInfo()
+	t.Logf("Decoded %d frames using %s (%s)", frameCount, info.CodecName, info.HardwareState)
 }
 
 func TestSeekPrecise(t *testing.T) {

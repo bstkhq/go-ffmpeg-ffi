@@ -659,6 +659,10 @@ func NewDecoderFromIOContext(ctx context.Context, callbacks *IOCallbacks, opts *
 	if ctx == nil {
 		return nil, errors.New("ffmpeg: context cannot be nil")
 	}
+	opts = cloneDecoderOptions(opts)
+	if err := validateHWDecoderConfig(opts.Hardware); err != nil {
+		return nil, err
+	}
 	// Create custom I/O context
 	ioCtx, err := NewCustomIOContext(callbacks, false)
 	if err != nil {
@@ -746,6 +750,10 @@ func NewDecoderFromIOContext(ctx context.Context, callbacks *IOCallbacks, opts *
 
 	d := newDecoder(interrupt)
 	d.formatCtx = formatCtx
+	d.hardwareConfig = opts.Hardware
+	if opts.Hardware != nil && opts.Hardware.Mode != HardwareAccelerationDisabled {
+		d.videoDecoderInfo.HardwareState = HardwareStatePending
+	}
 
 	// Ensure the custom I/O stays alive and is cleaned up.
 	d.customIO = ioCtx
