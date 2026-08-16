@@ -274,9 +274,10 @@ lifecycle operation: it can interrupt an active decoder read or a cooperative
 custom-I/O callback and then waits for cleanup. A `LogCallback` is process-wide
 and may be called from FFmpeg-owned threads.
 
-Focused lifecycle torture uses the audiovisual fixture so both audio and video
-state machines run during concurrent open/decode/seek/close cycles. The normal
-test suite runs a short pass; an extended local pass is:
+Focused lifecycle torture uses automatic hardware selection with the
+audiovisual fixture, so hardware setup or software fallback and both audio and
+video state machines run during concurrent open/decode/seek/close cycles. The
+normal test suite runs a short pass; an extended local pass is:
 
 ```sh
 FFMPEG_STRESS=1 go test -run TestDecoderLifecycleStress -count=1 .
