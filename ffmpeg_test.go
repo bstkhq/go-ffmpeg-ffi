@@ -2665,7 +2665,7 @@ func TestNewNetworkDecoder(t *testing.T) {
 
 	// Test with protocol options using local file
 	// This tests that the options are properly passed through
-	decoder, err := NewNetworkDecoder(testFile, &ProtocolOptions{
+	decoder, err := NewNetworkDecoder(testFile, nil, &ProtocolOptions{
 		Timeout:    5 * time.Second,
 		BufferSize: 32768,
 	})
@@ -2852,7 +2852,7 @@ func TestImageSequenceDecoder(t *testing.T) {
 		FrameRate:   NewRational(25, 1),
 	}
 
-	decoder, err := NewImageSequenceDecoder(config)
+	decoder, err := NewImageSequenceDecoder(config, nil)
 	if err != nil {
 		t.Fatalf("NewImageSequenceDecoder failed: %v", err)
 	}
