@@ -110,24 +110,36 @@ func (d *Decoder) openHardwareVideoDecoderLocked(codecPar avcodec.Parameters, co
 
 	candidates := hardwareDecoderCandidates(codecID, config)
 	var failures []error
+	createdDevices := make(map[HWDeviceType]*HWDevice)
+	failedDevices := make(map[HWDeviceType]struct{})
+	closeCreatedDevices := func(keep *HWDevice) {
+		for _, device := range createdDevices {
+			if device != keep {
+				_ = device.Close()
+			}
+		}
+	}
 	for _, candidate := range candidates {
 		device := config.HWDevice
-		owned := false
 		if device == nil {
-			var err error
-			device, err = NewHWDevice(candidate.config.DeviceType, config.Device)
-			if err != nil {
-				failures = append(failures, fmt.Errorf("%s device: %w", avutil.HWDeviceGetTypeName(candidate.config.DeviceType), err))
-				continue
+			device = createdDevices[candidate.config.DeviceType]
+			if device == nil {
+				if _, failed := failedDevices[candidate.config.DeviceType]; failed {
+					continue
+				}
+				var err error
+				device, err = NewHWDevice(candidate.config.DeviceType, config.Device)
+				if err != nil {
+					failedDevices[candidate.config.DeviceType] = struct{}{}
+					failures = append(failures, fmt.Errorf("%s device: %w", avutil.HWDeviceGetTypeName(candidate.config.DeviceType), err))
+					continue
+				}
+				createdDevices[candidate.config.DeviceType] = device
 			}
-			owned = true
 		}
 
 		codecCtx, err := openVideoCodecContext(codecPar, candidate.codec, device)
 		if err != nil {
-			if owned {
-				_ = device.Close()
-			}
 			failures = append(failures, fmt.Errorf("%s with %s: %w", avcodec.GetCodecName(candidate.codec), device.TypeName(), err))
 			continue
 		}
@@ -136,9 +148,10 @@ func (d *Decoder) openHardwareVideoDecoderLocked(codecPar avcodec.Parameters, co
 		d.videoDecoderOpen = true
 		d.hardwarePixelFormat = int32(candidate.config.PixelFormat)
 		d.hardwareSoftwareOutput = candidate.config.Methods&avcodec.HWConfigMethodAdHoc != 0
-		if owned {
+		if config.HWDevice == nil {
 			d.ownedHWDevice = device
 		}
+		closeCreatedDevices(device)
 		d.videoDecoderInfo = VideoDecoderInfo{
 			CodecName:     avcodec.GetCodecName(candidate.codec),
 			HardwareState: HardwareStateSelected,
@@ -147,13 +160,14 @@ func (d *Decoder) openHardwareVideoDecoderLocked(codecPar avcodec.Parameters, co
 		}
 		return nil
 	}
+	closeCreatedDevices(nil)
 
 	failure := errors.Join(failures...)
 	if len(candidates) == 0 {
 		failure = errors.New("no decoder advertises a compatible hardware device configuration")
 	}
 	if config.Mode == HardwareAccelerationRequired {
-		return fmt.Errorf("%w: %v", ErrHardwareAccelerationUnavailable, failure)
+		return fmt.Errorf("%w: %w", ErrHardwareAccelerationUnavailable, failure)
 	}
 	return d.openSoftwareVideoDecoderLocked(codecPar, codecID, failure.Error())
 }
