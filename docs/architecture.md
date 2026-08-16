@@ -124,6 +124,34 @@ Decoder and encoder protocols must model FFmpeg's send/receive contract:
 
 Convenience APIs must not discard packets belonging to another selected stream.
 
+### Hardware decoder selection
+
+Hardware acceleration is a policy of the normal `Decoder`, not an independent
+demux/decode state machine. Every constructor that accepts `DecoderOptions`
+preserves the same `HWDecoderConfig`; protocol and image-sequence settings are
+merged separately from decoder policy.
+
+The selector enumerates registered decoders for the stream codec ID and reads
+their public `AVCodecHWConfig` entries. It considers only configurations that
+accept an `AVHWDeviceContext`, applies a small platform preference order, and
+tries the ordinary FFmpeg decoder first within each device type. This discovers
+wrapper decoders such as Android's `h264_mediacodec` without hard-coding codec
+names.
+
+After attaching a compatible device context, libavcodec's default `get_format`
+implementation selects the advertised hardware pixel format. No Go callback is
+installed for this path. GPU-backed output is transferred into a reusable
+system-memory frame, including frame properties, before it crosses the public
+API. Wrapper decoders that already return CPU-backed frames do not incur that
+transfer.
+
+Automatic mode falls back to the regular software decoder if no candidate can
+be opened. Required mode returns `ErrHardwareAccelerationUnavailable` instead.
+Because some libavcodec accelerators initialize on the first packet, decoder
+diagnostics distinguish pending, selected, active, and fallback states. Devices
+created by the selector are decoder-owned; a caller-supplied `HWDevice` is
+borrowed, while the codec context retains its own native buffer reference.
+
 ### PureGo binding layer
 
 Normal exported C functions are called directly through PureGo. Signatures are

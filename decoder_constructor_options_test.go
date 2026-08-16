@@ -15,6 +15,7 @@ func TestMergeProtocolDecoderOptionsPreservesGenericOptions(t *testing.T) {
 		FormatWhitelist: []string{"mpegts"},
 		Streams:         []MediaType{MediaTypeVideo},
 		ProgramID:       7,
+		Hardware:        &HWDecoderConfig{Mode: HardwareAccelerationAuto},
 	}
 	protocol := &ProtocolOptions{
 		Timeout:   3 * time.Second,
@@ -30,6 +31,9 @@ func TestMergeProtocolDecoderOptionsPreservesGenericOptions(t *testing.T) {
 	}
 	if len(got.Streams) != 1 || got.Streams[0] != MediaTypeVideo {
 		t.Fatalf("streams = %v, want video", got.Streams)
+	}
+	if got.Hardware == nil || got.Hardware == generic.Hardware {
+		t.Fatal("hardware decoder config was not preserved as an independent copy")
 	}
 	if got.AVOptions["generic"] != "kept" || got.AVOptions["protocol"] != "kept" {
 		t.Fatalf("merged AVOptions = %#v", got.AVOptions)
@@ -53,6 +57,7 @@ func TestImageSequenceDecoderOptionsPreservesGenericOptions(t *testing.T) {
 		AVOptions:      map[string]string{"probesize": "8192", "framerate": "1/1"},
 		Streams:        []MediaType{MediaTypeVideo},
 		CodecWhitelist: []string{"png"},
+		Hardware:       &HWDecoderConfig{DeviceType: HWDeviceTypeVAAPI},
 	}
 	config := ImageSequenceConfig{
 		Pattern:     "frame-%03d.png",
@@ -72,6 +77,9 @@ func TestImageSequenceDecoderOptionsPreservesGenericOptions(t *testing.T) {
 	}
 	if len(got.CodecWhitelist) != 1 || got.CodecWhitelist[0] != "png" {
 		t.Fatalf("codec whitelist = %v", got.CodecWhitelist)
+	}
+	if got.Hardware == nil || got.Hardware.DeviceType != HWDeviceTypeVAAPI || got.Hardware == generic.Hardware {
+		t.Fatalf("hardware config = %#v", got.Hardware)
 	}
 
 	got.AVOptions["probesize"] = "changed"

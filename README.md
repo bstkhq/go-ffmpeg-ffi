@@ -106,7 +106,8 @@ shim. Android packages unversioned `.so` files inside the application; signed
 iOS applications embed frameworks or link FFmpeg into the process image.
 
 See [Getting started](docs/getting-started.md) for installation, diagnostics,
-ownership, and mobile packaging details.
+ownership, [hardware-decoder selection](docs/getting-started.md#hardware-decoding),
+and mobile packaging details.
 
 ## Agentic development
 
