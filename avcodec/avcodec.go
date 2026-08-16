@@ -33,6 +33,9 @@ var (
 	avcodecFindEncoder       func(id int32) unsafe.Pointer
 	avcodecFindDecoderByName func(name string) unsafe.Pointer
 	avcodecFindEncoderByName func(name string) unsafe.Pointer
+	avCodecIterate           func(opaque *uintptr) unsafe.Pointer
+	avCodecIsDecoder         func(codec uintptr) int32
+	avcodecGetHWConfig       func(codec uintptr, index int32) unsafe.Pointer
 	avcodecAllocContext3     func(codec uintptr) unsafe.Pointer
 	avcodecFreeContext       func(ctx *unsafe.Pointer)
 	avcodecOpen2             func(ctx, codec uintptr, options *unsafe.Pointer) int32
@@ -83,6 +86,9 @@ func registerBindings() {
 	purego.RegisterLibFunc(&avcodecFindEncoder, lib, "avcodec_find_encoder")
 	purego.RegisterLibFunc(&avcodecFindDecoderByName, lib, "avcodec_find_decoder_by_name")
 	purego.RegisterLibFunc(&avcodecFindEncoderByName, lib, "avcodec_find_encoder_by_name")
+	purego.RegisterLibFunc(&avCodecIterate, lib, "av_codec_iterate")
+	purego.RegisterLibFunc(&avCodecIsDecoder, lib, "av_codec_is_decoder")
+	purego.RegisterLibFunc(&avcodecGetHWConfig, lib, "avcodec_get_hw_config")
 	purego.RegisterLibFunc(&avcodecAllocContext3, lib, "avcodec_alloc_context3")
 	purego.RegisterLibFunc(&avcodecFreeContext, lib, "avcodec_free_context")
 	purego.RegisterLibFunc(&avcodecOpen2, lib, "avcodec_open2")
@@ -149,6 +155,52 @@ func FindEncoderByName(name string) Codec {
 	codec := avcodecFindEncoderByName(name)
 	runtime.KeepAlive(name)
 	return codec
+}
+
+// IterateCodecs returns the next registered codec and advances opaque.
+// Initialize opaque to zero and call until the returned codec is nil.
+func IterateCodecs(opaque *uintptr) Codec {
+	if avCodecIterate == nil || opaque == nil {
+		return nil
+	}
+	return avCodecIterate(opaque)
+}
+
+// IsDecoder reports whether codec can decode media.
+func IsDecoder(codec Codec) bool {
+	return codec != nil && avCodecIsDecoder != nil && avCodecIsDecoder(uintptr(codec)) != 0
+}
+
+// CodecHWConfig describes one hardware configuration advertised by a codec.
+type CodecHWConfig struct {
+	PixelFormat avutil.PixelFormat
+	Methods     int32
+	DeviceType  avutil.HWDeviceType
+}
+
+// Hardware configuration method flags from AVCodecHWConfig.methods.
+const (
+	HWConfigMethodDeviceContext = 0x01
+	HWConfigMethodFramesContext = 0x02
+	HWConfigMethodInternal      = 0x04
+	HWConfigMethodAdHoc         = 0x08
+)
+
+// GetCodecHWConfig returns the hardware configuration at index.
+func GetCodecHWConfig(codec Codec, index int) (CodecHWConfig, bool) {
+	if codec == nil || index < 0 || avcodecGetHWConfig == nil {
+		return CodecHWConfig{}, false
+	}
+	config := avcodecGetHWConfig(uintptr(codec), int32(index))
+	if config == nil {
+		return CodecHWConfig{}, false
+	}
+	layout := bindings.ABI().CodecHWConfig
+	return CodecHWConfig{
+		PixelFormat: avutil.PixelFormat(*(*int32)(unsafe.Add(config, layout.PixelFormat))),
+		Methods:     *(*int32)(unsafe.Add(config, layout.Methods)),
+		DeviceType:  avutil.HWDeviceType(*(*int32)(unsafe.Add(config, layout.DeviceType))),
+	}, true
 }
 
 // AllocContext3 allocates a codec context.
@@ -343,7 +395,7 @@ func ParametersFree(par *Parameters) {
 
 // Public structure offsets selected from the runtime FFmpeg ABI.
 var (
-	offsetCodecParTag, offsetCodecName uintptr
+	offsetCodecParTag, offsetCodecName, offsetCodecID uintptr
 
 	offsetPacketPts, offsetPacketDts           uintptr
 	offsetPacketData, offsetPacketSize         uintptr
@@ -416,6 +468,14 @@ func GetCodecName(codec Codec) string {
 		return ""
 	}
 	return cstr.String(namePtr, 256)
+}
+
+// GetCodecID returns the media codec identifier implemented by codec.
+func GetCodecID(codec Codec) CodecID {
+	if codec == nil {
+		return CodecIDNone
+	}
+	return CodecID(*(*int32)(unsafe.Pointer(uintptr(codec) + offsetCodecID)))
 }
 
 // GetPacketPTS returns the presentation timestamp.
@@ -537,6 +597,7 @@ func setABIOffsets() {
 	layout := bindings.ABI()
 	offsetCodecParTag = layout.CodecParameters.CodecTag
 	offsetCodecName = layout.Codec.Name
+	offsetCodecID = layout.Codec.ID
 
 	packet := layout.Packet
 	offsetPacketPts = packet.PTS

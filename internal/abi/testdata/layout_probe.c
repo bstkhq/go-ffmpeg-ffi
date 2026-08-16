@@ -142,6 +142,10 @@ int main(void) {
     FIELD(AVInputFormat, long_name);
     FIELD(AVOutputFormat, flags);
     FIELD(AVCodec, name);
+    FIELD(AVCodec, id);
+    FIELD(AVCodecHWConfig, pix_fmt);
+    FIELD(AVCodecHWConfig, methods);
+    FIELD(AVCodecHWConfig, device_type);
 
     FIELD(AVFilterInOut, name);
     FIELD(AVFilterInOut, filter_ctx);

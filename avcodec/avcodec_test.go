@@ -129,6 +129,49 @@ func TestSetCtxHWBufferReferenceOwnership(t *testing.T) {
 	}
 }
 
+func TestCodecIterationAndHardwareConfigs(t *testing.T) {
+	if !requireFFmpeg(t) {
+		return
+	}
+	defaultDecoder := FindDecoder(CodecIDH264)
+	if defaultDecoder == nil {
+		t.Skip("H.264 decoder unavailable")
+	}
+	if got := GetCodecID(defaultDecoder); got != CodecIDH264 {
+		t.Fatalf("default H.264 decoder ID = %d, want %d", got, CodecIDH264)
+	}
+
+	foundDefault := false
+	var opaque uintptr
+	for {
+		codec := IterateCodecs(&opaque)
+		if codec == nil {
+			break
+		}
+		if codec == defaultDecoder {
+			foundDefault = true
+		}
+		if !IsDecoder(codec) || GetCodecID(codec) != CodecIDH264 {
+			continue
+		}
+		for index := 0; ; index++ {
+			config, ok := GetCodecHWConfig(codec, index)
+			if !ok {
+				break
+			}
+			if config.PixelFormat == avutil.PixelFormatNone {
+				t.Fatalf("%s hardware config %d has no pixel format", GetCodecName(codec), index)
+			}
+			if config.Methods == 0 {
+				t.Fatalf("%s hardware config %d has no setup method", GetCodecName(codec), index)
+			}
+		}
+	}
+	if !foundDefault {
+		t.Fatal("codec iterator did not return the default H.264 decoder")
+	}
+}
+
 func TestFindDecoder(t *testing.T) {
 	if !requireFFmpeg(t) {
 		return

@@ -39,6 +39,7 @@ type Layout struct {
 	Chapter         ChapterLayout
 	Program         ProgramLayout
 	Codec           CodecLayout
+	CodecHWConfig   CodecHWConfigLayout
 	InputFormat     InputFormatLayout
 	OutputFormat    OutputFormatLayout
 	FilterInOut     FilterInOutLayout
@@ -113,7 +114,12 @@ type ProgramLayout struct {
 
 // CodecLayout contains offsets into AVCodec.
 type CodecLayout struct {
-	Name uintptr
+	Name, ID uintptr
+}
+
+// CodecHWConfigLayout contains offsets into AVCodecHWConfig.
+type CodecHWConfigLayout struct {
+	PixelFormat, Methods, DeviceType uintptr
 }
 
 // InputFormatLayout contains offsets into AVInputFormat.
@@ -189,7 +195,10 @@ func commonLayout() Layout {
 		Program: ProgramLayout{
 			ID: 0, StreamIndex: 16, NumStreamIndexes: 24, Metadata: 32,
 		},
-		Codec:        CodecLayout{Name: 0},
+		Codec: CodecLayout{Name: 0, ID: 20},
+		CodecHWConfig: CodecHWConfigLayout{
+			PixelFormat: 0, Methods: 4, DeviceType: 8,
+		},
 		InputFormat:  InputFormatLayout{Name: 0, LongName: 8},
 		OutputFormat: OutputFormatLayout{Flags: 44},
 		FilterInOut: FilterInOutLayout{
