@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 
@@ -26,6 +27,67 @@ func TestLibrarySearchPaths(t *testing.T) {
 	}
 	if len(paths) == 0 {
 		t.Error("LibrarySearchPaths should return at least one path")
+	}
+}
+
+func TestLibrarySearchPathsPreferConfiguredAndBundledRuntime(t *testing.T) {
+	configured := filepath.Join("configured", "ffmpeg")
+	executable := filepath.Join("application", "bin")
+	loaderFirst := filepath.Join("environment", "first")
+	loaderSecond := filepath.Join("environment", "second")
+	paths := librarySearchPathsFor(
+		"linux",
+		configured,
+		strings.Join([]string{loaderFirst, loaderSecond}, string(os.PathListSeparator)),
+		executable,
+	)
+
+	wantPrefix := []string{
+		configured,
+		executable,
+		filepath.Join(executable, "lib"),
+		filepath.Join(executable, "ffmpeg"),
+		filepath.Join(executable, "ffmpeg", "lib"),
+		filepath.Join(executable, "ffmpeg", "bin"),
+		loaderFirst,
+		loaderSecond,
+	}
+	if len(paths) < len(wantPrefix) {
+		t.Fatalf("search paths = %v, want prefix %v", paths, wantPrefix)
+	}
+	for index, want := range wantPrefix {
+		if paths[index] != want {
+			t.Fatalf("search path %d = %q, want %q (all paths: %v)", index, paths[index], want, paths)
+		}
+	}
+}
+
+func TestLibrarySearchPathsKeepAndroidInLinkerNamespace(t *testing.T) {
+	paths := librarySearchPathsFor("android", "/configured", "/environment", "/application")
+	if len(paths) != 0 {
+		t.Fatalf("Android search paths = %v, want linker namespace only", paths)
+	}
+}
+
+func TestLibrarySearchPathsDoNotInferRelativeApplicationPaths(t *testing.T) {
+	paths := librarySearchPathsFor("ios", "", "", "")
+	if len(paths) != 0 {
+		t.Fatalf("unresolved iOS executable paths = %v, want none", paths)
+	}
+}
+
+func TestLoadedLibraryDirectory(t *testing.T) {
+	path := filepath.Join("application", "ffmpeg", platform.FormatLibraryName("avutil", 61))
+	dir := loadedLibraryDirectory(path)
+	want, err := filepath.Abs(filepath.Join("application", "ffmpeg"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dir != want {
+		t.Fatalf("loaded library directory = %q, want %q", dir, want)
+	}
+	if dir := loadedLibraryDirectory(platform.FormatLibraryName("avutil", 61)); dir != "" {
+		t.Fatalf("name-resolved library directory = %q, want empty", dir)
 	}
 }
 

@@ -64,6 +64,7 @@ var (
 	loadOnce   sync.Once
 	loadErr    error
 	currentABI abi.Layout
+	libraryDir string
 )
 
 // Version function bindings.
@@ -104,6 +105,7 @@ func doLoad() error {
 	avcodecVersion = core.avcodecVersion
 	avformatVersion = core.avformatVersion
 	currentABI = core.layout
+	libraryDir = loadedLibraryDirectory(core.avutil.path)
 
 	// swscale is optional, but if present it must match the selected family.
 	swscale, err := openLibrary(systemLoader, "swscale", []int{currentABI.SWScaleMajor}, true)
@@ -295,6 +297,7 @@ func clearCoreState() {
 	avcodecVersion = nil
 	avformatVersion = nil
 	currentABI = abi.Layout{}
+	libraryDir = ""
 }
 
 // openLibrary tries all versioned candidates before considering an
@@ -393,16 +396,75 @@ func FindLibrary(name string, versions []int) (string, error) {
 	return "", fmt.Errorf("%w: %s", ErrLibraryNotFound, name)
 }
 
-// LibrarySearchPaths returns platform-specific library search paths.
+// LibrarySearchPaths returns platform-specific library search paths. Desktop
+// applications may place one coherent FFmpeg runtime beside the executable,
+// under a conventional application subdirectory, or select it explicitly with
+// FFMPEG_LIBRARY_DIR.
 func LibrarySearchPaths() []string {
-	var paths []string
+	executableDir := ""
+	if exe, err := os.Executable(); err == nil {
+		executableDir = filepath.Dir(exe)
+	}
 
+	loaderPath := ""
 	switch runtime.GOOS {
-	case "linux":
-		if ldPath := os.Getenv("LD_LIBRARY_PATH"); ldPath != "" {
-			paths = append(paths, filepath.SplitList(ldPath)...)
+	case "linux", "freebsd":
+		loaderPath = os.Getenv("LD_LIBRARY_PATH")
+	case "darwin":
+		loaderPath = os.Getenv("DYLD_LIBRARY_PATH")
+	case "windows":
+		loaderPath = os.Getenv("PATH")
+	}
+
+	return librarySearchPathsFor(
+		runtime.GOOS,
+		os.Getenv("FFMPEG_LIBRARY_DIR"),
+		loaderPath,
+		executableDir,
+	)
+}
+
+func librarySearchPathsFor(goos, configuredDir, loaderPath, executableDir string) []string {
+	if goos == "android" {
+		// Android application native libraries are resolved by soname inside the
+		// app linker namespace. Desktop filesystem paths must not be searched.
+		return nil
+	}
+
+	paths := make([]string, 0, 16)
+	seen := make(map[string]struct{})
+	appendPath := func(path string) {
+		if path == "" {
+			return
 		}
-		paths = append(paths,
+		path = filepath.Clean(path)
+		if _, ok := seen[path]; ok {
+			return
+		}
+		seen[path] = struct{}{}
+		paths = append(paths, path)
+	}
+
+	if goos != "ios" {
+		appendPath(configuredDir)
+		if executableDir != "" {
+			appendPath(executableDir)
+			appendPath(filepath.Join(executableDir, "lib"))
+			appendPath(filepath.Join(executableDir, "ffmpeg"))
+			appendPath(filepath.Join(executableDir, "ffmpeg", "lib"))
+			appendPath(filepath.Join(executableDir, "ffmpeg", "bin"))
+			if goos == "darwin" {
+				appendPath(filepath.Join(executableDir, "..", "Frameworks"))
+			}
+		}
+		for _, path := range filepath.SplitList(loaderPath) {
+			appendPath(path)
+		}
+	}
+
+	switch goos {
+	case "linux":
+		for _, path := range []string{
 			"/usr/lib/x86_64-linux-gnu",
 			"/usr/lib/aarch64-linux-gnu",
 			"/usr/local/lib",
@@ -410,46 +472,59 @@ func LibrarySearchPaths() []string {
 			"/lib/x86_64-linux-gnu",
 			"/lib/aarch64-linux-gnu",
 			"/lib",
-		)
-	case "darwin":
-		if dyldPath := os.Getenv("DYLD_LIBRARY_PATH"); dyldPath != "" {
-			paths = append(paths, filepath.SplitList(dyldPath)...)
+		} {
+			appendPath(path)
 		}
-		paths = append(paths,
+	case "darwin":
+		for _, path := range []string{
 			"/opt/homebrew/lib",
 			"/usr/local/lib",
 			"/opt/homebrew/opt/ffmpeg/lib",
 			"/usr/local/opt/ffmpeg/lib",
-		)
+		} {
+			appendPath(path)
+		}
 	case "ios":
 		// Embedded frameworks normally resolve through @rpath. Also try the
 		// concrete Frameworks directory for hosts that do not add that rpath.
-		if exe, err := os.Executable(); err == nil {
-			paths = append(paths, filepath.Join(filepath.Dir(exe), "Frameworks"))
+		if executableDir != "" {
+			appendPath(filepath.Join(executableDir, "Frameworks"))
 		}
 	case "windows":
-		if winPath := os.Getenv("PATH"); winPath != "" {
-			paths = append(paths, filepath.SplitList(winPath)...)
+		for _, path := range []string{
+			`C:\ffmpeg\bin`,
+			`C:\Program Files\ffmpeg\bin`,
+		} {
+			appendPath(path)
 		}
-		if exe, err := os.Executable(); err == nil {
-			paths = append(paths, filepath.Dir(exe))
-		}
-		paths = append(paths,
-			"C:\\ffmpeg\\bin",
-			"C:\\Program Files\\ffmpeg\\bin",
-		)
 	case "freebsd":
-		if ldPath := os.Getenv("LD_LIBRARY_PATH"); ldPath != "" {
-			paths = append(paths, filepath.SplitList(ldPath)...)
+		for _, path := range []string{"/usr/local/lib", "/usr/lib"} {
+			appendPath(path)
 		}
-		paths = append(paths, "/usr/local/lib", "/usr/lib")
-	case "android":
-		// Android application native libraries are resolved by soname inside the
-		// app linker namespace. Unqualified candidates are appended by
-		// libraryCandidates, so desktop filesystem paths must not be searched.
 	}
 
 	return paths
+}
+
+func loadedLibraryDirectory(path string) string {
+	if path == "" || path == dynlib.ProcessImage || filepath.Base(path) == path {
+		return ""
+	}
+	dir := filepath.Dir(path)
+	if absolute, err := filepath.Abs(dir); err == nil {
+		return absolute
+	}
+	return filepath.Clean(dir)
+}
+
+// LoadedLibraryDir returns the directory containing the selected FFmpeg core
+// libraries. It is empty when the operating-system loader resolved them by
+// name or from the process image.
+func LoadedLibraryDir() string {
+	if !loaded.Load() {
+		return ""
+	}
+	return libraryDir
 }
 
 // AVUtilVersion returns the avutil library version, or 0 before Load succeeds.

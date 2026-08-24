@@ -4,6 +4,6 @@
 
 #include <stdint.h>
 
-#define FFSHIM_CONTRACT_ID UINT64_C(0x9688e09d7b97f278)
+#define FFSHIM_CONTRACT_ID UINT64_C(0x8e5cebc067810f21)
 
 #endif

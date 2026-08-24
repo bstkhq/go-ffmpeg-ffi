@@ -34,13 +34,18 @@ original `github.com/obinnaokechukwu/ffgo` import path or copy examples from the
 
 ## Select the native FFmpeg build
 
-Configure the library location before `ffmpeg.Init()` or any high-level API call:
+The loader automatically checks the application directory and its `lib`,
+`ffmpeg`, `ffmpeg/lib`, and `ffmpeg/bin` subdirectories before system paths.
+Set `FFMPEG_LIBRARY_DIR` before `ffmpeg.Init()` when the runtime lives elsewhere.
+The selected directory must contain one complete, coherent FFmpeg family.
+
+Platform-native locations remain supported:
 
 | Platform | Primary application-controlled location |
 | --- | --- |
-| Linux | `LD_LIBRARY_PATH=/path/to/ffmpeg/lib` |
-| macOS | `DYLD_LIBRARY_PATH=/path/to/ffmpeg/lib` |
-| Windows | Add the FFmpeg `bin` directory to `PATH`. |
+| Linux | `FFMPEG_LIBRARY_DIR=/path/to/ffmpeg/lib` or `LD_LIBRARY_PATH`. |
+| macOS | `FFMPEG_LIBRARY_DIR=/path/to/ffmpeg/lib` or `DYLD_LIBRARY_PATH`. |
+| Windows | `FFMPEG_LIBRARY_DIR=C:\path\to\ffmpeg\bin` or `PATH`. |
 | Android | Package unversioned `libav*.so` files in the APK/AAR native-library namespace. |
 | iOS | Embed and sign FFmpeg frameworks, or link complete FFmpeg archives into the final process image. |
 
@@ -49,12 +54,13 @@ loader validates the core and optional library-major tuple and rejects unknown
 or mixed families before accessing version-specific structures.
 
 The optional C shim provides operations that cannot be expressed safely through
-direct PureGo calls. Point `FFMPEG_SHIM_DIR` at a shim built against the same
-FFmpeg family. A missing optional shim does not prevent core decoding; an
-incompatible shim is rejected. Prebuilt desktop shims are release assets; their
-`manifest.json` identifies the FFmpeg family and checksum. Select the matching
-versioned directory before setting `FFMPEG_SHIM_DIR`. Source/build instructions
-are in the [shim README](../shim/README.md).
+direct PureGo calls. A shim beside the selected FFmpeg libraries is detected
+automatically; `FFMPEG_SHIM_DIR` remains the explicit override. The shim must be
+built against the same FFmpeg family. A missing optional shim does not prevent
+core decoding; an incompatible shim is rejected. Prebuilt desktop shims are
+release assets; their `manifest.json` identifies the FFmpeg family and checksum.
+Select the matching versioned directory before setting `FFMPEG_SHIM_DIR`.
+Source/build instructions are in the [shim README](../shim/README.md).
 
 ## Check the runtime
 

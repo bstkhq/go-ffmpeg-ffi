@@ -2,4 +2,4 @@
 
 package shim
 
-const ContractID uint64 = 0x9688e09d7b97f278
+const ContractID uint64 = 0x8e5cebc067810f21

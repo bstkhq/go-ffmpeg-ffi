@@ -1048,11 +1048,16 @@ func trustedShimSearchPaths() []string {
 	if exe, err := os.Executable(); err == nil {
 		executableDir = filepath.Dir(exe)
 	}
-	return trustedShimSearchPathsFor(runtime.GOOS, runtime.GOARCH, executableDir)
+	return trustedShimSearchPathsFor(runtime.GOOS, runtime.GOARCH, executableDir, bindings.LoadedLibraryDir())
 }
 
-func trustedShimSearchPathsFor(goos, goarch, executableDir string) []string {
+func trustedShimSearchPathsFor(goos, goarch, executableDir string, preferredDirs ...string) []string {
 	var searchPaths []string
+	for _, dir := range preferredDirs {
+		if dir != "" {
+			searchPaths = append(searchPaths, dir)
+		}
+	}
 
 	// Platform-specific paths
 	switch goos {

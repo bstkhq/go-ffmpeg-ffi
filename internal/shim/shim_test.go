@@ -112,6 +112,15 @@ func TestTrustedShimSearchPathsExcludeSourceAndWorkingDirectories(t *testing.T) 
 	}
 }
 
+func TestTrustedShimSearchPathsPreferLoadedFFmpegDirectory(t *testing.T) {
+	executableDir := filepath.Join(t.TempDir(), "bin")
+	ffmpegDir := filepath.Join(t.TempDir(), "ffmpeg")
+	paths := trustedShimSearchPathsFor("linux", "amd64", executableDir, ffmpegDir)
+	if len(paths) == 0 || paths[0] != ffmpegDir {
+		t.Fatalf("trusted shim paths = %v, want FFmpeg directory first", paths)
+	}
+}
+
 func TestExpectedLibraryName(t *testing.T) {
 	name := ExpectedLibraryName()
 
