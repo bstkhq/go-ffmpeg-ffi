@@ -6,6 +6,7 @@
 package avutil
 
 import (
+	"runtime"
 	"sync"
 	"unsafe"
 
@@ -69,7 +70,7 @@ var (
 	avOptGetInt    func(obj uintptr, name string, searchFlags int32, outVal *int64) int32
 
 	// Hardware context functions
-	avHWDeviceCtxCreate      func(deviceCtx *unsafe.Pointer, deviceType int32, device string, opts uintptr, flags int32) int32
+	avHWDeviceCtxCreate      func(deviceCtx *unsafe.Pointer, deviceType int32, device unsafe.Pointer, opts uintptr, flags int32) int32
 	avHWDeviceFindTypeByName func(name string) int32
 	avHWDeviceGetTypeName    func(deviceType int32) unsafe.Pointer
 	avHWDeviceIterateTypes   func(previousType int32) int32
@@ -703,8 +704,18 @@ func HWDeviceCtxCreate(deviceType HWDeviceType, device string) (HWDeviceContext,
 	if avHWDeviceCtxCreate == nil {
 		return nil, bindings.ErrNotLoaded
 	}
+	var deviceBytes []byte
+	var devicePtr unsafe.Pointer
+	if device != "" {
+		deviceBytes = make([]byte, len(device)+1)
+		copy(deviceBytes, device)
+		devicePtr = unsafe.Pointer(&deviceBytes[0])
+	}
+	// FFmpeg distinguishes NULL (select the default device) from an empty C
+	// string (open a device whose name is empty).
 	var ctx unsafe.Pointer
-	ret := avHWDeviceCtxCreate(&ctx, int32(deviceType), device, 0, 0)
+	ret := avHWDeviceCtxCreate(&ctx, int32(deviceType), devicePtr, 0, 0)
+	runtime.KeepAlive(deviceBytes)
 	if ret < 0 {
 		return nil, NewError(ret, "av_hwdevice_ctx_create")
 	}
