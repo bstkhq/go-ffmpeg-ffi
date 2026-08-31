@@ -150,7 +150,12 @@ be opened. Required mode returns `ErrHardwareAccelerationUnavailable` instead.
 Because some libavcodec accelerators initialize on the first packet, decoder
 diagnostics distinguish pending, selected, active, and fallback states. Devices
 created by the selector are decoder-owned; a caller-supplied `HWDevice` is
-borrowed, while the codec context retains its own native buffer reference.
+borrowed, while the codec context retains its own native buffer reference. A
+caller-supplied `HWDeviceManager` also lends devices to decoders, serializes
+native device creation, caches successful devices and creation failures, and
+prioritizes the last successful automatic candidate for each codec. Vulkan is
+available only through explicit selection until Vulkan Video decode capability
+can be established independently from ordinary Vulkan device creation.
 
 ### PureGo binding layer
 

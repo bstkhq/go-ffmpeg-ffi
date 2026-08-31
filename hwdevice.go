@@ -96,6 +96,8 @@ type HWDevice struct {
 	closed     bool
 }
 
+var hwDeviceCreationMu sync.Mutex
+
 // NewHWDevice creates a hardware device context for the given type. Device is
 // an optional implementation-specific identifier; pass an empty string to use
 // FFmpeg's default device.
@@ -103,6 +105,10 @@ func NewHWDevice(deviceType HWDeviceType, device string) (*HWDevice, error) {
 	if err := bindings.Load(); err != nil {
 		return nil, err
 	}
+	// Some FFmpeg hardware backends are not safe to initialize concurrently.
+	// Serialize creation even when callers use separate managers.
+	hwDeviceCreationMu.Lock()
+	defer hwDeviceCreationMu.Unlock()
 	ctx, err := avutil.HWDeviceCtxCreate(deviceType, device)
 	if err != nil {
 		return nil, err
@@ -179,14 +185,158 @@ func (d *HWDevice) Close() error {
 	return nil
 }
 
+type hwDeviceKey struct {
+	deviceType HWDeviceType
+	device     string
+}
+
+type hwDeviceFactory func(HWDeviceType, string) (*HWDevice, error)
+
+// HWDeviceManager creates hardware devices once and reuses them across
+// decoders. Successful devices and creation failures are cached by device type
+// and identifier. A manager is safe for concurrent use.
+//
+// Close the manager after every decoder using it has been closed. Decoder
+// borrows manager-owned devices and never closes them.
+type HWDeviceManager struct {
+	mu         sync.Mutex
+	create     hwDeviceFactory
+	devices    map[hwDeviceKey]*HWDevice
+	failures   map[hwDeviceKey]error
+	selections map[hardwareDecoderSelectionKey]hardwareDecoderPreference
+	closed     bool
+}
+
+// NewHWDeviceManager returns an empty reusable hardware-device cache.
+func NewHWDeviceManager() *HWDeviceManager {
+	return newHWDeviceManager(NewHWDevice)
+}
+
+func newHWDeviceManager(create hwDeviceFactory) *HWDeviceManager {
+	return &HWDeviceManager{
+		create:     create,
+		devices:    make(map[hwDeviceKey]*HWDevice),
+		failures:   make(map[hwDeviceKey]error),
+		selections: make(map[hardwareDecoderSelectionKey]hardwareDecoderPreference),
+	}
+}
+
+func (m *HWDeviceManager) initLocked() {
+	if m.create == nil {
+		m.create = NewHWDevice
+	}
+	if m.devices == nil {
+		m.devices = make(map[hwDeviceKey]*HWDevice)
+	}
+	if m.failures == nil {
+		m.failures = make(map[hwDeviceKey]error)
+	}
+	if m.selections == nil {
+		m.selections = make(map[hardwareDecoderSelectionKey]hardwareDecoderPreference)
+	}
+}
+
+// Device returns a borrowed cached hardware device, creating it on the first
+// request. The caller must not close the returned device. Creation errors are
+// cached, so unavailable backends are not probed again by later decoders using
+// the same manager.
+func (m *HWDeviceManager) Device(deviceType HWDeviceType, device string) (*HWDevice, error) {
+	if m == nil {
+		return nil, errors.New("ffmpeg: hardware device manager is nil")
+	}
+	key := hwDeviceKey{deviceType: deviceType, device: device}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.closed {
+		return nil, closedError("hardware device manager")
+	}
+	m.initLocked()
+	if cached := m.devices[key]; cached != nil {
+		return cached, nil
+	}
+	if cached := m.failures[key]; cached != nil {
+		return nil, cached
+	}
+	created, err := m.create(deviceType, device)
+	if err != nil {
+		m.failures[key] = err
+		return nil, err
+	}
+	if created == nil {
+		err = errors.New("ffmpeg: hardware device factory returned nil")
+		m.failures[key] = err
+		return nil, err
+	}
+	m.devices[key] = created
+	return created, nil
+}
+
+func (m *HWDeviceManager) preferredSelection(key hardwareDecoderSelectionKey) (hardwareDecoderPreference, bool) {
+	if m == nil {
+		return hardwareDecoderPreference{}, false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.closed {
+		return hardwareDecoderPreference{}, false
+	}
+	m.initLocked()
+	preference, ok := m.selections[key]
+	return preference, ok
+}
+
+func (m *HWDeviceManager) rememberSelection(key hardwareDecoderSelectionKey, preference hardwareDecoderPreference) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !m.closed {
+		m.initLocked()
+		m.selections[key] = preference
+	}
+}
+
+// Close releases every cached device and prevents further use of the manager.
+// It is idempotent.
+func (m *HWDeviceManager) Close() error {
+	if m == nil {
+		return nil
+	}
+	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		return nil
+	}
+	m.closed = true
+	devices := make([]*HWDevice, 0, len(m.devices))
+	for _, device := range m.devices {
+		devices = append(devices, device)
+	}
+	m.devices = nil
+	m.failures = nil
+	m.selections = nil
+	m.mu.Unlock()
+
+	var closeErrors []error
+	for _, device := range devices {
+		if err := device.Close(); err != nil {
+			closeErrors = append(closeErrors, err)
+		}
+	}
+	return errors.Join(closeErrors...)
+}
+
 // HWDecoderConfig configures Decoder's video hardware acceleration. The zero
-// value requests automatic selection. HWDevice is borrowed and is never closed
-// by Decoder; devices created from DeviceType and Device are decoder-owned.
+// value requests automatic selection. HWDevice and devices supplied by
+// DeviceManager are borrowed and never closed by Decoder; devices created from
+// DeviceType and Device without a manager are decoder-owned.
 type HWDecoderConfig struct {
-	Mode       HardwareAccelerationMode
-	DeviceType HWDeviceType
-	Device     string
-	HWDevice   *HWDevice
+	Mode          HardwareAccelerationMode
+	DeviceType    HWDeviceType
+	Device        string
+	HWDevice      *HWDevice
+	DeviceManager *HWDeviceManager
 }
 
 func cloneHWDecoderConfig(config *HWDecoderConfig) *HWDecoderConfig {
@@ -211,6 +361,9 @@ func validateHWDecoderConfig(config *HWDecoderConfig) error {
 		if config.DeviceType != HWDeviceTypeNone && config.DeviceType != config.HWDevice.Type() {
 			return errors.New("ffmpeg: hardware DeviceType does not match HWDevice")
 		}
+		if config.DeviceManager != nil {
+			return errors.New("ffmpeg: hardware HWDevice cannot be combined with DeviceManager")
+		}
 	}
 	if config.Device != "" && config.DeviceType == HWDeviceTypeNone {
 		return errors.New("ffmpeg: hardware Device requires an explicit DeviceType")
@@ -223,10 +376,10 @@ func validateHWDecoderConfig(config *HWDecoderConfig) error {
 func AvailableHWDeviceTypes() []HWDeviceType {
 	types := make([]HWDeviceType, 0, 8)
 	for deviceType := avutil.HWDeviceIterateTypes(HWDeviceTypeNone); deviceType != HWDeviceTypeNone; deviceType = avutil.HWDeviceIterateTypes(deviceType) {
-		ctx, err := avutil.HWDeviceCtxCreate(deviceType, "")
-		if err == nil && ctx != nil {
+		device, err := NewHWDevice(deviceType, "")
+		if err == nil && device != nil {
 			types = append(types, deviceType)
-			avutil.FreeBufferRef(&ctx)
+			_ = device.Close()
 		}
 	}
 	return types
