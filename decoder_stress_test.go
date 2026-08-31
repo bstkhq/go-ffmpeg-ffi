@@ -27,8 +27,9 @@ func TestDecoderAutoHardwareLifecycle(t *testing.T) {
 	if !requireFFmpeg(t) {
 		return
 	}
+	manager := NewHWDeviceManager()
 	runDecoderLifecycleTest(t, 8, false, &DecoderOptions{
-		Hardware: &HWDecoderConfig{},
+		Hardware: &HWDecoderConfig{DeviceManager: manager},
 	})
 }
 
@@ -48,14 +49,26 @@ func TestDecoderLifecycleStress(t *testing.T) {
 		}
 		iterations = parsed
 	}
+	manager := NewHWDeviceManager()
 	runDecoderLifecycleTest(t, iterations, true, &DecoderOptions{
-		Hardware: &HWDecoderConfig{},
+		Hardware: &HWDecoderConfig{DeviceManager: manager},
 	})
 }
 
 func runDecoderLifecycleTest(t *testing.T, iterations int, assertMemory bool, opts *DecoderOptions) {
 	t.Helper()
 	input := createTestVideo(t)
+	var manager *HWDeviceManager
+	if opts != nil && opts.Hardware != nil {
+		manager = opts.Hardware.DeviceManager
+	}
+	if manager != nil {
+		// Warm the cache so the assertion measures repeated decoder lifecycles,
+		// not one-time backend initialization performed by the native runtime.
+		if err := exerciseDecoderLifecycle(input, opts); err != nil {
+			t.Fatalf("warm hardware device manager: %v", err)
+		}
+	}
 	runtime.GC()
 	if assertMemory {
 		debug.FreeOSMemory()
@@ -92,6 +105,11 @@ func runDecoderLifecycleTest(t *testing.T, iterations int, assertMemory bool, op
 	close(errorsFound)
 	for err := range errorsFound {
 		t.Error(err)
+	}
+	if manager != nil {
+		if err := manager.Close(); err != nil {
+			t.Errorf("close hardware device manager: %v", err)
+		}
 	}
 	if t.Failed() {
 		return

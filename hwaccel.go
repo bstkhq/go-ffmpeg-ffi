@@ -18,6 +18,45 @@ type hardwareDecoderCandidate struct {
 	order  int
 }
 
+type hardwareDecoderSelectionKey struct {
+	codecID avcodec.CodecID
+	device  string
+}
+
+type hardwareDecoderPreference struct {
+	codec       uintptr
+	deviceType  HWDeviceType
+	pixelFormat avutil.PixelFormat
+}
+
+func hardwareDecoderPreferenceFor(candidate hardwareDecoderCandidate) hardwareDecoderPreference {
+	return hardwareDecoderPreference{
+		codec:       uintptr(candidate.codec),
+		deviceType:  candidate.config.DeviceType,
+		pixelFormat: candidate.config.PixelFormat,
+	}
+}
+
+func automaticHardwareDeviceAllowed(config *HWDecoderConfig, deviceType HWDeviceType) bool {
+	if deviceType != HWDeviceTypeVulkan {
+		return true
+	}
+	return config.DeviceType == HWDeviceTypeVulkan ||
+		(config.HWDevice != nil && config.HWDevice.Type() == HWDeviceTypeVulkan)
+}
+
+func (p hardwareDecoderPreference) matches(candidate hardwareDecoderCandidate) bool {
+	return p.codec == uintptr(candidate.codec) &&
+		p.deviceType == candidate.config.DeviceType &&
+		p.pixelFormat == candidate.config.PixelFormat
+}
+
+func prioritizeHardwareDecoderCandidates(candidates []hardwareDecoderCandidate, preferred hardwareDecoderPreference) {
+	sort.SliceStable(candidates, func(i, j int) bool {
+		return preferred.matches(candidates[i]) && !preferred.matches(candidates[j])
+	})
+}
+
 func hardwareDecoderCandidates(codecID avcodec.CodecID, config *HWDecoderConfig) []hardwareDecoderCandidate {
 	defaultCodec := avcodec.FindDecoder(codecID)
 	codecs := make([]avcodec.Codec, 0, 8)
@@ -59,6 +98,12 @@ func hardwareDecoderCandidates(codecID avcodec.CodecID, config *HWDecoderConfig)
 			if hwConfig.Methods&avcodec.HWConfigMethodDeviceContext == 0 {
 				continue
 			}
+			// Vulkan device creation alone does not prove that the runtime exposes
+			// Vulkan Video decode. Keep it available when explicitly requested,
+			// but do not select it automatically.
+			if !automaticHardwareDeviceAllowed(config, hwConfig.DeviceType) {
+				continue
+			}
 			if requiredType != HWDeviceTypeNone && hwConfig.DeviceType != requiredType {
 				continue
 			}
@@ -76,6 +121,12 @@ func hardwareDecoderCandidates(codecID avcodec.CodecID, config *HWDecoderConfig)
 		}
 		return candidates[i].order < candidates[j].order
 	})
+	if config.DeviceManager != nil && requiredType == HWDeviceTypeNone {
+		selectionKey := hardwareDecoderSelectionKey{codecID: codecID, device: config.Device}
+		if preferred, ok := config.DeviceManager.preferredSelection(selectionKey); ok {
+			prioritizeHardwareDecoderCandidates(candidates, preferred)
+		}
+	}
 	return candidates
 }
 
@@ -83,13 +134,13 @@ func hardwareDeviceRank(deviceType HWDeviceType) int {
 	var preferred []HWDeviceType
 	switch runtime.GOOS {
 	case "android":
-		preferred = []HWDeviceType{HWDeviceTypeMediaCodec, HWDeviceTypeVulkan}
+		preferred = []HWDeviceType{HWDeviceTypeMediaCodec}
 	case "darwin", "ios":
 		preferred = []HWDeviceType{HWDeviceTypeVideoToolbox}
 	case "windows":
 		preferred = []HWDeviceType{HWDeviceTypeD3D12VA, HWDeviceTypeD3D11VA, HWDeviceTypeDXVA2, HWDeviceTypeQSV, HWDeviceTypeCUDA, HWDeviceTypeAMF}
 	default:
-		preferred = []HWDeviceType{HWDeviceTypeVAAPI, HWDeviceTypeQSV, HWDeviceTypeCUDA, HWDeviceTypeVulkan, HWDeviceTypeVDPAU, HWDeviceTypeDRM}
+		preferred = []HWDeviceType{HWDeviceTypeVAAPI, HWDeviceTypeQSV, HWDeviceTypeCUDA, HWDeviceTypeVDPAU, HWDeviceTypeDRM}
 	}
 	for index, candidate := range preferred {
 		if candidate == deviceType {
@@ -128,13 +179,19 @@ func (d *Decoder) openHardwareVideoDecoderLocked(codecPar avcodec.Parameters, co
 					continue
 				}
 				var err error
-				device, err = NewHWDevice(candidate.config.DeviceType, config.Device)
+				if config.DeviceManager != nil {
+					device, err = config.DeviceManager.Device(candidate.config.DeviceType, config.Device)
+				} else {
+					device, err = NewHWDevice(candidate.config.DeviceType, config.Device)
+				}
 				if err != nil {
 					failedDevices[candidate.config.DeviceType] = struct{}{}
 					failures = append(failures, fmt.Errorf("%s device: %w", avutil.HWDeviceGetTypeName(candidate.config.DeviceType), err))
 					continue
 				}
-				createdDevices[candidate.config.DeviceType] = device
+				if config.DeviceManager == nil {
+					createdDevices[candidate.config.DeviceType] = device
+				}
 			}
 		}
 
@@ -148,10 +205,16 @@ func (d *Decoder) openHardwareVideoDecoderLocked(codecPar avcodec.Parameters, co
 		d.videoDecoderOpen = true
 		d.hardwarePixelFormat = int32(candidate.config.PixelFormat)
 		d.hardwareSoftwareOutput = candidate.config.Methods&avcodec.HWConfigMethodAdHoc != 0
-		if config.HWDevice == nil {
+		if config.HWDevice == nil && config.DeviceManager == nil {
 			d.ownedHWDevice = device
 		}
 		closeCreatedDevices(device)
+		if config.DeviceManager != nil && config.DeviceType == HWDeviceTypeNone {
+			config.DeviceManager.rememberSelection(
+				hardwareDecoderSelectionKey{codecID: codecID, device: config.Device},
+				hardwareDecoderPreferenceFor(candidate),
+			)
+		}
 		d.videoDecoderInfo = VideoDecoderInfo{
 			CodecName:     avcodec.GetCodecName(candidate.codec),
 			HardwareState: HardwareStateSelected,

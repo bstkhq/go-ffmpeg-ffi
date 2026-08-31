@@ -66,10 +66,12 @@ func TestValidateHWDecoderConfig(t *testing.T) {
 		{name: "nil", config: nil, ok: true},
 		{name: "auto", config: &HWDecoderConfig{}, ok: true},
 		{name: "explicit type", config: &HWDecoderConfig{DeviceType: HWDeviceTypeVAAPI}, ok: true},
+		{name: "device manager", config: &HWDecoderConfig{DeviceManager: NewHWDeviceManager()}, ok: true},
 		{name: "device needs type", config: &HWDecoderConfig{Device: "/dev/dri/renderD128"}},
 		{name: "invalid mode", config: &HWDecoderConfig{Mode: HardwareAccelerationMode(99)}},
 		{name: "device and borrowed device", config: &HWDecoderConfig{Device: "gpu", DeviceType: HWDeviceTypeVAAPI, HWDevice: &HWDevice{deviceType: HWDeviceTypeVAAPI}}},
 		{name: "mismatched borrowed device", config: &HWDecoderConfig{DeviceType: HWDeviceTypeCUDA, HWDevice: &HWDevice{deviceType: HWDeviceTypeVAAPI}}},
+		{name: "borrowed device and manager", config: &HWDecoderConfig{HWDevice: &HWDevice{deviceType: HWDeviceTypeVAAPI}, DeviceManager: NewHWDeviceManager()}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

@@ -160,6 +160,25 @@ returns GPU-backed frames. Since some accelerators initialize lazily, required
 mode can report `ErrHardwareAccelerationUnavailable` from the first decode call
 even when `OpenVideoDecoder` succeeded.
 
+Applications that create multiple decoders should share an `HWDeviceManager`.
+It reuses native devices, caches unavailable backends, and remembers the last
+successful automatic selection for each codec:
+
+```go
+manager := ffmpeg.NewHWDeviceManager()
+defer manager.Close() // after all decoders using it have closed
+
+options := &ffmpeg.DecoderOptions{
+	Hardware: &ffmpeg.HWDecoderConfig{DeviceManager: manager},
+}
+decoder, err := ffmpeg.NewDecoder("video.mp4", options)
+```
+
+The manager is safe to share between concurrent decoders. Vulkan is excluded
+from automatic selection because a creatable Vulkan device does not establish
+Vulkan Video decode support. Set `DeviceType: ffmpeg.HWDeviceTypeVulkan` to
+request it explicitly on a runtime known to support video decoding.
+
 Selection is lazy. `VideoDecoderInfo` reports `pending` before the video decoder
 opens, `selected` after a hardware codec and device open, and `active` or
 `fallback` after decoding establishes the actual output path. Always inspect
